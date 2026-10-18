@@ -1,0 +1,42 @@
+v 3
+d connectedness. VAR and TVP-VAR connectedness measures
+d
+d Estimates the connectedness measures of Diebold and Yilmaz (2009, 2012) from static
+d and rolling-window VARs and the TVP-VAR connectedness measures of Antonakakis,
+d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
+d indices, asymmetric (positive and negative) connectedness, group measures
+d (aggregated, conditional, inclusive, exclusive, internal, external) and network plots. Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
+d Includes 18 datasets from published applications.
+d
+d Requires: Stata 16.1 or newer
+d Author: Nikolaos Antonakakis, University of Nicosia
+d Support: antonakakis.n@unic.ac.cy
+d Distribution-Date: 20261018
+d License: GPL-3
+f ado/connectedness.ado
+f ado/connectedness_estat.ado
+f ado/cngraph.ado
+f ado/cnnetwork.ado
+f ado/cn_core.mata
+f ado/connectedness.sthlp
+f ado/connectedness_postestimation.sthlp
+f ado/cngraph.sthlp
+f ado/cnnetwork.sthlp
+f data/cn_aaacgo2022.dta
+f data/cn_acg2020.dta
+f data/cn_bcg2022.dta
+f data/cn_bgu2021.dta
+f data/cn_cegg2022.dta
+f data/cn_cg2021.dta
+f data/cn_cgg2022.dta
+f data/cn_cgp2024.dta
+f data/cn_cgs2021.dta
+f data/cn_cgs2022.dta
+f data/cn_dy2009.dta
+f data/cn_dy2012.dta
+f data/cn_g2020.dta
+f data/cn_gcat2022.dta
+f data/cn_gg2018.dta
+f data/cn_gghm2022.dta
+f data/cn_jcggh2022.dta
+f data/cn_lw2021.dta

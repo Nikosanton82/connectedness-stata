@@ -1,0 +1,505 @@
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+      name:  cert
+       log:  <package folder>\test\logs/cert_connectedness.log
+  log type:  text
+ opened on:  18 Oct 2026, 12:49:44
+
+. display "Stata " c(stata_version) " (" c(flavor) "), " c(current_date) " " c(current_time)
+Stata 18 (IC), 18 Oct 2026 12:49:44
+
+. adopath ++ "../ado"
+  [1]              "../ado"
+  [2]  (BASE)      "C:\Program Files\Stata18\ado\base/"
+  [3]  (SITE)      "C:\Program Files\Stata18\ado\site/"
+  [4]              "."
+  [5]  (PERSONAL)  "C:\Users\<user>\ado\personal/"
+  [6]  (PLUS)      "C:\Users\<user>\ado\plus/"
+  [7]  (OLDPLACE)  "c:\ado/"
+
+. discard
+
+. mata: mata clear
+
+. capture noisily do cert_connectedness.do
+
+. * cert_connectedness.do
+. * Certification script for -connectedness-: compares Stata results with reference
+. * fixtures (Python port in test/python; R itself when test/r has been run).
+. * Run through run_all.do from the test folder.
+. 
+. version 16.1
+
+. set more off
+
+. set linesize 80
+
+. global cn_fails 0
+
+. global cn_tests 0
+
+. 
+. capture mata: mata drop cn_tsdiff()
+
+. mata:
+------------------------------------------------- mata (type end to exit) ------
+: real scalar cn_tsdiff(string scalar resframe, string scalar fxframe)
+> {
+>     string scalar    cur
+>     string rowvector v
+>     real colvector   per
+>     real matrix      A, B
+> 
+>     cur = st_framecurrent()
+>     st_framecurrent(fxframe)
+>     v   = st_varname((2..st_nvar()))
+>     per = st_data(., "period")
+>     A   = st_data(., v)
+>     st_framecurrent(resframe)
+>     B   = st_data(per, v)
+>     st_framecurrent(cur)
+>     return(mreldif(B, A))
+> }
+
+: end
+--------------------------------------------------------------------------------
+
+. 
+. capture program drop cn_check
+
+. program define cn_check
+  1.     syntax , case(string) tol(real) [prefix(string)]
+  2.     local f "fixtures/`prefix'`case'"
+  3.     capture confirm file "`f'_fevd.csv"
+  4.     if _rc {
+  5.         di as txt "  `prefix'`case': no fixture, skipped"
+  6.         exit
+  7.     }
+  8.     tempname F E
+  9.     capture frame drop __fx
+ 10.     frame create __fx
+ 11.     frame __fx {
+ 12.         quietly import delimited using "`f'_fevd.csv", clear varnames(nonam
+> es) asdouble
+ 13.         mkmat _all, matrix(`F')
+ 14.     }
+ 15.     matrix `E' = e(fevd)
+ 16.     local d1 = mreldif(`E', `F')
+ 17.     frame __fx: quietly import delimited using "`f'_ts.csv", clear varnames
+> (1) asdouble
+ 18.     mata: st_local("d2", strofreal(cn_tsdiff("`e(frame)'", "__fx"), "%12.0g
+> "))
+ 19.     frame drop __fx
+ 20.     local ok = (`d1' < `tol') & (`d2' < `tol')
+ 21.     global cn_tests = $cn_tests + 1
+ 22.     if !`ok' global cn_fails = $cn_fails + 1
+ 23.     di as txt "  " %-26s "`prefix'`case'" " table " as res %9.2e `d1' ///
+>         as txt "  series " as res %9.2e `d2' as txt "  " cond(`ok', "pass", "F
+> AIL")
+ 24. end
+
+. 
+. capture program drop cn_expect
+
+. program define cn_expect
+  1.     gettoken rc 0 : 0
+  2.     capture noisily `0'
+  3.     global cn_tests = $cn_tests + 1
+  4.     if _rc != `rc' {
+  5.         global cn_fails = $cn_fails + 1
+  6.         di as err "  FAIL: expected r(`rc'), got r(" _rc "): `0'"
+  7.     }
+  8.     else di as txt "  expected error r(`rc'): pass"
+  9. end
+
+. 
+. timer clear
+
+. local opt frame(cn_test) replace notable
+
+. 
+. di _n as txt "{hline 78}" _n "1. Static and rolling VAR (Diebold and Yilmaz 20
+> 09, 2012)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+1. Static and rolling VAR (Diebold and Yilmaz 2009, 2012)
+------------------------------------------------------------------------------
+
+. use ../data/cn_dy2009, clear
+(Diebold and Yilmaz (2009): global equity markets)
+
+. tsset t
+
+Time variable: t, 1 to 829
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. local v `r(varlist)'
+
+. connectedness `v', lags(2) horizon(10) orthogonalized `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2009_orth_static) tol(1e-8) prefix(`p')
+  3. }
+  dy2009_orth_static         table  3.83e-15  series  1.63e-13  pass
+  R_dy2009_orth_static       table  1.16e-14  series  1.36e-12  pass
+
+. timer on 1
+
+. connectedness `v', lags(2) horizon(10) orthogonalized window(200) `opt'
+
+. timer off 1
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2009_orth_roll200) tol(1e-8) prefix(`p')
+  3. }
+  dy2009_orth_roll200        table  4.40e-16  series  6.41e-13  pass
+  R_dy2009_orth_roll200      table  2.74e-15  series  9.08e-13  pass
+
+. 
+. use ../data/cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2012_gen_static) tol(1e-8) prefix(`p')
+  3. }
+  dy2012_gen_static          table  1.70e-15  series  9.06e-15  pass
+  R_dy2012_gen_static        table  6.91e-15  series  3.62e-14  pass
+
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) window(200) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2012_gen_roll200) tol(1e-8) prefix(`p')
+  3. }
+  dy2012_gen_roll200         table  1.74e-16  series  1.99e-13  pass
+  R_dy2012_gen_roll200       table  8.89e-16  series  7.16e-13  pass
+
+. 
+. di _n as txt "{hline 78}" _n "2. TVP-VAR (Antonakakis, Chatziantoniou and Gaba
+> uer 2020)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+2. TVP-VAR (Antonakakis, Chatziantoniou and Gabauer 2020)
+------------------------------------------------------------------------------
+
+. use ../data/cn_acg2020, clear
+(Antonakakis, Chatziantoniou and Gabauer (2020): TVP-VAR connectedness)
+
+. tsset month
+
+Time variable: month, 181 to 701
+        Delta: 1 unit
+
+. quietly ds t date month, not
+
+. local v `r(varlist)'
+
+. connectedness `v', model(tvpvar) horizon(12) window(200) kappa1(0.99) kappa2(0
+> .96) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_bayes) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_bayes          table  3.33e-16  series  9.64e-14  pass
+  R_acg2020_tvp_bayes        table  3.12e-15  series  4.53e-13  pass
+
+. connectedness `v', model(tvpvar) horizon(12) prior(minnesota) gamma(0.1) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_minn) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_minn           table  7.88e-16  series  4.21e-14  pass
+  R_acg2020_tvp_minn         table  3.30e-15  series  4.12e-14  pass
+
+. connectedness `v', model(tvpvar) horizon(12) prior(uninformative) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_unin) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_unin           table  6.66e-16  series  1.70e-13  pass
+  R_acg2020_tvp_unin         table  3.03e-15  series  2.08e-13  pass
+
+. connectedness `v', model(tvpvar) lags(2) horizon(12) window(200) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_lag2) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_lag2           table  1.61e-15  series  8.30e-14  pass
+  R_acg2020_tvp_lag2         table  3.72e-15  series  1.33e-13  pass
+
+. connectedness `v', horizon(12) window(100) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_var_roll100) tol(1e-8) prefix(`p')
+  3. }
+  acg2020_var_roll100        table  2.68e-16  series  3.85e-14  pass
+  R_acg2020_var_roll100      table  2.43e-15  series  4.12e-14  pass
+
+. 
+. di _n as txt "{hline 78}" _n "3. TVP-VAR replications (Gabauer and Gupta 2018;
+>  Chatziantoniou and Gabauer 2021)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+3. TVP-VAR replications (Gabauer and Gupta 2018; Chatziantoniou and Gabauer 2021
+> )
+------------------------------------------------------------------------------
+
+. use ../data/cn_gg2018, clear
+(Gabauer and Gupta (2018): economic uncertainty spillovers)
+
+. tsset month
+
+Time variable: month, 325 to 695
+        Delta: 1 unit
+
+. quietly ds t date month, not
+
+. connectedness `r(varlist)', model(tvpvar) window(200) `opt'
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(gg2018_tvp_bayes) tol(1e-6) prefix(`p')
+  3. }
+  gg2018_tvp_bayes           table  2.12e-15  series  2.25e-13  pass
+  R_gg2018_tvp_bayes         table  2.78e-15  series  2.21e-13  pass
+
+. use ../data/cn_cg2021, clear
+(Chatziantoniou and Gabauer (2021): EMU risk synchronisation)
+
+. tsset t
+
+Time variable: t, 1 to 3915
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. timer on 2
+
+. connectedness `r(varlist)', model(tvpvar) window(200) corrected `opt'
+
+. timer off 2
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(cg2021_tvp_corr) tol(1e-6) prefix(`p')
+  3. }
+  cg2021_tvp_corr            table  1.15e-12  series  7.46e-09  pass
+  R_cg2021_tvp_corr          table  1.70e-12  series  9.01e-09  pass
+
+. 
+. di _n as txt "{hline 78}" _n "4. Stored results, postestimation and graphs" _n
+>  "{hline 78}"
+
+------------------------------------------------------------------------------
+4. Stored results, postestimation and graphs
+------------------------------------------------------------------------------
+
+. use ../data/cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) window(200) datevar(date) sav
+> efevd ///
+>     frame(cn_test) replace
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 196)
+
+
+---------------------------------------------------------------
+             |    SP500     R_10Y  DJUBSCOM      USDX      FROM 
+-------------+-------------------------------------------------
+       SP500 |    83.03      7.41      4.05      5.51     16.97 
+       R_10Y |     9.05     80.55      4.00      6.40     19.45 
+    DJUBSCOM |     4.42      3.92     87.79      3.86     12.21 
+        USDX |     6.62      7.56      3.28     82.54     17.46 
+          TO |    20.09     18.89     11.33     15.77     66.08 
+     Inc_Own |   103.12     99.44     99.12     98.31           
+         NET |     3.12     -0.56     -0.88     -1.69     16.52 
+         NPT |     3.00      1.00      1.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  16.52    corrected TCI =  22.03
+
+. global cn_tests = $cn_tests + 1
+
+. capture noisily {
+.     assert "`e(cmd)'" == "connectedness"
+.     assert e(k) == 4 & e(lags) == 4 & e(horizon) == 10 & e(window) == 200
+.     assert e(T0) == _N - 200 + 4 + 1
+.     assert rowsof(e(table)) == 8 & colsof(e(table)) == 5
+.     assert abs(e(cTCI) - e(TCI)*4/3) < 1e-10
+.     frame cn_test {
+.         assert _N == e(T0)
+.         confirm variable t date tci ctci to_4 from_4 net_4 npt_4 npdc_3_4 pci_
+> 1_2 inf_2_4 fevd_4_4
+.         tempvar rs
+.         egen double `rs' = rowtotal(fevd_1_*)
+.         assert abs(`rs' - 100) < 1e-8
+.         assert abs(net_1 + net_2 + net_3 + net_4) < 1e-8
+.     }
+.     estat table, digits(3)
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 196)
+
+
+--------------------------------------------------------------------
+             |     SP500      R_10Y   DJUBSCOM       USDX       FROM 
+-------------+------------------------------------------------------
+       SP500 |    83.034      7.408      4.052      5.507     16.966 
+       R_10Y |     9.049     80.554      3.997      6.400     19.446 
+    DJUBSCOM |     4.424      3.922     87.794      3.861     12.206 
+        USDX |     6.617      7.561      3.281     82.542     17.458 
+          TO |    20.090     18.890     11.329     15.768     66.077 
+     Inc_Own |   103.124     99.444     99.123     98.309            
+         NET |     3.124     -0.556     -0.877     -1.691     16.519 
+         NPT |     3.000      1.000      1.000      1.000            
+--------------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI = 16.519    corrected TCI = 22.026
+.     connectedness
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 196)
+
+
+---------------------------------------------------------------
+             |    SP500     R_10Y  DJUBSCOM      USDX      FROM 
+-------------+-------------------------------------------------
+       SP500 |    83.03      7.41      4.05      5.51     16.97 
+       R_10Y |     9.05     80.55      4.00      6.40     19.45 
+    DJUBSCOM |     4.42      3.92     87.79      3.86     12.21 
+        USDX |     6.62      7.56      3.28     82.54     17.46 
+          TO |    20.09     18.89     11.33     15.77     66.08 
+     Inc_Own |   103.12     99.44     99.12     98.31           
+         NET |     3.12     -0.56     -0.88     -1.69     16.52 
+         NPT |     3.00      1.00      1.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  16.52    corrected TCI =  22.03
+.     cngraph tci, nodraw
+.     cngraph net, nodraw
+.     cngraph npdc, nodraw
+.     cngraph pci, select(SP500) nodraw
+.     estimates store roll200
+.     connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) model(tvpvar) window(200)
+>  ///
+>         frame(cn_tvp) replace notable
+.     cngraph tci, compare(roll200) nodraw
+. }
+
+. if _rc {
+.     global cn_fails = $cn_fails + 1
+.     di as err "  FAIL: stored results and postestimation (r(" _rc "))"
+. }
+
+. else di as txt "  stored results, estat, cngraph: pass"
+  stored results, estat, cngraph: pass
+
+. 
+. di _n as txt "{hline 78}" _n "5. Error handling" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+5. Error handling
+------------------------------------------------------------------------------
+
+. use ../data/cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. cn_expect 198 connectedness SP500 R_10Y, model(qvar) `opt'
+model(qvar) is planned for a later release of connectedness
+  expected error r(198): pass
+
+. cn_expect 198 connectedness SP500 R_10Y, prior(minnesota) `opt'
+option prior() is allowed only with model(tvpvar)
+  expected error r(198): pass
+
+. cn_expect 198 connectedness SP500 R_10Y, model(tvpvar) kappa1(1) `opt'
+kappa1() and kappa2() must lie strictly between 0 and 1
+  expected error r(198): pass
+
+. cn_expect 184 connectedness SP500 R_10Y, orthogonalized generalized `opt'
+options orthogonalized and generalized may not be combined
+  expected error r(184): pass
+
+. cn_expect 2001 connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) window(20) `op
+> t'
+too few observations per VAR estimation: 12 observations for 17 coefficients per
+>  equation
+  expected error r(2001): pass
+
+. cn_expect 498 connectedness SP500 R_10Y in 1/100 if mod(t, 7) != 0, `opt'
+the estimation sample must be contiguous in time;
+gaps or missing values were found within the sample
+  expected error r(498): pass
+
+. cn_expect 110 connectedness SP500 R_10Y, frame(cn_test)
+frame cn_test already exists; specify replace or another frame()
+  expected error r(110): pass
+
+. cn_expect 102 connectedness SP500, `opt'
+too few variables specified
+  expected error r(102): pass
+
+. 
+. di _n as txt "{hline 78}"
+
+------------------------------------------------------------------------------
+
+. quietly timer list
+
+. di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as t
+> xt " s"
+Timing: rolling VAR, k = 19, 632 windows:    0.4 s
+
+. di as txt "Timing: TVP-VAR, k = 11, T = 3,915:        " as res %6.1f r(t2) as 
+> txt " s"
+Timing: TVP-VAR, k = 11, T = 3,915:           1.7 s
+
+. di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fai
+> ls
+Tests run: 31   failures: 0
+
+. assert $cn_fails == 0
+
+. di as txt "ALL TESTS PASSED"
+ALL TESTS PASSED
+
+. 
+end of do-file
+
+. local rc = _rc
+
+. log close cert
+      name:  cert
+       log:  <package folder>\test\logs/cert_connectedness.log
+  log type:  text
+ closed on:  18 Oct 2026, 12:49:56
+--------------------------------------------------------------------------------

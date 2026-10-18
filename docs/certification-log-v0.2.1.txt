@@ -1,0 +1,1140 @@
+--------------------------------------------------------------------------------
+      name:  cert
+       log:  <package folder>\test\logs/cert_connectedness.log
+  log type:  text
+ opened on:  18 Oct 2026, 14:41:43
+
+. display "Stata " c(stata_version) " (" c(flavor) "), " c(current_date) " " c(c
+> urrent_time)
+Stata 18 (IC), 18 Oct 2026 14:41:43
+
+. adopath ++ "../ado"
+  [1]              "../ado"
+  [2]              "<package folder>\paper\stata/../sjado"
+  [3]              "<package folder>\paper\stata/../../ado"
+  [4]  (BASE)      "C:\Program Files\Stata18\ado\base/"
+  [5]  (SITE)      "C:\Program Files\Stata18\ado\site/"
+  [6]              "."
+  [7]  (PERSONAL)  "C:\Users\<user>\ado\personal/"
+  [8]  (PLUS)      "C:\Users\<user>\ado\plus/"
+  [9]  (OLDPLACE)  "c:\ado/"
+
+. discard
+
+. mata: mata clear
+
+. capture noisily do cert_connectedness.do
+
+. * cert_connectedness.do
+. * Certification script for -connectedness-: compares Stata results with refere
+> nce
+. * fixtures (Python port in test/python; R itself when test/r has been run).
+. * Run through run_all.do from the test folder.
+. 
+. version 16.1
+
+. set more off
+
+. set linesize 80
+
+. global cn_fails 0
+
+. global cn_tests 0
+
+. 
+. capture mata: mata drop cn_tsdiff()
+
+. mata:
+------------------------------------------------- mata (type end to exit) ------
+: real scalar cn_tsdiff(string scalar resframe, string scalar fxframe)
+> {
+>     string scalar    cur
+>     string rowvector v
+>     real colvector   per
+>     real matrix      A, B
+> 
+>     cur = st_framecurrent()
+>     st_framecurrent(fxframe)
+>     v   = st_varname((2..st_nvar()))
+>     per = st_data(., "period")
+>     A   = st_data(., v)
+>     st_framecurrent(resframe)
+>     B   = st_data(per, v)
+>     st_framecurrent(cur)
+>     return(mreldif(B, A))
+> }
+
+: end
+--------------------------------------------------------------------------------
+
+. 
+. capture program drop cn_check
+
+. program define cn_check
+  1.     syntax , case(string) tol(real) [prefix(string) MATrix(string) FRame(st
+> ring)]
+  2.     if "`matrix'" == "" local matrix e(fevd)
+  3.     if "`frame'" == ""  local frame `e(frame)'
+  4.     local f "fixtures/`prefix'`case'"
+  5.     capture confirm file "`f'_ts.csv"
+  6.     if _rc {
+  7.         di as txt "  `prefix'`case': no fixture, skipped"
+  8.         exit
+  9.     }
+ 10.     tempname F E
+ 11.     capture frame drop __fx
+ 12.     frame create __fx
+ 13.     local d1 = 0
+ 14.     local ttxt "table "
+ 15.     capture confirm file "`f'_fevd.csv"
+ 16.     if !_rc {
+ 17.         frame __fx {
+ 18.             quietly import delimited using "`f'_fevd.csv", clear varnames(n
+> onames) asdouble
+ 19.             mkmat _all, matrix(`F')
+ 20.         }
+ 21.         matrix `E' = `matrix'
+ 22.         local d1 = mreldif(`E', `F')
+ 23.     }
+ 24.     else local ttxt "(no table)"
+ 25.     frame __fx: quietly import delimited using "`f'_ts.csv", clear varnames
+> (1) asdouble
+ 26.     mata: st_local("d2", strofreal(cn_tsdiff("`frame'", "__fx"), "%12.0g"))
+ 27.     frame drop __fx
+ 28.     local ok = (`d1' < `tol') & (`d2' < `tol')
+ 29.     global cn_tests = $cn_tests + 1
+ 30.     if !`ok' global cn_fails = $cn_fails + 1
+ 31.     di as txt "  " %-26s "`prefix'`case'" " `ttxt'" as res %9.2e `d1' ///
+>         as txt "  series " as res %9.2e `d2' as txt "  " cond(`ok', "pass", "F
+> AIL")
+ 32. end
+
+. 
+. capture program drop cn_expect
+
+. program define cn_expect
+  1.     gettoken rc 0 : 0
+  2.     capture noisily `0'
+  3.     global cn_tests = $cn_tests + 1
+  4.     if _rc != `rc' {
+  5.         global cn_fails = $cn_fails + 1
+  6.         local got = _rc
+  7.         di as err `"  FAIL: expected r(`rc'), got r(`got'): `0'"'
+  8.     }
+  9.     else di as txt "  expected error r(`rc'): pass"
+ 10. end
+
+. 
+. timer clear
+
+. local opt frame(cn_test) replace notable
+
+. 
+. di _n as txt "{hline 78}" _n "1. Static and rolling VAR (Diebold and Yilmaz 20
+> 09, 2012)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+1. Static and rolling VAR (Diebold and Yilmaz 2009, 2012)
+------------------------------------------------------------------------------
+
+. use ../data/cn_dy2009, clear
+(Diebold and Yilmaz (2009): global equity markets)
+
+. tsset t
+
+Time variable: t, 1 to 829
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. local v `r(varlist)'
+
+. connectedness `v', lags(2) horizon(10) orthogonalized `opt'
+
+Connectedness approach                          Number of variables =       19
+Model:  VAR(2), static                          Forecast horizon    =       10
+FEVD:   orthogonalized                          Observations used   =      829
+Sample: 1 to 829                                Periods measured    =        1
+Results frame: cn_test (first period 829)
+
+TCI =  35.53    corrected TCI =  37.50
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2009_orth_static) tol(1e-8) prefix(`p')
+  3. }
+  dy2009_orth_static         table  3.83e-15  series  1.63e-13  pass
+  R_dy2009_orth_static       table  1.16e-14  series  1.36e-12  pass
+
+. timer on 1
+
+. connectedness `v', lags(2) horizon(10) orthogonalized window(200) `opt'
+
+Connectedness approach                          Number of variables =       19
+Model:  VAR(2), rolling window                  Forecast horizon    =       10
+FEVD:   orthogonalized                          Observations used   =      829
+Sample: 1 to 829                                Periods measured    =      632
+Window: 200 observations
+Results frame: cn_test (first period 198)
+
+TCI =  50.33    corrected TCI =  53.13
+
+. timer off 1
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2009_orth_roll200) tol(1e-8) prefix(`p')
+  3. }
+  dy2009_orth_roll200        table  4.40e-16  series  6.41e-13  pass
+  R_dy2009_orth_roll200      table  2.74e-15  series  9.08e-13  pass
+
+. 
+. use ../data/cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), static                          Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =        1
+Results frame: cn_test (first period 2771)
+
+TCI =  12.59    corrected TCI =  16.79
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2012_gen_static) tol(1e-8) prefix(`p')
+  3. }
+  dy2012_gen_static          table  1.70e-15  series  9.06e-15  pass
+  R_dy2012_gen_static        table  6.91e-15  series  3.62e-14  pass
+
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) window(200) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 196)
+
+TCI =  16.52    corrected TCI =  22.03
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(dy2012_gen_roll200) tol(1e-8) prefix(`p')
+  3. }
+  dy2012_gen_roll200         table  1.74e-16  series  8.38e-14  pass
+  R_dy2012_gen_roll200       table  8.89e-16  series  6.36e-13  pass
+
+. 
+. di _n as txt "{hline 78}" _n "2. TVP-VAR (Antonakakis, Chatziantoniou and Gaba
+> uer 2020)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+2. TVP-VAR (Antonakakis, Chatziantoniou and Gabauer 2020)
+------------------------------------------------------------------------------
+
+. use ../data/cn_acg2020, clear
+(Antonakakis, Chatziantoniou and Gabauer (2020): TVP-VAR connectedness)
+
+. tsset month
+
+Time variable: month, 181 to 701
+        Delta: 1 unit
+
+. quietly ds t date month, not
+
+. local v `r(varlist)'
+
+. connectedness `v', model(tvpvar) horizon(12) window(200) kappa1(0.99) kappa2(0
+> .96) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       12
+FEVD:   generalized                             Observations used   =      521
+Sample: 181 to 701                              Periods measured    =      521
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.96
+Results frame: cn_test (first period 181)
+
+TCI =  52.06    corrected TCI =  69.42
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_bayes) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_bayes          table  3.33e-16  series  9.64e-14  pass
+  R_acg2020_tvp_bayes        table  3.12e-15  series  4.53e-13  pass
+
+. connectedness `v', model(tvpvar) horizon(12) prior(minnesota) gamma(0.1) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       12
+FEVD:   generalized                             Observations used   =      521
+Sample: 181 to 701                              Periods measured    =      521
+Prior tightness: 0.10                           kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 181)
+
+TCI =  53.01    corrected TCI =  70.68
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_minn) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_minn           table  7.88e-16  series  4.21e-14  pass
+  R_acg2020_tvp_minn         table  3.30e-15  series  4.12e-14  pass
+
+. connectedness `v', model(tvpvar) horizon(12) prior(uninformative) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  TVP-VAR(1), uninformative prior         Forecast horizon    =       12
+FEVD:   generalized                             Observations used   =      521
+Sample: 181 to 701                              Periods measured    =      521
+                                                kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 181)
+
+TCI =  53.07    corrected TCI =  70.75
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_unin) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_unin           table  6.66e-16  series  1.70e-13  pass
+  R_acg2020_tvp_unin         table  3.03e-15  series  2.08e-13  pass
+
+. connectedness `v', model(tvpvar) lags(2) horizon(12) window(200) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  TVP-VAR(2), bayes prior                 Forecast horizon    =       12
+FEVD:   generalized                             Observations used   =      521
+Sample: 181 to 701                              Periods measured    =      521
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 181)
+
+TCI =  54.64    corrected TCI =  72.85
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_tvp_lag2) tol(1e-6) prefix(`p')
+  3. }
+  acg2020_tvp_lag2           table  1.61e-15  series  8.30e-14  pass
+  R_acg2020_tvp_lag2         table  3.72e-15  series  1.33e-13  pass
+
+. connectedness `v', horizon(12) window(100) `opt'
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(1), rolling window                  Forecast horizon    =       12
+FEVD:   generalized                             Observations used   =      521
+Sample: 181 to 701                              Periods measured    =      423
+Window: 100 observations
+Results frame: cn_test (first period 279)
+
+TCI =  53.43    corrected TCI =  71.24
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(acg2020_var_roll100) tol(1e-8) prefix(`p')
+  3. }
+  acg2020_var_roll100        table  2.68e-16  series  3.85e-14  pass
+  R_acg2020_var_roll100      table  2.43e-15  series  4.12e-14  pass
+
+. 
+. di _n as txt "{hline 78}" _n "3. TVP-VAR replications (Gabauer and Gupta 2018;
+>  Chatziantoniou and Gabauer 2021)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+3. TVP-VAR replications (Gabauer and Gupta 2018; Chatziantoniou and Gabauer 2021
+> )
+------------------------------------------------------------------------------
+
+. use ../data/cn_gg2018, clear
+(Gabauer and Gupta (2018): economic uncertainty spillovers)
+
+. tsset month
+
+Time variable: month, 325 to 695
+        Delta: 1 unit
+
+. quietly ds t date month, not
+
+. connectedness `r(varlist)', model(tvpvar) window(200) `opt'
+
+Connectedness approach                          Number of variables =        8
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =      371
+Sample: 325 to 695                              Periods measured    =      371
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 325)
+
+TCI =  27.27    corrected TCI =  31.16
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(gg2018_tvp_bayes) tol(1e-6) prefix(`p')
+  3. }
+  gg2018_tvp_bayes           table  2.12e-15  series  2.25e-13  pass
+  R_gg2018_tvp_bayes         table  2.78e-15  series  2.21e-13  pass
+
+. use ../data/cn_cg2021, clear
+(Chatziantoniou and Gabauer (2021): EMU risk synchronisation)
+
+. tsset t
+
+Time variable: t, 1 to 3915
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. timer on 2
+
+. connectedness `r(varlist)', model(tvpvar) window(200) corrected `opt'
+
+Connectedness approach                          Number of variables =       11
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     3915
+Sample: 1 to 3915                               Periods measured    =     3915
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 1)
+
+TCI =  77.72    corrected TCI =  85.50    (NET row reports the corrected TCI)
+
+. timer off 2
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(cg2021_tvp_corr) tol(1e-6) prefix(`p')
+  3. }
+  cg2021_tvp_corr            table  1.15e-12  series  7.47e-10  pass
+  R_cg2021_tvp_corr          table  1.70e-12  series  5.40e-10  pass
+
+. 
+. di _n as txt "{hline 78}" _n "4. Stored results, postestimation and graphs" _n
+>  "{hline 78}"
+
+------------------------------------------------------------------------------
+4. Stored results, postestimation and graphs
+------------------------------------------------------------------------------
+
+. use ../data/cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) window(200) datevar(date) sav
+> efevd ///
+>     frame(cn_test) replace
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 25jan1999 to 29jan2010                  Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 01nov1999)
+
+
+---------------------------------------------------------------
+             |    SP500     R_10Y  DJUBSCOM      USDX      FROM 
+-------------+-------------------------------------------------
+       SP500 |    83.03      7.41      4.05      5.51     16.97 
+       R_10Y |     9.05     80.55      4.00      6.40     19.45 
+    DJUBSCOM |     4.42      3.92     87.79      3.86     12.21 
+        USDX |     6.62      7.56      3.28     82.54     17.46 
+          TO |    20.09     18.89     11.33     15.77     66.08 
+     Inc_Own |   103.12     99.44     99.12     98.31           
+         NET |     3.12     -0.56     -0.88     -1.69     16.52 
+         NPT |     3.00      1.00      1.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  16.52    corrected TCI =  22.03
+
+. global cn_tests = $cn_tests + 1
+
+. capture noisily {
+.     assert "`e(cmd)'" == "connectedness"
+.     assert e(k) == 4 & e(lags) == 4 & e(horizon) == 10 & e(window) == 200
+.     assert e(T0) == _N - 200 + 4 + 1
+.     assert rowsof(e(table)) == 8 & colsof(e(table)) == 5
+.     assert abs(e(cTCI) - e(TCI)*4/3) < 1e-10
+.     frame cn_test {
+.         assert _N == e(T0)
+.         confirm variable t date tci ctci to_4 from_4 net_4 npt_4 npdc_3_4 pci_
+> 1_2 inf_2_4 fevd_4_4
+.         tempvar rs
+.         egen double `rs' = rowtotal(fevd_1_*)
+.         assert abs(`rs' - 100) < 1e-8
+.         assert abs(net_1 + net_2 + net_3 + net_4) < 1e-8
+.     }
+.     estat table, digits(3)
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 25jan1999 to 29jan2010                  Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 01nov1999)
+
+
+--------------------------------------------------------------------
+             |     SP500      R_10Y   DJUBSCOM       USDX       FROM 
+-------------+------------------------------------------------------
+       SP500 |    83.034      7.408      4.052      5.507     16.966 
+       R_10Y |     9.049     80.554      3.997      6.400     19.446 
+    DJUBSCOM |     4.424      3.922     87.794      3.861     12.206 
+        USDX |     6.617      7.561      3.281     82.542     17.458 
+          TO |    20.090     18.890     11.329     15.768     66.077 
+     Inc_Own |   103.124     99.444     99.123     98.309            
+         NET |     3.124     -0.556     -0.877     -1.691     16.519 
+         NPT |     3.000      1.000      1.000      1.000            
+--------------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI = 16.519    corrected TCI = 22.026
+.     connectedness
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 25jan1999 to 29jan2010                  Periods measured    =     2576
+Window: 200 observations
+Results frame: cn_test (first period 01nov1999)
+
+
+---------------------------------------------------------------
+             |    SP500     R_10Y  DJUBSCOM      USDX      FROM 
+-------------+-------------------------------------------------
+       SP500 |    83.03      7.41      4.05      5.51     16.97 
+       R_10Y |     9.05     80.55      4.00      6.40     19.45 
+    DJUBSCOM |     4.42      3.92     87.79      3.86     12.21 
+        USDX |     6.62      7.56      3.28     82.54     17.46 
+          TO |    20.09     18.89     11.33     15.77     66.08 
+     Inc_Own |   103.12     99.44     99.12     98.31           
+         NET |     3.12     -0.56     -0.88     -1.69     16.52 
+         NPT |     3.00      1.00      1.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  16.52    corrected TCI =  22.03
+.     cngraph tci, nodraw
+.     cngraph net, nodraw
+.     cngraph npdc, nodraw
+.     cngraph pci, select(SP500) nodraw
+.     estimates store roll200
+.     connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) model(tvpvar) window(200)
+>  ///
+>         frame(cn_tvp) replace notable
+
+Connectedness approach                          Number of variables =        4
+Model:  TVP-VAR(4), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =     2771
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_tvp (first period 1)
+
+TCI =  17.39    corrected TCI =  23.18
+.     cngraph tci, compare(roll200) nodraw
+. }
+
+. if _rc {
+.     global cn_fails = $cn_fails + 1
+.     di as err "  FAIL: stored results and postestimation (r(" _rc "))"
+. }
+
+. else di as txt "  stored results, estat, cngraph: pass"
+  stored results, estat, cngraph: pass
+
+. 
+. di _n as txt "{hline 78}" _n "5. Group measures (Gabauer and Gupta 2018; Stenf
+> ors et al. 2022;" ///
+>     _n "   Chatziantoniou et al. 2023)" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+5. Group measures (Gabauer and Gupta 2018; Stenfors et al. 2022;
+   Chatziantoniou et al. 2023)
+------------------------------------------------------------------------------
+
+. use ../data/cn_gg2018, clear
+(Gabauer and Gupta (2018): economic uncertainty spillovers)
+
+. tsset month
+
+Time variable: month, 325 to 695
+        Delta: 1 unit
+
+. quietly ds t date month, not
+
+. connectedness `r(varlist)', model(tvpvar) window(200) `opt'
+
+Connectedness approach                          Number of variables =        8
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =      371
+Sample: 325 to 695                              Periods measured    =      371
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 325)
+
+TCI =  27.27    corrected TCI =  31.16
+
+. local G2 `""US: US_FPU US_MPU US_TPU US_CPU" "JP: JP_FPU JP_MPU JP_TPU JP_CPU"
+> "'
+
+. foreach ty in internal external {
+  2.     estat group, type(`ty') groups(`G2') frame(cn_grp) replace notable
+  3.     matrix GT = r(table)
+  4.     matrix GT = GT[1..8, 1..8]
+  5.     foreach p in "" "R_" {
+  6.         cn_check, case(gg2018_`ty') tol(1e-6) prefix(`p') matrix(GT) frame(
+> cn_grp)
+  7.     }
+  8. }
+
+Internal connectedness                          Units in table      =        8
+Group US: US_FPU US_MPU US_TPU US_CPU
+Group JP: JP_FPU JP_MPU JP_TPU JP_CPU
+Results frame: cn_grp
+
+TCI =  18.97    corrected TCI =  21.67
+Group TCI, US =   9.37    corrected =  10.71
+Group TCI, JP =   9.60    corrected =  10.97
+  gg2018_internal            table  2.01e-15  series  3.52e-14  pass
+  R_gg2018_internal          (no table) 0.00e+00  series  3.68e-14  pass
+
+External connectedness                          Units in table      =        8
+Group US: US_FPU US_MPU US_TPU US_CPU
+Group JP: JP_FPU JP_MPU JP_TPU JP_CPU
+Results frame: cn_grp
+
+TCI =   8.30    corrected TCI =   9.49
+Group TCI, US =   3.94    corrected =   4.50
+Group TCI, JP =   4.37    corrected =   4.99
+  gg2018_external            table  1.37e-15  series  6.21e-14  pass
+  R_gg2018_external          (no table) 0.00e+00  series  3.73e-14  pass
+
+. 
+. use ../data/cn_cgs2022, clear
+(Stenfors, Chatziantoniou and Gabauer (2022): European yield curves)
+
+. tsset t
+
+Time variable: t, 1 to 5558
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. timer on 3
+
+. connectedness `r(varlist)', model(tvpvar) window(250) corrected `opt'
+
+Connectedness approach                          Number of variables =       18
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     5558
+Sample: 1 to 5558                               Periods measured    =     5558
+Prior sample: 250                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 1)
+
+TCI =  85.50    corrected TCI =  90.53    (NET row reports the corrected TCI)
+
+. timer off 3
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(cgs2022_tvp_corr) tol(1e-6) prefix(`p')
+  3. }
+  cgs2022_tvp_corr           table  2.63e-14  series  3.77e-11  pass
+  R_cgs2022_tvp_corr         table  2.82e-14  series  1.75e-11  pass
+
+. estat group, type(conditional) groups(X2YCHF X2YDKK X2YEUR X2YGBP X2YNOK X2YSE
+> K) ///
+>     frame(cn_grp) replace notable
+
+Conditional connectedness                       Units in table      =        6
+Group: X2YCHF X2YDKK X2YEUR X2YGBP X2YNOK X2YSEK
+Results frame: cn_grp
+
+TCI =  53.64    corrected TCI =  64.37
+
+. matrix GT = r(table)
+
+. matrix GT = GT[1..6, 1..6]
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(cgs2022_conditional) tol(1e-6) prefix(`p') matrix(GT) fr
+> ame(cn_grp)
+  3. }
+  cgs2022_conditional        table  2.26e-14  series  2.91e-12  pass
+  R_cgs2022_conditional      (no table) 0.00e+00  series  2.99e-12  pass
+
+. estat group, type(aggregated) frame(cn_grp) replace ///
+>     groups("CHF: X2YCHF X5YCHF X10YCHF" "DKK: X2YDKK X5YDKK X10YDKK" ///
+>     "EUR: X2YEUR X5YEUR X10YEUR" "GBP: X2YGBP X5YGBP X10YGBP" ///
+>     "NOK: X2YNOK X5YNOK X10YNOK" "SEK: X2YSEK X5YSEK X10YSEK")
+
+Aggregated connectedness                        Units in table      =        6
+Group CHF: X2YCHF X5YCHF X10YCHF
+Group DKK: X2YDKK X5YDKK X10YDKK
+Group EUR: X2YEUR X5YEUR X10YEUR
+Group GBP: X2YGBP X5YGBP X10YGBP
+Group NOK: X2YNOK X5YNOK X10YNOK
+Group SEK: X2YSEK X5YSEK X10YSEK
+Results frame: cn_grp
+
+
+--------------------------------------------------------------------------
+             |      CHF       DKK       EUR       GBP       NOK       SEK 
+-------------+------------------------------------------------------------
+         CHF |    34.01     15.87     17.38     12.43      8.21     12.10 
+         DKK |    13.98     29.09     23.44     12.56      8.18     12.75 
+         EUR |    14.47     22.16     28.66     13.93      8.11     12.67 
+         GBP |    12.80     14.91     17.25     36.18      7.56     11.30 
+         NOK |    10.47     12.10     12.71      9.37     41.15     14.19 
+         SEK |    12.63     15.05     15.90     11.33     11.66     33.43 
+          TO |    64.35     80.09     86.68     59.63     43.71     63.01 
+     Inc_Own |    98.36    109.19    115.34     95.81     84.86     96.44 
+         NET |    -1.64      9.19     15.34     -4.19    -15.14     -3.56 
+         NPT |     3.00      4.00      5.00      2.00      0.00      1.00 
+--------------------------------------------------------------------------
+
+-----------------------
+             |     FROM 
+-------------+---------
+         CHF |    65.99 
+         DKK |    70.91 
+         EUR |    71.34 
+         GBP |    63.82 
+         NOK |    58.85 
+         SEK |    66.57 
+          TO |   397.48 
+     Inc_Own |          
+         NET |    79.50 
+         NPT |          
+-----------------------
+TCI =  66.25    corrected TCI =  79.50
+TCI_ext (ConnectednessApproach) = 331.23    corrected = 350.71
+
+. matrix GT = r(table)
+
+. matrix GT = GT[1..6, 1..6]
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(cgs2022_aggregated) tol(1e-6) prefix(`p') matrix(GT) fra
+> me(cn_grp)
+  3. }
+  cgs2022_aggregated         table  1.11e-14  series  1.53e-12  pass
+  R_cgs2022_aggregated       (no table) 0.00e+00  series  2.10e-12  pass
+
+. 
+. use ../data/cn_cegg2022, clear
+(Chatziantoniou, Elsayed, Gabauer and Gozgor (2023): oil shocks, FX)
+
+. tsset t
+
+Time variable: t, 1 to 3883
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. connectedness `r(varlist)', model(tvpvar) horizon(20) prior(minnesota) gamma(0
+> .1) corrected `opt'
+
+Connectedness approach                          Number of variables =       11
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       20
+FEVD:   generalized                             Observations used   =     3883
+Sample: 1 to 3883                               Periods measured    =     3883
+Prior tightness: 0.10                           kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 1)
+
+TCI =  36.57    corrected TCI =  40.23    (NET row reports the corrected TCI)
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(cegg2022_tvp_minn) tol(1e-6) prefix(`p')
+  3. }
+  cegg2022_tvp_minn          table  1.07e-15  series  4.27e-13  pass
+  R_cegg2022_tvp_minn        table  2.58e-15  series  5.55e-13  pass
+
+. local G3 `""Oil: Demand_Shock Supply_Shock Risk_Shock" "Exporters: Brazil Cana
+> da Norway Russia" "Importers: China Europe India Japan""'
+
+. foreach ty in internal external {
+  2.     estat group, type(`ty') groups(`G3') frame(cn_grp) replace notable
+  3.     matrix GT = r(table)
+  4.     matrix GT = GT[1..11, 1..11]
+  5.     foreach p in "" "R_" {
+  6.         cn_check, case(cegg2022_`ty') tol(1e-6) prefix(`p') matrix(GT) fram
+> e(cn_grp)
+  7.     }
+  8. }
+
+Internal connectedness                          Units in table      =       11
+Group Oil: Demand_Shock Supply_Shock Risk_Shock
+Group Exporters: Brazil Canada Norway Russia
+Group Importers: China Europe India Japan
+Results frame: cn_grp
+
+TCI =  10.88    corrected TCI =  11.97
+Group TCI, Oil =   2.59    corrected =   2.85
+Group TCI, Exporters =   4.27    corrected =   4.69
+Group TCI, Importers =   4.02    corrected =   4.43
+  cegg2022_internal          table  3.91e-15  series  4.24e-14  pass
+  R_cegg2022_internal        (no table) 0.00e+00  series  4.22e-14  pass
+
+External connectedness                          Units in table      =       11
+Group Oil: Demand_Shock Supply_Shock Risk_Shock
+Group Exporters: Brazil Canada Norway Russia
+Group Importers: China Europe India Japan
+Results frame: cn_grp
+
+TCI =  25.70    corrected TCI =  28.26
+Group TCI, Oil =  11.67    corrected =  12.83
+Group TCI, Exporters =   7.45    corrected =   8.19
+Group TCI, Importers =   6.58    corrected =   7.24
+  cegg2022_external          table  3.30e-15  series  2.13e-14  pass
+  R_cegg2022_external        (no table) 0.00e+00  series  3.82e-14  pass
+
+. foreach ty in inclusive exclusive {
+  2.     estat group, type(`ty') groups(Demand_Shock Supply_Shock Risk_Shock) fr
+> ame(cn_grp) replace notable
+  3.     matrix GT = r(table)
+  4.     matrix GT = GT[1..11, 1..11]
+  5.     foreach p in "" "R_" {
+  6.         cn_check, case(cegg2022_`ty') tol(1e-6) prefix(`p') matrix(GT) fram
+> e(cn_grp)
+  7.     }
+  8. }
+
+Inclusive connectedness                         Units in table      =       11
+Group: Demand_Shock Supply_Shock Risk_Shock
+Results frame: cn_grp
+
+TCI =  16.09    corrected TCI =  17.70
+  cegg2022_inclusive         table  3.39e-15  series  4.07e-14  pass
+  R_cegg2022_inclusive       (no table) 0.00e+00  series  4.82e-14  pass
+
+Exclusive connectedness                         Units in table      =       11
+Group: Demand_Shock Supply_Shock Risk_Shock
+Results frame: cn_grp
+
+TCI =  20.48    corrected TCI =  22.53
+  cegg2022_exclusive         table  3.91e-15  series  3.42e-14  pass
+  R_cegg2022_exclusive       (no table) 0.00e+00  series  5.17e-14  pass
+
+. 
+. di _n as txt "{hline 78}" _n "6. Asymmetric connectedness (Adekoya et al. 2022
+> )" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+6. Asymmetric connectedness (Adekoya et al. 2022)
+------------------------------------------------------------------------------
+
+. use ../data/cn_aaacgo2022, clear
+(Adekoya et al. (2022): crude oil and Islamic sectoral stocks)
+
+. tsset t
+
+Time variable: t, 1 to 2115
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. foreach v of varlist `r(varlist)' {
+  2.     quietly generate double r_`v' = 100*(`v' - L.`v')/L.`v'
+  3. }
+
+. connectedness r_*, model(tvpvar) window(200) prior(minnesota) gamma(0.1) asymm
+> etric ///
+>     frame(cn_asy) replace notable
+
+Connectedness approach                          Number of variables =       10
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2114
+Sample: 2 to 2115                               Periods measured    =     2114
+Prior tightness: 0.10                           kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_asy (first period 2)
+Asymmetric connectedness: all changes shown; see connectedness, part()
+
+TCI =  72.69    corrected TCI =  80.77
+Positive changes: TCI =  69.89    Negative changes: TCI =  74.41
+
+. foreach p in "" "R_" {
+  2.     cn_check, case(aaacgo2022_asym_all) tol(1e-6) prefix(`p') matrix(e(fevd
+> )) frame(cn_asy)
+  3.     cn_check, case(aaacgo2022_asym_pos) tol(1e-6) prefix(`p') matrix(e(fevd
+> _pos)) frame(cn_asy_pos)
+  4.     cn_check, case(aaacgo2022_asym_neg) tol(1e-6) prefix(`p') matrix(e(fevd
+> _neg)) frame(cn_asy_neg)
+  5. }
+  aaacgo2022_asym_all        table  2.70e-15  series  6.99e-13  pass
+  aaacgo2022_asym_pos        table  5.05e-15  series  5.81e-13  pass
+  aaacgo2022_asym_neg        table  2.67e-15  series  2.16e-13  pass
+  R_aaacgo2022_asym_all      table  4.92e-15  series  1.77e-12  pass
+  R_aaacgo2022_asym_pos      table  4.71e-15  series  2.57e-13  pass
+  R_aaacgo2022_asym_neg      table  4.01e-15  series  1.99e-13  pass
+
+. 
+. di _n as txt "{hline 78}" _n "7. New postestimation: estat group, cnnetwork, o
+> verlays, dates" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+7. New postestimation: estat group, cnnetwork, overlays, dates
+------------------------------------------------------------------------------
+
+. global cn_tests = $cn_tests + 1
+
+. capture noisily {
+.     connectedness, part(positive)
+
+Connectedness approach                          Number of variables =       10
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2114
+Sample: 2 to 2115                               Periods measured    =     2114
+Prior tightness: 0.10                           kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_asy_pos (first period 2)
+Asymmetric connectedness: positive changes shown; see connectedness, part()
+
+
+--------------------------------------------------------------------------
+             |  r_Brent      r_BM      r_CG      r_CS     r_FIN     r_HTH 
+-------------+------------------------------------------------------------
+     r_Brent |    61.03      3.55      2.11      2.18      2.40      1.49 
+        r_BM |     1.81     24.03     12.04     10.26      5.51      8.73 
+        r_CG |     0.91     10.77     22.30     13.18      6.91     11.23 
+        r_CS |     0.95      9.11     13.27     22.52      8.37     11.26 
+       r_FIN |     1.63      6.28      8.45     10.29     30.97      9.25 
+       r_HTH |     0.86      8.76     12.52     12.65      8.08     25.57 
+       r_IND |     0.97     12.40     12.80     12.75      7.69     10.31 
+        r_OG |    11.47      8.96      5.86      7.06      6.73      5.30 
+       r_TEC |     1.07      8.49     11.61     13.44      9.54     11.07 
+       r_UTI |     1.94     10.50     10.39      6.55      6.29      6.12 
+          TO |    21.61     78.83     89.04     88.36     61.51     74.75 
+     Inc_Own |    82.64    102.87    111.34    110.87     92.48    100.32 
+         NET |   -17.36      2.87     11.34     10.87     -7.52      0.32 
+         NPT |     0.00      5.00      8.00      7.00      2.00      4.00 
+--------------------------------------------------------------------------
+
+---------------------------------------------------------------
+             |    r_IND      r_OG     r_TEC     r_UTI      FROM 
+-------------+-------------------------------------------------
+     r_Brent |     2.52     19.92      2.30      2.51     38.97 
+        r_BM |    14.86      6.40      9.23      7.13     75.97 
+        r_CG |    14.02      3.42     11.13      6.12     77.70 
+        r_CS |    13.83      4.19     12.79      3.71     77.48 
+       r_FIN |    10.59      7.06     11.07      4.42     69.03 
+       r_HTH |    12.37      3.61     11.94      3.66     74.43 
+       r_IND |    20.05      5.35     12.20      5.48     79.95 
+        r_OG |     9.36     34.16      6.42      4.66     65.84 
+       r_TEC |    13.92      4.02     23.27      3.58     76.73 
+       r_UTI |     9.79      5.13      6.05     37.24     62.76 
+          TO |   101.25     59.10     83.13     41.27    698.87 
+     Inc_Own |   121.30     93.26    106.39     78.51           
+         NET |    21.30     -6.74      6.39    -21.49     69.89 
+         NPT |     9.00      3.00      6.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  69.89    corrected TCI =  77.65
+.     cngraph tci, nodraw
+.     cngraph net, nodraw
+.     cngraph npdc, select(r_Brent) nodraw
+.     cnnetwork, nodraw
+.     cnnetwork, method(pci) threshold(0.2) nodraw
+.     use ../data/cn_gg2018, clear
+(Gabauer and Gupta (2018): economic uncertainty spillovers)
+.     tsset month
+
+Time variable: month, 325 to 695
+        Delta: 1 unit
+.     quietly ds t date month, not
+.     connectedness `r(varlist)', model(tvpvar) window(200) datevar(date) `opt'
+
+Connectedness approach                          Number of variables =        8
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =      371
+Sample: 01feb1987 to 01dec2017                  Periods measured    =      371
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cn_test (first period 01feb1987)
+
+TCI =  27.27    corrected TCI =  31.16
+.     assert "`e(first)'" == "01feb1987"
+.     estat group, type(internal) groups(`G2') frame(cn_grp) replace
+
+Internal connectedness                          Units in table      =        8
+Group US: US_FPU US_MPU US_TPU US_CPU
+Group JP: JP_FPU JP_MPU JP_TPU JP_CPU
+Results frame: cn_grp
+
+
+--------------------------------------------------------------------------
+             |   US_FPU    US_MPU    US_TPU    US_CPU    JP_FPU    JP_MPU 
+-------------+------------------------------------------------------------
+      US_FPU |    61.87     25.27      0.92      2.76      0.00      0.00 
+      US_MPU |    24.76     61.33      1.34      5.69      0.00      0.00 
+      US_TPU |     1.23      2.50     90.64      0.82      0.00      0.00 
+      US_CPU |     1.87      7.50      0.29     76.30      0.00      0.00 
+      JP_FPU |     0.00      0.00      0.00      0.00     66.15     18.48 
+      JP_MPU |     0.00      0.00      0.00      0.00     18.80     63.93 
+      JP_TPU |     0.00      0.00      0.00      0.00      4.54      2.32 
+      JP_CPU |     0.00      0.00      0.00      0.00      3.90      8.57 
+          TO |    27.86     35.26      2.55      9.27     27.25     29.38 
+     Inc_Own |    89.72     96.60     93.19     85.57     93.39     93.31 
+         NET |    -1.09      3.48     -1.99     -0.39      1.15     -0.72 
+         NPT |     1.00      3.00      0.00      2.00      2.00      1.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------
+             |   JP_TPU    JP_CPU      FROM 
+-------------+-----------------------------
+      US_FPU |     0.00      0.00     28.95 
+      US_MPU |     0.00      0.00     31.79 
+      US_TPU |     0.00      0.00      4.54 
+      US_CPU |     0.00      0.00      9.66 
+      JP_FPU |     4.55      3.06     26.10 
+      JP_MPU |     2.82      8.48     30.10 
+      JP_TPU |    84.17      0.71      7.57 
+      JP_CPU |     0.54     77.48     13.02 
+          TO |     7.91     12.25    151.72 
+     Inc_Own |    92.08     89.72           
+         NET |     0.34     -0.77     18.97 
+         NPT |     2.00      1.00           
+-------------------------------------------
+TCI =  18.97    corrected TCI =  21.67
+Group TCI, US =   9.37    corrected =  10.71
+Group TCI, JP =   9.60    corrected =  10.97
+.     assert rowsof(r(gtci)) == 1 & colsof(r(gtci)) == 4
+.     cngraph gtci, frame(cn_grp) nodraw
+.     cngraph net, frame(cn_grp) nodraw
+.     cnnetwork, frame(cn_grp) nodraw
+.     estat group, type(aggregated) groups(`G2') frame(cn_grp) replace notable
+
+Aggregated connectedness                        Units in table      =        2
+Group US: US_FPU US_MPU US_TPU US_CPU
+Group JP: JP_FPU JP_MPU JP_TPU JP_CPU
+Results frame: cn_grp
+
+TCI =   8.30    corrected TCI =  16.61
+TCI_ext (ConnectednessApproach) =   8.30    corrected =   9.49
+.     cngraph tciext, frame(cn_grp) nodraw
+.     cnnetwork, at(tm(2008m9)) nodraw
+. }
+
+. if _rc {
+.     global cn_fails = $cn_fails + 1
+.     di as err "  FAIL: new postestimation features (r(" _rc "))"
+. }
+
+. else di as txt "  estat group, cnnetwork, cngraph overlays and dates: pass"
+  estat group, cnnetwork, cngraph overlays and dates: pass
+
+. 
+. di _n as txt "{hline 78}" _n "8. Error handling" _n "{hline 78}"
+
+------------------------------------------------------------------------------
+8. Error handling
+------------------------------------------------------------------------------
+
+. use ../data/cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. cn_expect 198 connectedness SP500 R_10Y, model(qvar) `opt'
+model(qvar) is planned for a later release of connectedness
+  expected error r(198): pass
+
+. cn_expect 198 connectedness SP500 R_10Y, prior(minnesota) `opt'
+option prior() is allowed only with model(tvpvar)
+  expected error r(198): pass
+
+. cn_expect 198 connectedness SP500 R_10Y, model(tvpvar) kappa1(1) `opt'
+kappa1() and kappa2() must lie strictly between 0 and 1
+  expected error r(198): pass
+
+. cn_expect 184 connectedness SP500 R_10Y, orthogonalized generalized `opt'
+options orthogonalized and generalized may not be combined
+  expected error r(184): pass
+
+. cn_expect 2001 connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) window(20) `op
+> t'
+too few observations per VAR estimation: 12 observations for 17 coefficients per
+>  equation
+  expected error r(2001): pass
+
+. cn_expect 498 connectedness SP500 R_10Y in 1/100 if mod(t, 7) != 0, `opt'
+the estimation sample must be contiguous in time;
+gaps or missing values were found within the sample
+  expected error r(498): pass
+
+. cn_expect 110 connectedness SP500 R_10Y, frame(cn_test)
+frame cn_test already exists; specify replace or another frame()
+  expected error r(110): pass
+
+. cn_expect 102 connectedness SP500, `opt'
+too few variables specified
+  expected error r(102): pass
+
+. quietly connectedness SP500 R_10Y DJUBSCOM USDX, `opt'
+
+. cn_expect 198 estat group, type(internal) groups("SP500 R_10Y DJUBSCOM USDX") 
+> frame(cn_grp) replace
+type(internal) needs at least two groups, each in double quotes
+  expected error r(198): pass
+
+. cn_expect 198 estat group, type(internal) groups("SP500 R_10Y" "R_10Y USDX") f
+> rame(cn_grp) replace
+R_10Y appears in more than one group
+  expected error r(198): pass
+
+. cn_expect 198 estat group, type(internal) groups("SP500 NOTAVAR" "USDX") frame
+> (cn_grp) replace
+NOTAVAR is not one of the variables: SP500 R_10Y DJUBSCOM USDX
+  expected error r(198): pass
+
+. cn_expect 198 estat group, type(bogus) groups("SP500" "USDX") frame(cn_grp) re
+> place
+type() must be one of: aggregated conditional inclusive exclusive internal exter
+> nal
+  expected error r(198): pass
+
+. quietly connectedness SP500 R_10Y DJUBSCOM USDX, nofevd `opt'
+
+. cn_expect 198 estat group, type(external) groups("SP500 R_10Y" "USDX") frame(c
+> n_grp) replace
+estat group needs the decomposition for every period;
+rerun connectedness without the nofevd option
+  expected error r(198): pass
+
+. cn_expect 198 connectedness, part(positive)
+part() requires results estimated with the asymmetric option
+  expected error r(198): pass
+
+. 
+. di _n as txt "{hline 78}"
+
+------------------------------------------------------------------------------
+
+. quietly timer list
+
+. di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as t
+> xt " s"
+Timing: rolling VAR, k = 19, 632 windows:    0.4 s
+
+. di as txt "Timing: TVP-VAR, k = 11, T = 3,915:        " as res %6.1f r(t2) as 
+> txt " s"
+Timing: TVP-VAR, k = 11, T = 3,915:           1.8 s
+
+. di as txt "Timing: TVP-VAR, k = 18, T = 5,558:        " as res %6.1f r(t3) as 
+> txt " s"
+Timing: TVP-VAR, k = 18, T = 5,558:           7.3 s
+
+. di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fai
+> ls
+Tests run: 64   failures: 0
+
+. assert $cn_fails == 0
+
+. di as txt "ALL TESTS PASSED"
+ALL TESTS PASSED
+
+. 
+end of do-file
+
+. local rc = _rc
+
+. log close cert
+      name:  cert
+       log:  <package folder>\test\logs/cert_connectedness.log
+  log type:  text
+ closed on:  18 Oct 2026, 14:42:34
+--------------------------------------------------------------------------------

@@ -1,0 +1,14 @@
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+ConnectednessApproach version: 1.0.4 
+dy2009_orth_static     k=19 periods=    1 TCI=35.5282
+dy2009_orth_roll200    k=19 periods=  632 TCI=50.3309
+dy2012_gen_static      k= 4 periods=    1 TCI=12.5921
+dy2012_gen_roll200     k= 4 periods= 2576 TCI=16.5193
+acg2020_tvp_bayes      k= 4 periods=  521 TCI=52.0637
+acg2020_tvp_minn       k= 4 periods=  521 TCI=53.0135
+acg2020_tvp_unin       k= 4 periods=  521 TCI=53.0653
+acg2020_tvp_lag2       k= 4 periods=  521 TCI=54.6378
+acg2020_var_roll100    k= 4 periods=  423 TCI=53.4286
+gg2018_tvp_bayes       k= 8 periods=  371 TCI=27.2679
+cg2021_tvp_corr        k=11 periods= 3915 TCI=77.7237

@@ -1,0 +1,27 @@
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+ConnectednessApproach version: 1.0.4 
+dy2009_orth_static     k=19 periods=    1 TCI=35.5282
+dy2009_orth_roll200    k=19 periods=  632 TCI=50.3309
+dy2012_gen_static      k= 4 periods=    1 TCI=12.5921
+dy2012_gen_roll200     k= 4 periods= 2576 TCI=16.5193
+acg2020_tvp_bayes      k= 4 periods=  521 TCI=52.0637
+acg2020_tvp_minn       k= 4 periods=  521 TCI=53.0135
+acg2020_tvp_unin       k= 4 periods=  521 TCI=53.0653
+acg2020_tvp_lag2       k= 4 periods=  521 TCI=54.6378
+acg2020_var_roll100    k= 4 periods=  423 TCI=53.4286
+gg2018_tvp_bayes       k= 8 periods=  371 TCI=27.2679
+cg2021_tvp_corr        k=11 periods= 3915 TCI=77.7237
+cgs2022_tvp_corr       k=18 periods= 5558 TCI=85.4963
+cegg2022_tvp_minn      k=11 periods= 3883 TCI=36.5740
+gg2018_internal        n= 8 mean TCI=18.9653
+gg2018_external        n= 8 mean TCI=8.3026
+cgs2022_conditional    n= 6 mean TCI=53.6410
+cgs2022_aggregated     n= 6 mean TCI=66.2459
+cegg2022_internal      n=11 mean TCI=10.8789
+cegg2022_external      n=11 mean TCI=25.6951
+cegg2022_inclusive     n=11 mean TCI=16.0937
+cegg2022_exclusive     n=11 mean TCI=20.4804
+aaacgo2022_asym_all    k=10 periods= 2114 TCI=72.6895
+aaacgo2022_asym_pos    k=10 periods= 2114 TCI=69.8866
+aaacgo2022_asym_neg    k=10 periods= 2114 TCI=74.4105

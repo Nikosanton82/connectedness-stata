@@ -1,0 +1,7 @@
+test/logs/
+replication/logs/
+*.smcl
+*.gph
+__pycache__/
+.DS_Store
+HOW-TO-PUBLISH.txt

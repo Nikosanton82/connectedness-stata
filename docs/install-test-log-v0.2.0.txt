@@ -1,0 +1,1472 @@
+--------------------------------------------------------------------------------
+      name:  inst
+       log:  <package folder>\test\logs/install_test.log
+  log type:  text
+ opened on:  18 Oct 2026, 13:31:54
+
+. quietly cd ..
+
+. local root "`c(pwd)'"
+
+. local tmp  "`c(tmpdir)'cn_install_test"
+
+. capture mkdir "`tmp'"
+
+. capture mkdir "`tmp'/data"
+
+. net set ado "`tmp'"
+
+. net install connectedness, from("`root'") replace
+checking connectedness consistency and verifying not already installed...
+all files already exist and are up to date.
+
+. net set ado PLUS
+
+. adopath ++ "`tmp'"
+  [1]              "C:\Users\<user>\AppData\Local\Temp/cn_install_test"
+  [2]              "../ado"
+  [3]  (BASE)      "C:\Program Files\Stata18\ado\base/"
+  [4]  (SITE)      "C:\Program Files\Stata18\ado\site/"
+  [5]              "."
+  [6]  (PERSONAL)  "C:\Users\<user>\ado\personal/"
+  [7]  (PLUS)      "C:\Users\<user>\ado\plus/"
+  [8]  (OLDPLACE)  "c:\ado/"
+
+. which connectedness
+C:\Users\<user>\AppData\Local\Temp/cn_install_test\c\connectedness.ado
+*! version 0.2.0  18oct2026
+*! connectedness: VAR and TVP-VAR connectedness measures
+*! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3
+> )
+*! Author: Nikolaos Antonakakis.  Licence: GPL-3
+
+. which cnnetwork
+C:\Users\<user>\AppData\Local\Temp/cn_install_test\c\cnnetwork.ado
+*! version 0.2.0  18oct2026
+*! cnnetwork: network plot of pairwise connectedness after -connectedness-
+
+. quietly cd "`tmp'/data"
+
+. net get connectedness, from("`root'") replace
+checking connectedness consistency and verifying not already installed...
+
+copying into current directory...
+      copying  cn_aaacgo2022.dta
+      copying  cn_acg2020.dta
+      copying  cn_bcg2022.dta
+      copying  cn_bgu2021.dta
+      copying  cn_cegg2022.dta
+      copying  cn_cg2021.dta
+      copying  cn_cgg2022.dta
+      copying  cn_cgp2024.dta
+      copying  cn_cgs2021.dta
+      copying  cn_cgs2022.dta
+      copying  cn_dy2009.dta
+      copying  cn_dy2012.dta
+      copying  cn_g2020.dta
+      copying  cn_gcat2022.dta
+      copying  cn_gg2018.dta
+      copying  cn_gghm2022.dta
+      copying  cn_jcggh2022.dta
+      copying  cn_lw2021.dta
+ancillary files successfully copied.
+
+. dir cn_*.dta
+ 198.1k  10/18/26 13:31  cn_aaacgo2022.dta 
+  29.4k  10/18/26 13:31  cn_acg2020.dta    
+  74.3k  10/18/26 13:31  cn_bcg2022.dta    
+ 430.7k  10/18/26 13:31  cn_bgu2021.dta    
+ 387.9k  10/18/26 13:31  cn_cegg2022.dta   
+ 391.0k  10/18/26 13:31  cn_cg2021.dta     
+ 381.0k  10/18/26 13:31  cn_cgg2022.dta    
+ 139.8k  10/18/26 13:31  cn_cgp2024.dta    
+ 171.9k  10/18/26 13:31  cn_cgs2021.dta    
+ 859.8k  10/18/26 13:31  cn_cgs2022.dta    
+ 146.5k  10/18/26 13:31  cn_dy2009.dta     
+ 123.4k  10/18/26 13:31  cn_dy2012.dta     
+ 184.8k  10/18/26 13:31  cn_g2020.dta      
+ 136.8k  10/18/26 13:31  cn_gcat2022.dta   
+  36.5k  10/18/26 13:31  cn_gg2018.dta     
+ 252.6k  10/18/26 13:31  cn_gghm2022.dta   
+ 148.7k  10/18/26 13:31  cn_jcggh2022.dta  
+ 507.1k  10/18/26 13:31  cn_lw2021.dta     
+
+. set graphics off
+
+. local rc 0
+
+. foreach f in 2009dy 2012dy 2018gg 2020acg 2021cg 2022adekoya 2022scg 2023cegg 
+> {
+  2.     display as text _n "{hline 78}" _n "Replication `f'" _n "{hline 78}"
+  3.     capture noisily do "`root'/replication/cn_rep_`f'.do"
+  4.     if _rc {
+  5.         local rc = _rc
+  6.         display as error "replication `f' failed with r(`rc')"
+  7.     }
+  8.     else display as text "replication `f': completed"
+  9. }
+
+------------------------------------------------------------------------------
+Replication 2009dy
+------------------------------------------------------------------------------
+
+. * Replication: Diebold and Yilmaz (2009), orthogonalized VAR connectedness
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2009DieboldYilm
+> az
+. version 16.1
+
+. use cn_dy2009, clear
+(Diebold and Yilmaz (2009): global equity markets)
+
+. tsset t
+
+Time variable: t, 1 to 829
+        Delta: 1 unit
+
+. quietly ds t date, not
+
+. local v `r(varlist)'
+
+. * Full-sample table (nlag = 2, nfore = 10, Cholesky decomposition)
+. connectedness `v', lags(2) horizon(10) orthogonalized frame(dy2009) replace
+
+Connectedness approach                          Number of variables =       19
+Model:  VAR(2), static                          Forecast horizon    =       10
+FEVD:   orthogonalized                          Observations used   =      829
+Sample: 1 to 829                                Periods measured    =        1
+Results frame: dy2009 (first period 829)
+
+
+--------------------------------------------------------------------------
+             |       US        UK       FRA       GER       HKG       JPN 
+-------------+------------------------------------------------------------
+          US |    93.62      1.62      1.50      0.04      0.28      0.22 
+          UK |    40.31     55.75      0.65      0.39      0.15      0.53 
+         FRA |    38.33     21.72     37.21      0.06      0.03      0.17 
+         GER |    40.82     15.86     12.99     27.58      0.08      0.06 
+         HKG |    15.28      8.72      1.67      1.38     69.89      0.26 
+         JPN |    12.13      3.05      1.80      0.88      2.28     77.69 
+         AUS |    23.19      5.97      1.30      0.23      6.35      2.34 
+         IDN |     6.03      1.58      1.21      0.73      6.38      1.64 
+         KOR |     8.26      2.58      1.31      0.68      5.65      3.73 
+         MYS |     4.05      2.23      0.58      1.26     10.50      1.50 
+         PHL |    11.14      1.64      0.26      0.21      8.06      0.40 
+         SGP |    16.79      4.81      0.65      0.88     18.48      1.34 
+         TAI |     6.40      1.28      1.17      1.80      5.33      2.82 
+         THA |     6.30      2.45      0.97      0.69      7.80      0.19 
+         ARG |    11.86      2.15      1.57      0.09      1.31      0.82 
+         BRA |    14.06      1.30      1.02      0.66      1.32      1.40 
+         CHL |    11.81      1.09      1.03      0.03      3.19      0.60 
+         MEX |    22.18      3.54      1.19      0.44      2.99      0.26 
+         TUR |     2.99      2.46      0.17      0.74      0.57      0.90 
+          TO |   291.91     84.07     31.03     11.18     80.75     19.18 
+     Inc_Own |   385.53    139.81     68.24     38.76    150.64     96.86 
+         NET |   285.53     39.81    -31.76    -61.24     50.64     -3.14 
+         NPT |    18.00     17.00     15.00     13.00     14.00     13.00 
+--------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+             |      AUS       IDN       KOR       MYS       PHL       SGP 
+-------------+------------------------------------------------------------
+          US |     0.11      0.09      0.15      0.29      0.21      0.21 
+          UK |     0.06      0.18      0.15      0.32      0.17      0.04 
+         FRA |     0.30      0.34      0.30      0.18      0.24      0.06 
+         GER |     0.34      0.42      0.56      0.12      0.31      0.29 
+         HKG |     0.02      0.09      0.02      0.26      0.08      0.02 
+         JPN |     0.17      0.30      0.28      0.05      0.19      0.34 
+         AUS |    56.85      0.06      0.44      0.15      0.17      0.16 
+         IDN |     0.44     76.99      0.74      0.45      0.10      0.93 
+         KOR |     0.97      1.23     72.76      0.03      0.05      0.11 
+         MYS |     0.42      6.59      0.53     69.20      0.13      0.13 
+         PHL |     0.92      7.15      0.13      2.92     62.93      0.30 
+         SGP |     0.37      3.23      1.55      3.61      1.68     43.07 
+         TAI |     0.40      0.43      2.03      1.04      1.00      0.91 
+         THA |     0.79      7.61      4.58      4.02      2.33      2.22 
+         ARG |     1.33      0.41      0.37      0.62      0.43      0.63 
+         BRA |     1.60      0.55      0.53      0.69      1.02      0.76 
+         CHL |     1.39      2.34      0.33      0.31      0.08      0.91 
+         MEX |     1.24      0.21      0.32      0.88      1.04      0.08 
+         TUR |     0.64      0.13      0.63      0.28      0.63      0.06 
+          TO |    11.50     31.36     13.64     16.22      9.87      8.16 
+     Inc_Own |    68.35    108.35     86.40     85.42     72.80     51.23 
+         NET |   -31.65      8.35    -13.60    -14.58    -27.20    -48.77 
+         NPT |    11.00      9.00      9.00      7.00      8.00      4.00 
+--------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+             |      TAI       THA       ARG       BRA       CHL       MEX 
+-------------+------------------------------------------------------------
+          US |     0.34      0.25      0.09      0.12      0.05      0.54 
+          UK |     0.06      0.14      0.06      0.10      0.02      0.37 
+         FRA |     0.12      0.25      0.12      0.06      0.14      0.08 
+         GER |     0.05      0.17      0.04      0.10      0.03      0.07 
+         HKG |     0.19      0.95      0.30      0.05      0.14      0.32 
+         JPN |     0.35      0.09      0.11      0.03      0.04      0.09 
+         AUS |     0.45      0.48      0.12      0.33      0.06      0.63 
+         IDN |     0.24      1.01      0.66      0.08      0.34      0.10 
+         KOR |     0.09      1.30      0.19      0.22      0.06      0.08 
+         MYS |     0.24      1.07      0.10      0.59      0.41      0.17 
+         PHL |     0.42      1.53      1.55      0.05      0.05      0.12 
+         SGP |     0.34      1.06      0.84      0.47      0.07      0.32 
+         TAI |    73.57      0.37      0.76      0.29      0.10      0.28 
+         THA |     0.30     58.24      0.52      0.20      0.08      0.44 
+         ARG |     1.05      0.24     75.33      0.06      0.09      1.38 
+         BRA |     0.12      0.70      7.14     65.82      0.08      0.59 
+         CHL |     0.34      0.81      2.89      3.98     65.78      2.70 
+         MEX |     0.33      0.50      5.44      1.59      0.26     56.92 
+         TUR |     0.88      0.84      0.48      1.05      0.64      0.15 
+          TO |     5.88     11.76     21.41      9.39      2.65      8.44 
+     Inc_Own |    79.46     70.00     96.73     75.21     68.42     65.36 
+         NET |   -20.54    -30.00     -3.27    -24.79    -31.58    -34.64 
+         NPT |     5.00      5.00      8.00      4.00      2.00      2.00 
+--------------------------------------------------------------------------
+
+---------------------------------
+             |      TUR      FROM 
+-------------+-------------------
+          US |     0.28      6.38 
+          UK |     0.55     44.25 
+         FRA |     0.27     62.79 
+         GER |     0.11     72.42 
+         HKG |     0.38     30.11 
+         JPN |     0.14     22.31 
+         AUS |     0.71     43.15 
+         IDN |     0.35     23.01 
+         KOR |     0.69     27.24 
+         MYS |     0.31     30.80 
+         PHL |     0.21     37.07 
+         SGP |     0.43     56.93 
+         TAI |     0.03     26.43 
+         THA |     0.28     41.76 
+         ARG |     0.27     24.67 
+         BRA |     0.65     34.18 
+         CHL |     0.42     34.22 
+         MEX |     0.58     43.08 
+         TUR |    85.76     14.24 
+          TO |     6.66    675.03 
+     Inc_Own |    92.43           
+         NET |    -7.57     35.53 
+         NPT |     7.00           
+---------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  35.53    corrected TCI =  37.50
+
+. * Rolling windows of 200 weeks
+. connectedness `v', lags(2) horizon(10) orthogonalized window(200) datevar(date
+> ) ///
+>     frame(dy2009) replace notable
+
+. cngraph tci, yscale(range(40 60)) ylabel(40(5)60)
+
+. 
+end of do-file
+replication 2009dy: completed
+
+------------------------------------------------------------------------------
+Replication 2012dy
+------------------------------------------------------------------------------
+
+. * Replication: Diebold and Yilmaz (2012), generalized VAR connectedness
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2012DieboldYilm
+> az
+. version 16.1
+
+. use cn_dy2012, clear
+(Diebold and Yilmaz (2012): volatility spillovers)
+
+. tsset t
+
+Time variable: t, 1 to 2771
+        Delta: 1 unit
+
+. * Full-sample table (nlag = 4, nfore = 10)
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) frame(dy2012) rep
+> lace
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), static                          Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 1 to 2771                               Periods measured    =        1
+Results frame: dy2012 (first period 2771)
+
+
+---------------------------------------------------------------
+             |    SP500     R_10Y  DJUBSCOM      USDX      FROM 
+-------------+-------------------------------------------------
+       SP500 |    88.76      7.29      0.35      3.61     11.24 
+       R_10Y |    10.21     81.45      2.73      5.61     18.55 
+    DJUBSCOM |     0.47      3.70     93.69      2.14      6.31 
+        USDX |     5.69      7.03      1.55     85.73     14.27 
+          TO |    16.37     18.01      4.62     11.36     50.37 
+     Inc_Own |   105.13     99.46     98.31     97.10           
+         NET |     5.13     -0.54     -1.69     -2.90     12.59 
+         NPT |     3.00      2.00      0.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  12.59    corrected TCI =  16.79
+
+. * Rolling windows of 200 days
+. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) window(200) ///
+>     datevar(date) frame(dy2012) replace
+
+Connectedness approach                          Number of variables =        4
+Model:  VAR(4), rolling window                  Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2771
+Sample: 25jan1999 to 29jan2010                  Periods measured    =     2576
+Window: 200 observations
+Results frame: dy2012 (first period 01nov1999)
+
+
+---------------------------------------------------------------
+             |    SP500     R_10Y  DJUBSCOM      USDX      FROM 
+-------------+-------------------------------------------------
+       SP500 |    83.03      7.41      4.05      5.51     16.97 
+       R_10Y |     9.05     80.55      4.00      6.40     19.45 
+    DJUBSCOM |     4.42      3.92     87.79      3.86     12.21 
+        USDX |     6.62      7.56      3.28     82.54     17.46 
+          TO |    20.09     18.89     11.33     15.77     66.08 
+     Inc_Own |   103.12     99.44     99.12     98.31           
+         NET |     3.12     -0.56     -0.88     -1.69     16.52 
+         NPT |     3.00      1.00      1.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  16.52    corrected TCI =  22.03
+
+. cngraph tci, yscale(range(5 35))
+
+. cngraph to
+
+. cngraph from
+
+. cngraph net
+
+. cngraph npdc
+
+. cngraph pci
+
+. 
+end of do-file
+replication 2012dy: completed
+
+------------------------------------------------------------------------------
+Replication 2018gg
+------------------------------------------------------------------------------
+
+. * Replication: Gabauer and Gupta (2018), TVP-VAR connectedness decomposition
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2018GabauerGupt
+> a
+. version 16.1
+
+. use cn_gg2018, clear
+(Gabauer and Gupta (2018): economic uncertainty spillovers)
+
+. tsset month
+
+Time variable: month, 325 to 695
+        Delta: 1 unit
+
+. connectedness US_FPU-JP_CPU, model(tvpvar) lags(1) horizon(10) window(200) ///
+>     kappa1(0.99) kappa2(0.99) prior(bayes) datevar(date) frame(gg2018) replace
+
+Connectedness approach                          Number of variables =        8
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =      371
+Sample: 01feb1987 to 01dec2017                  Periods measured    =      371
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: gg2018 (first period 01feb1987)
+
+
+--------------------------------------------------------------------------
+             |   US_FPU    US_MPU    US_TPU    US_CPU    JP_FPU    JP_MPU 
+-------------+------------------------------------------------------------
+      US_FPU |    61.87     25.27      0.92      2.76      2.89      1.92 
+      US_MPU |    24.76     61.33      1.34      5.69      1.53      2.71 
+      US_TPU |     1.23      2.50     90.64      0.82      0.50      0.79 
+      US_CPU |     1.87      7.50      0.29     76.30      5.52      2.58 
+      JP_FPU |     2.59      1.63      1.06      2.48     66.15     18.48 
+      JP_MPU |     1.68      2.77      0.14      1.38     18.80     63.93 
+      JP_TPU |     1.67      1.27      3.97      1.36      4.54      2.32 
+      JP_CPU |     1.96      1.80      0.40      5.35      3.90      8.57 
+          TO |    35.75     42.72      8.11     19.85     37.68     37.39 
+     Inc_Own |    97.62    104.06     98.75     96.15    103.83    101.32 
+         NET |    -2.38      4.06     -1.25     -3.85      3.83      1.32 
+         NPT |     2.00      7.00      2.00      4.00      4.00      4.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------
+             |   JP_TPU    JP_CPU      FROM 
+-------------+-----------------------------
+      US_FPU |     1.13      3.23     38.13 
+      US_MPU |     1.15      1.49     38.67 
+      US_TPU |     2.05      1.48      9.36 
+      US_CPU |     1.08      4.86     23.70 
+      JP_FPU |     4.55      3.06     33.85 
+      JP_MPU |     2.82      8.48     36.07 
+      JP_TPU |    84.17      0.71     15.83 
+      JP_CPU |     0.54     77.48     22.52 
+          TO |    13.32     23.31    218.14 
+     Inc_Own |    97.49    100.79           
+         NET |    -2.51      0.79     27.27 
+         NPT |     2.00      3.00           
+-------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  27.27    corrected TCI =  31.16
+
+. local G `""US: US_FPU US_MPU US_TPU US_CPU" "JP: JP_FPU JP_MPU JP_TPU JP_CPU""
+> '
+
+. estat group, type(internal) groups(`G') frame(gg2018_int) replace
+
+Internal connectedness                          Units in table      =        8
+Group US: US_FPU US_MPU US_TPU US_CPU
+Group JP: JP_FPU JP_MPU JP_TPU JP_CPU
+Results frame: gg2018_int
+
+
+--------------------------------------------------------------------------
+             |   US_FPU    US_MPU    US_TPU    US_CPU    JP_FPU    JP_MPU 
+-------------+------------------------------------------------------------
+      US_FPU |    61.87     25.27      0.92      2.76      0.00      0.00 
+      US_MPU |    24.76     61.33      1.34      5.69      0.00      0.00 
+      US_TPU |     1.23      2.50     90.64      0.82      0.00      0.00 
+      US_CPU |     1.87      7.50      0.29     76.30      0.00      0.00 
+      JP_FPU |     0.00      0.00      0.00      0.00     66.15     18.48 
+      JP_MPU |     0.00      0.00      0.00      0.00     18.80     63.93 
+      JP_TPU |     0.00      0.00      0.00      0.00      4.54      2.32 
+      JP_CPU |     0.00      0.00      0.00      0.00      3.90      8.57 
+          TO |    27.86     35.26      2.55      9.27     27.25     29.38 
+     Inc_Own |    89.72     96.60     93.19     85.57     93.39     93.31 
+         NET |    -1.09      3.48     -1.99     -0.39      1.15     -0.72 
+         NPT |     1.00      3.00      0.00      2.00      2.00      1.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------
+             |   JP_TPU    JP_CPU      FROM 
+-------------+-----------------------------
+      US_FPU |     0.00      0.00     28.95 
+      US_MPU |     0.00      0.00     31.79 
+      US_TPU |     0.00      0.00      4.54 
+      US_CPU |     0.00      0.00      9.66 
+      JP_FPU |     4.55      3.06     26.10 
+      JP_MPU |     2.82      8.48     30.10 
+      JP_TPU |    84.17      0.71      7.57 
+      JP_CPU |     0.54     77.48     13.02 
+          TO |     7.91     12.25    151.72 
+     Inc_Own |    92.08     89.72           
+         NET |     0.34     -0.77     18.97 
+         NPT |     2.00      1.00           
+-------------------------------------------
+TCI =  18.97    corrected TCI =  21.67
+Group TCI, US =   9.37    corrected =  10.71
+Group TCI, JP =   9.60    corrected =  10.97
+
+. cngraph gtci, frame(gg2018_int)
+
+. cngraph net, frame(gg2018_int)
+
+. cngraph npdc, frame(gg2018_int) select(US_FPU)
+
+. estat group, type(external) groups(`G') frame(gg2018_ext) replace
+
+External connectedness                          Units in table      =        8
+Group US: US_FPU US_MPU US_TPU US_CPU
+Group JP: JP_FPU JP_MPU JP_TPU JP_CPU
+Results frame: gg2018_ext
+
+
+--------------------------------------------------------------------------
+             |   US_FPU    US_MPU    US_TPU    US_CPU    JP_FPU    JP_MPU 
+-------------+------------------------------------------------------------
+      US_FPU |     0.00      0.00      0.00      0.00      2.89      1.92 
+      US_MPU |     0.00      0.00      0.00      0.00      1.53      2.71 
+      US_TPU |     0.00      0.00      0.00      0.00      0.50      0.79 
+      US_CPU |     0.00      0.00      0.00      0.00      5.52      2.58 
+      JP_FPU |     2.59      1.63      1.06      2.48      0.00      0.00 
+      JP_MPU |     1.68      2.77      0.14      1.38      0.00      0.00 
+      JP_TPU |     1.67      1.27      3.97      1.36      0.00      0.00 
+      JP_CPU |     1.96      1.80      0.40      5.35      0.00      0.00 
+          TO |     7.90      7.46      5.56     10.58     10.44      8.01 
+     Inc_Own |     7.90      7.46      5.56     10.58     10.44      8.01 
+         NET |    -1.29      0.58      0.74     -3.46      2.68      2.04 
+         NPT |     1.00      4.00      2.00      2.00      2.00      3.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------
+             |   JP_TPU    JP_CPU      FROM 
+-------------+-----------------------------
+      US_FPU |     1.13      3.23      9.18 
+      US_MPU |     1.15      1.49      6.88 
+      US_TPU |     2.05      1.48      4.82 
+      US_CPU |     1.08      4.86     14.04 
+      JP_FPU |     0.00      0.00      7.75 
+      JP_MPU |     0.00      0.00      5.97 
+      JP_TPU |     0.00      0.00      8.26 
+      JP_CPU |     0.00      0.00      9.51 
+          TO |     5.41     11.06     66.42 
+     Inc_Own |     5.41     11.06           
+         NET |    -2.85      1.56      8.30 
+         NPT |     0.00      2.00           
+-------------------------------------------
+TCI =   8.30    corrected TCI =   9.49
+Group TCI, US =   3.94    corrected =   4.50
+Group TCI, JP =   4.37    corrected =   4.99
+
+. cngraph gtci, frame(gg2018_ext)
+
+. 
+end of do-file
+replication 2018gg: completed
+
+------------------------------------------------------------------------------
+Replication 2020acg
+------------------------------------------------------------------------------
+
+. * Replication: Antonakakis, Chatziantoniou and Gabauer (2020), TVP-VAR connect
+> edness
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2020Antonakakis
+> ChatziantoniouGabauer
+. version 16.1
+
+. use cn_acg2020, clear
+(Antonakakis, Chatziantoniou and Gabauer (2020): TVP-VAR connectedness)
+
+. tsset month
+
+Time variable: month, 181 to 701
+        Delta: 1 unit
+
+. * Rolling-window VARs of 50, 100 and 200 months for comparison
+. foreach w in 50 100 200 {
+  2.     connectedness EUR GBP JPY CHF, lags(1) horizon(12) window(`w') ///
+>         frame(acg_roll`w') replace notable
+  3.     estimates store roll`w'
+  4. }
+
+. * TVP-VAR: kappa1 = 0.99, kappa2 = 0.96, Bayes prior on the first 200 months
+. connectedness EUR GBP JPY CHF, model(tvpvar) lags(1) horizon(12) window(200) /
+> //
+>     kappa1(0.99) kappa2(0.96) prior(bayes) frame(acg_tvp) replace
+
+Connectedness approach                          Number of variables =        4
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       12
+FEVD:   generalized                             Observations used   =      521
+Sample: 181 to 701                              Periods measured    =      521
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.96
+Results frame: acg_tvp (first period 181)
+
+
+---------------------------------------------------------------
+             |      EUR       GBP       JPY       CHF      FROM 
+-------------+-------------------------------------------------
+         EUR |    40.31     18.78      9.96     30.95     59.69 
+         GBP |    23.53     49.19      6.96     20.32     50.81 
+         JPY |    13.24      8.49     60.97     17.30     39.03 
+         CHF |    30.20     16.42     12.10     41.28     58.72 
+          TO |    66.96     43.69     29.02     68.58    208.25 
+     Inc_Own |   107.27     92.88     89.99    109.85           
+         NET |     7.27     -7.12    -10.01      9.85     52.06 
+         NPT |     2.00      1.00      0.00      3.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  52.06    corrected TCI =  69.42
+
+. cngraph tci, compare(roll50 roll100 roll200) yscale(range(20 80))
+
+. cngraph net, yscale(range(-20 20))
+
+. cngraph npdc, yscale(range(-20 20))
+
+. 
+end of do-file
+replication 2020acg: completed
+
+------------------------------------------------------------------------------
+Replication 2021cg
+------------------------------------------------------------------------------
+
+. * Replication: Chatziantoniou and Gabauer (2021), corrected TCI and pairwise c
+> onnectedness
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2021Chatzianton
+> iouGabauer
+. version 16.1
+
+. use cn_cg2021, clear
+(Chatziantoniou and Gabauer (2021): EMU risk synchronisation)
+
+. tsset t
+
+Time variable: t, 1 to 3915
+        Delta: 1 unit
+
+. connectedness Austria-Spain, model(tvpvar) lags(1) horizon(10) window(200) cor
+> rected ///
+>     datevar(date) frame(cg2021) replace
+
+Connectedness approach                          Number of variables =       11
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     3915
+Sample: 01sep2003 to 31aug2018                  Periods measured    =     3915
+Prior sample: 200                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cg2021 (first period 01sep2003)
+
+
+--------------------------------------------------------------------------
+             |  Austria   Belgium   Finland    France   Germany  Nether~s 
+-------------+------------------------------------------------------------
+     Austria |    16.50     11.31     11.51     10.60     13.05     11.94 
+     Belgium |    11.23     17.68      9.45      8.69     12.08     10.02 
+     Finland |    11.41      9.56     16.04     13.17     11.47     13.28 
+      France |    11.04      9.14     13.92     16.74     11.16     13.62 
+     Germany |    12.62     11.60     11.15     10.33     15.95     11.95 
+ Netherlands |    11.62      9.91     13.11     12.72     12.06     15.77 
+      Greece |     4.22      4.38      4.25      4.88      4.15      4.38 
+     Ireland |     6.59      7.97      7.12      6.63      7.33      6.89 
+       Italy |     6.15      8.86      6.09      5.70      7.12      6.27 
+    Portugal |     4.87      5.84      5.11      4.85      5.54      5.11 
+       Spain |     6.02      8.29      6.14      5.81      6.87      5.96 
+          TO |    85.78     86.87     87.86     83.38     90.83     89.42 
+     Inc_Own |   102.28    104.55    103.90    100.12    106.77    105.20 
+         NET |     2.28      4.55      3.90      0.12      6.77      5.20 
+         NPT |     6.00      8.00      7.00      5.00     10.00      9.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+             |   Greece   Ireland     Italy  Portugal     Spain      FROM 
+-------------+-----------------------------------------------------------
+     Austria |     3.71      6.11      5.56      4.33      5.38     83.50 
+     Belgium |     3.82      6.81      8.02      4.88      7.30     82.32 
+     Finland |     3.65      6.37      5.39      4.30      5.35     83.96 
+      France |     3.83      6.05      5.12      4.17      5.20     83.26 
+     Germany |     3.61      6.37      6.05      4.56      5.80     84.05 
+ Netherlands |     3.68      6.12      5.49      4.32      5.20     84.23 
+      Greece |    45.92      5.91      7.10      8.24      6.56     54.08 
+     Ireland |     5.48     25.36      9.12      8.38      9.14     74.64 
+       Italy |     5.39      8.36     22.13      8.98     14.98     77.87 
+    Portugal |     6.92      9.34     11.17     30.23     11.01     69.77 
+       Spain |     5.11      8.63     15.50      8.96     22.72     77.28 
+          TO |    45.19     70.07     78.51     61.12     75.93    854.96 
+     Inc_Own |    91.11     95.43    100.64     91.35     98.65           
+         NET |    -8.89     -4.57      0.64     -8.65     -1.35     85.50 
+         NPT |     0.00      2.00      4.00      1.00      3.00           
+-------------------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  77.72    corrected TCI =  85.50    (NET row reports the corrected TCI)
+
+. cngraph tci
+
+. cngraph net
+
+. cngraph pci, select(Germany)
+
+. 
+end of do-file
+replication 2021cg: completed
+
+------------------------------------------------------------------------------
+Replication 2022adekoya
+------------------------------------------------------------------------------
+
+. * Replication: Adekoya, Akinseye, Antonakakis, Chatziantoniou, Gabauer and Oli
+> yide (2022),
+. * asymmetric TVP-VAR connectedness of crude oil and Islamic sectoral stocks
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2022Adekoya
+. version 16.1
+
+. use cn_aaacgo2022, clear
+(Adekoya et al. (2022): crude oil and Islamic sectoral stocks)
+
+. tsset t
+
+Time variable: t, 1 to 2115
+        Delta: 1 unit
+
+. foreach v of varlist Brent-UTI {
+  2.     generate double r_`v' = 100*(`v' - L.`v')/L.`v'
+  3.     label variable r_`v' "`v' (percentage change)"
+  4. }
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+(1 missing value generated)
+
+. connectedness r_*, model(tvpvar) lags(1) horizon(10) window(200) prior(minneso
+> ta) ///
+>     gamma(0.1) asymmetric datevar(date) frame(aaacgo) replace
+
+Connectedness approach                          Number of variables =       10
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2114
+Sample: 26apr2013 to 02jul2021                  Periods measured    =     2114
+                                                kappa1, kappa2      = 0.99, 0.99
+Results frame: aaacgo (first period 26apr2013)
+Asymmetric connectedness: all changes shown; see connectedness, part()
+
+
+--------------------------------------------------------------------------
+             |  r_Brent      r_BM      r_CG      r_CS     r_FIN     r_HTH 
+-------------+------------------------------------------------------------
+     r_Brent |    56.65      4.76      2.04      2.00      2.49      1.75 
+        r_BM |     2.17     21.34     11.13     10.26      6.96      9.23 
+        r_CG |     0.81     10.58     20.28     13.10      8.66     11.43 
+        r_CS |     0.78      9.57     13.13     20.58      9.40     11.62 
+       r_FIN |     1.10      7.73     10.14     11.05     24.66     10.46 
+       r_HTH |     0.77      9.38     12.27     12.58      9.53     22.65 
+       r_IND |     1.27     12.50     12.51     12.71      8.97     10.74 
+        r_OG |    12.34      9.17      5.06      5.86      7.88      5.08 
+       r_TEC |     0.85      9.10     11.82     13.19     10.82     11.33 
+       r_UTI |     2.72     10.82     10.10      6.41      7.71      6.59 
+          TO |    22.81     83.60     88.22     87.17     72.42     78.24 
+     Inc_Own |    79.46    104.95    108.50    107.75     97.08    100.89 
+         NET |   -20.54      4.95      8.50      7.75     -2.92      0.89 
+         NPT |     0.00      5.00      8.00      7.00      3.00      4.00 
+--------------------------------------------------------------------------
+
+---------------------------------------------------------------
+             |    r_IND      r_OG     r_TEC     r_UTI      FROM 
+-------------+-------------------------------------------------
+     r_Brent |     3.57     20.40      2.14      4.21     43.35 
+        r_BM |    14.82      7.45      9.60      7.02     78.66 
+        r_CG |    13.98      3.80     11.47      5.90     79.72 
+        r_CS |    14.24      4.33     12.79      3.55     79.42 
+       r_FIN |    11.94      5.91     12.22      4.80     75.34 
+       r_HTH |    12.96      4.13     11.98      3.75     77.35 
+       r_IND |    18.10      5.99     12.08      5.11     81.90 
+        r_OG |     9.28     34.10      5.51      5.73     65.90 
+       r_TEC |    13.86      4.20     21.20      3.63     78.80 
+       r_UTI |     9.63      6.36      6.12     33.54     66.46 
+          TO |   104.27     62.56     83.90     43.70    726.90 
+     Inc_Own |   122.37     96.66    105.10     77.24           
+         NET |    22.37     -3.34      5.10    -22.76     72.69 
+         NPT |     9.00      2.00      6.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  72.69    corrected TCI =  80.77
+Positive changes: TCI =  69.89    Negative changes: TCI =  74.41
+
+. connectedness, part(positive)
+
+Connectedness approach                          Number of variables =       10
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2114
+Sample: 26apr2013 to 02jul2021                  Periods measured    =     2114
+                                                kappa1, kappa2      = 0.99, 0.99
+Results frame: aaacgo_pos (first period 26apr2013)
+Asymmetric connectedness: positive changes shown; see connectedness, part()
+
+
+--------------------------------------------------------------------------
+             |  r_Brent      r_BM      r_CG      r_CS     r_FIN     r_HTH 
+-------------+------------------------------------------------------------
+     r_Brent |    61.03      3.55      2.11      2.18      2.40      1.49 
+        r_BM |     1.81     24.03     12.04     10.26      5.51      8.73 
+        r_CG |     0.91     10.77     22.30     13.18      6.91     11.23 
+        r_CS |     0.95      9.11     13.27     22.52      8.37     11.26 
+       r_FIN |     1.63      6.28      8.45     10.29     30.97      9.25 
+       r_HTH |     0.86      8.76     12.52     12.65      8.08     25.57 
+       r_IND |     0.97     12.40     12.80     12.75      7.69     10.31 
+        r_OG |    11.47      8.96      5.86      7.06      6.73      5.30 
+       r_TEC |     1.07      8.49     11.61     13.44      9.54     11.07 
+       r_UTI |     1.94     10.50     10.39      6.55      6.29      6.12 
+          TO |    21.61     78.83     89.04     88.36     61.51     74.75 
+     Inc_Own |    82.64    102.87    111.34    110.87     92.48    100.32 
+         NET |   -17.36      2.87     11.34     10.87     -7.52      0.32 
+         NPT |     0.00      5.00      8.00      7.00      2.00      4.00 
+--------------------------------------------------------------------------
+
+---------------------------------------------------------------
+             |    r_IND      r_OG     r_TEC     r_UTI      FROM 
+-------------+-------------------------------------------------
+     r_Brent |     2.52     19.92      2.30      2.51     38.97 
+        r_BM |    14.86      6.40      9.23      7.13     75.97 
+        r_CG |    14.02      3.42     11.13      6.12     77.70 
+        r_CS |    13.83      4.19     12.79      3.71     77.48 
+       r_FIN |    10.59      7.06     11.07      4.42     69.03 
+       r_HTH |    12.37      3.61     11.94      3.66     74.43 
+       r_IND |    20.05      5.35     12.20      5.48     79.95 
+        r_OG |     9.36     34.16      6.42      4.66     65.84 
+       r_TEC |    13.92      4.02     23.27      3.58     76.73 
+       r_UTI |     9.79      5.13      6.05     37.24     62.76 
+          TO |   101.25     59.10     83.13     41.27    698.87 
+     Inc_Own |   121.30     93.26    106.39     78.51           
+         NET |    21.30     -6.74      6.39    -21.49     69.89 
+         NPT |     9.00      3.00      6.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  69.89    corrected TCI =  77.65
+
+. connectedness, part(negative)
+
+Connectedness approach                          Number of variables =       10
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     2114
+Sample: 26apr2013 to 02jul2021                  Periods measured    =     2114
+                                                kappa1, kappa2      = 0.99, 0.99
+Results frame: aaacgo_neg (first period 26apr2013)
+Asymmetric connectedness: negative changes shown; see connectedness, part()
+
+
+--------------------------------------------------------------------------
+             |  r_Brent      r_BM      r_CG      r_CS     r_FIN     r_HTH 
+-------------+------------------------------------------------------------
+     r_Brent |    48.45      5.74      3.49      3.65      4.92      2.95 
+        r_BM |     2.43     21.52     11.10      9.69      7.04      8.97 
+        r_CG |     1.33     10.66     20.20     12.63      8.35     11.30 
+        r_CS |     1.29      9.14     12.53     20.01      9.56     11.37 
+       r_FIN |     2.07      7.77      9.61     10.91     23.60      9.90 
+       r_HTH |     1.20      9.18     12.18     12.27      9.54     21.64 
+       r_IND |     1.82     12.24     12.08     12.51      9.00     10.54 
+        r_OG |     9.80     10.07      6.38      7.55      8.27      6.13 
+       r_TEC |     1.22      8.89     11.59     13.10     11.47     10.99 
+       r_UTI |     2.75     11.15     10.33      6.68      7.27      7.06 
+          TO |    23.92     84.84     89.28     88.99     75.41     79.23 
+     Inc_Own |    72.37    106.36    109.48    109.00     99.01    100.87 
+         NET |   -27.63      6.36      9.48      9.00     -0.99      0.87 
+         NPT |     0.00      5.00      7.00      8.00      3.00      4.00 
+--------------------------------------------------------------------------
+
+---------------------------------------------------------------
+             |    r_IND      r_OG     r_TEC     r_UTI      FROM 
+-------------+-------------------------------------------------
+     r_Brent |     5.46     17.89      3.13      4.32     51.55 
+        r_BM |    14.67      8.43      9.26      6.88     78.48 
+        r_CG |    13.71      5.25     11.02      5.55     79.80 
+        r_CS |    14.22      5.83     12.70      3.36     79.99 
+       r_FIN |    11.78      6.96     12.79      4.60     76.40 
+       r_HTH |    13.01      5.42     11.57      3.98     78.36 
+       r_IND |    17.88      7.49     11.78      4.67     82.12 
+        r_OG |    11.05     29.03      6.44      5.28     70.97 
+       r_TEC |    13.53      5.29     20.77      3.16     79.23 
+       r_UTI |     9.34      7.01      5.63     32.79     67.21 
+          TO |   106.77     69.56     84.31     41.80    744.11 
+     Inc_Own |   124.65     98.59    105.08     74.58           
+         NET |    24.65     -1.41      5.08    -25.42     74.41 
+         NPT |     9.00      2.00      6.00      1.00           
+---------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  74.41    corrected TCI =  82.68
+
+. cngraph tci, yscale(range(50 100))
+
+. cngraph net, yscale(range(-50 50))
+
+. cngraph npdc, select(r_Brent) yscale(range(-20 20))
+
+. cngraph pci, select(r_Brent)
+
+. 
+end of do-file
+replication 2022adekoya: completed
+
+------------------------------------------------------------------------------
+Replication 2022scg
+------------------------------------------------------------------------------
+
+. * Replication: Stenfors, Chatziantoniou and Gabauer (2022), conditional and ag
+> gregated
+. * connectedness across European yield curves
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2022StenforsCha
+> tziantoniouGabauer
+. version 16.1
+
+. use cn_cgs2022, clear
+(Stenfors, Chatziantoniou and Gabauer (2022): European yield curves)
+
+. tsset t
+
+Time variable: t, 1 to 5558
+        Delta: 1 unit
+
+. connectedness X2YCHF-X10YSEK, model(tvpvar) lags(1) horizon(10) window(250) co
+> rrected ///
+>     datevar(date) frame(cgs2022) replace
+
+Connectedness approach                          Number of variables =       18
+Model:  TVP-VAR(1), bayes prior                 Forecast horizon    =       10
+FEVD:   generalized                             Observations used   =     5558
+Sample: 09aug1999 to 04mar2021                  Periods measured    =     5558
+Prior sample: 250                               kappa1, kappa2      = 0.99, 0.99
+Results frame: cgs2022 (first period 09aug1999)
+
+
+--------------------------------------------------------------------------
+             |   X2YCHF    X5YCHF   X10YCHF    X2YDKK    X5YDKK   X10YDKK 
+-------------+------------------------------------------------------------
+      X2YCHF |    16.15     11.66      8.31      4.92      5.83      4.90 
+      X5YCHF |     9.65     13.09     10.82      4.14      6.03      5.65 
+     X10YCHF |     7.16     11.36     13.81      3.73      6.06      6.35 
+      X2YDKK |     4.67      4.68      4.08     15.97      9.87      7.57 
+      X5YDKK |     4.13      5.22      5.09      7.21     11.10      8.95 
+     X10YDKK |     3.58      5.05      5.46      5.78      9.29     11.53 
+      X2YEUR |     4.86      5.17      4.45      8.33      8.31      6.06 
+      X5YEUR |     4.10      5.29      5.10      5.74      8.68      7.82 
+     X10YEUR |     3.61      5.21      5.60      4.42      7.98      9.16 
+      X2YGBP |     3.95      4.38      3.91      3.89      5.03      4.76 
+      X5YGBP |     3.68      4.61      4.57      3.62      5.54      5.80 
+     X10YGBP |     3.52      4.76      5.04      3.49      5.92      6.68 
+      X2YNOK |     2.81      3.32      3.05      2.88      3.53      3.25 
+      X5YNOK |     2.86      3.92      3.88      3.21      4.57      4.63 
+     X10YNOK |     2.90      4.20      4.46      3.34      5.22      5.68 
+      X2YSEK |     3.88      4.18      3.73      4.35      5.13      4.36 
+      X5YSEK |     3.63      4.68      4.58      4.12      5.85      5.64 
+     X10YSEK |     3.35      4.80      5.07      3.49      5.79      6.43 
+          TO |    72.33     92.49     87.20     76.67    108.62    103.68 
+     Inc_Own |    88.48    105.58    101.01     92.64    119.72    115.20 
+         NET |   -11.52      5.58      1.01     -7.36     19.72     15.20 
+         NPT |     5.00     13.00      9.00      6.00     16.00     14.00 
+--------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+             |   X2YEUR    X5YEUR   X10YEUR    X2YGBP    X5YGBP   X10YGBP 
+-------------+------------------------------------------------------------
+      X2YCHF |     5.88      6.03      5.11      3.71      4.30      4.18 
+      X5YCHF |     5.13      6.37      6.00      3.35      4.41      4.63 
+     X10YCHF |     4.55      6.36      6.72      3.07      4.53      5.13 
+      X2YDKK |     9.55      7.88      5.68      3.29      3.76      3.74 
+      X5YDKK |     7.02      9.01      7.95      3.34      4.58      5.00 
+     X10YDKK |     5.35      8.40      9.47      3.24      4.92      5.82 
+      X2YEUR |    13.62     10.04      7.09      3.91      4.36      4.29 
+      X5YEUR |     8.13     10.80      9.27      3.57      4.91      5.41 
+     X10YEUR |     6.08      9.68     11.28      3.48      5.41      6.44 
+      X2YGBP |     5.06      5.54      5.21     17.51     13.29      9.53 
+      X5YGBP |     4.56      6.18      6.54     10.46     13.73     11.64 
+     X10YGBP |     4.38      6.65      7.64      7.39     11.48     13.52 
+      X2YNOK |     3.27      3.68      3.43      2.35      2.72      2.66 
+      X5YNOK |     3.52      4.74      4.75      2.56      3.49      3.67 
+     X10YNOK |     3.67      5.34      5.73      2.56      3.84      4.28 
+      X2YSEK |     4.94      5.31      4.41      3.07      3.61      3.52 
+      X5YSEK |     4.65      6.06      5.67      3.17      4.17      4.28 
+     X10YSEK |     4.08      6.04      6.55      2.96      4.34      4.87 
+          TO |    89.81    113.31    107.22     65.48     88.11     89.09 
+     Inc_Own |   103.43    124.11    118.49     82.98    101.84    102.61 
+         NET |     3.43     24.11     18.49    -17.02      1.84      2.61 
+         NPT |    12.00     17.00     15.00      2.00      7.00     11.00 
+--------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+             |   X2YNOK    X5YNOK   X10YNOK    X2YSEK    X5YSEK   X10YSEK 
+-------------+------------------------------------------------------------
+      X2YCHF |     1.95      2.72      2.75      3.36      4.29      3.95 
+      X5YCHF |     1.93      3.14      3.38      3.05      4.58      4.65 
+     X10YCHF |     1.82      3.20      3.71      2.80      4.59      5.05 
+      X2YDKK |     1.81      2.69      2.88      3.61      4.48      3.78 
+      X5YDKK |     1.75      3.10      3.51      3.30      4.91      4.84 
+     X10YDKK |     1.71      3.18      3.90      2.95      4.90      5.47 
+      X2YEUR |     1.85      2.71      2.84      3.61      4.54      3.96 
+      X5YEUR |     1.74      3.04      3.45      3.27      4.88      4.82 
+     X10YEUR |     1.72      3.19      3.81      2.81      4.74      5.37 
+      X2YGBP |     1.77      2.63      2.67      2.95      4.10      3.80 
+      X5YGBP |     1.64      2.87      3.17      2.75      4.26      4.39 
+     X10YGBP |     1.57      2.93      3.42      2.61      4.25      4.77 
+      X2YNOK |    23.37     16.06     10.42      4.09      4.67      4.44 
+      X5YNOK |    11.75     17.04     11.22      3.72      5.11      5.36 
+     X10YNOK |     7.16     10.74     15.70      3.64      5.46      6.09 
+      X2YSEK |     3.32      4.08      3.94     17.20     11.95      9.01 
+      X5YSEK |     2.80      4.22      4.51      8.85     12.76     10.38 
+     X10YSEK |     2.65      4.42      5.04      6.78     10.46     12.91 
+          TO |    48.95     74.92     74.62     64.16     92.17     90.12 
+     Inc_Own |    72.32     91.95     90.32     81.37    104.93    103.02 
+         NET |   -27.68     -8.05     -9.68    -18.63      4.93      3.02 
+         NPT |     0.00      3.00      4.00      1.00     10.00      8.00 
+--------------------------------------------------------------------------
+
+-----------------------
+             |     FROM 
+-------------+---------
+      X2YCHF |    83.85 
+      X5YCHF |    86.91 
+     X10YCHF |    86.19 
+      X2YDKK |    84.03 
+      X5YDKK |    88.90 
+     X10YDKK |    88.47 
+      X2YEUR |    86.38 
+      X5YEUR |    89.20 
+     X10YEUR |    88.72 
+      X2YGBP |    82.49 
+      X5YGBP |    86.27 
+     X10YGBP |    86.48 
+      X2YNOK |    76.63 
+      X5YNOK |    82.96 
+     X10YNOK |    84.30 
+      X2YSEK |    82.80 
+      X5YSEK |    87.24 
+     X10YSEK |    87.09 
+          TO |  1538.93 
+     Inc_Own |          
+         NET |    90.53 
+         NPT |          
+-----------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  85.50    corrected TCI =  90.53    (NET row reports the corrected TCI)
+
+. cngraph tci, yscale(range(70 100))
+
+. * Conditional connectedness: NOK curve, then 2-year rates across currencies
+. estat group, type(conditional) groups(X2YNOK X5YNOK X10YNOK) frame(cgs_nok) re
+> place
+
+Conditional connectedness                       Units in table      =        3
+Group: X2YNOK X5YNOK X10YNOK
+Results frame: cgs_nok
+
+
+-----------------------------------------------------
+             |   X2YNOK    X5YNOK   X10YNOK      FROM 
+-------------+---------------------------------------
+      X2YNOK |    45.88     32.10     22.02     54.12 
+      X5YNOK |    28.95     41.23     29.82     58.77 
+     X10YNOK |    21.41     32.42     46.16     53.84 
+          TO |    50.36     64.52     51.84    166.73 
+     Inc_Own |    96.25    105.75     98.01           
+         NET |    -3.75      5.75     -1.99     83.36 
+         NPT |     0.00      2.00      1.00           
+-----------------------------------------------------
+TCI =  55.58    corrected TCI =  83.36
+
+. cngraph tci, frame(cgs_nok)
+
+. estat group, type(conditional) groups(X2YCHF X2YDKK X2YEUR X2YGBP X2YNOK X2YSE
+> K) ///
+>     frame(cgs_2y) replace
+
+Conditional connectedness                       Units in table      =        6
+Group: X2YCHF X2YDKK X2YEUR X2YGBP X2YNOK X2YSEK
+Results frame: cgs_2y
+
+
+--------------------------------------------------------------------------
+             |   X2YCHF    X2YDKK    X2YEUR    X2YGBP    X2YNOK    X2YSEK 
+-------------+------------------------------------------------------------
+      X2YCHF |    44.80     13.73     16.35     10.36      5.48      9.29 
+      X2YDKK |    12.20     40.10     24.75      8.68      4.78      9.50 
+      X2YEUR |    13.45     23.06     37.51     10.79      5.12     10.08 
+      X2YGBP |    11.30     10.99     14.19     49.99      5.12      8.40 
+      X2YNOK |     7.43      7.69      8.71      6.24     58.98     10.94 
+      X2YSEK |    10.54     11.84     13.42      8.39      9.02     46.79 
+          TO |    54.93     67.32     77.42     44.46     29.52     48.21 
+     Inc_Own |    99.73    107.41    114.92     94.45     88.50     94.99 
+         NET |    -0.27      7.41     14.92     -5.55    -11.50     -5.01 
+         NPT |     3.00      4.00      5.00      1.00      0.00      2.00 
+--------------------------------------------------------------------------
+
+-----------------------
+             |     FROM 
+-------------+---------
+      X2YCHF |    55.20 
+      X2YDKK |    59.90 
+      X2YEUR |    62.49 
+      X2YGBP |    50.01 
+      X2YNOK |    41.02 
+      X2YSEK |    53.21 
+          TO |   321.85 
+     Inc_Own |          
+         NET |    64.37 
+         NPT |          
+-----------------------
+TCI =  53.64    corrected TCI =  64.37
+
+. cngraph net, frame(cgs_2y)
+
+. * Aggregated connectedness by currency and by maturity
+. estat group, type(aggregated) frame(cgs_cur) replace ///
+>     groups("CHF: X2YCHF X5YCHF X10YCHF" "DKK: X2YDKK X5YDKK X10YDKK" ///
+>     "EUR: X2YEUR X5YEUR X10YEUR" "GBP: X2YGBP X5YGBP X10YGBP" ///
+>     "NOK: X2YNOK X5YNOK X10YNOK" "SEK: X2YSEK X5YSEK X10YSEK")
+
+Aggregated connectedness                        Units in table      =        6
+Group CHF: X2YCHF X5YCHF X10YCHF
+Group DKK: X2YDKK X5YDKK X10YDKK
+Group EUR: X2YEUR X5YEUR X10YEUR
+Group GBP: X2YGBP X5YGBP X10YGBP
+Group NOK: X2YNOK X5YNOK X10YNOK
+Group SEK: X2YSEK X5YSEK X10YSEK
+Results frame: cgs_cur
+
+
+--------------------------------------------------------------------------
+             |      CHF       DKK       EUR       GBP       NOK       SEK 
+-------------+------------------------------------------------------------
+         CHF |    34.01     15.87     17.38     12.43      8.21     12.10 
+         DKK |    13.98     29.09     23.44     12.56      8.18     12.75 
+         EUR |    14.47     22.16     28.66     13.93      8.11     12.67 
+         GBP |    12.80     14.91     17.25     36.18      7.56     11.30 
+         NOK |    10.47     12.10     12.71      9.37     41.15     14.19 
+         SEK |    12.63     15.05     15.90     11.33     11.66     33.43 
+          TO |    64.35     80.09     86.68     59.63     43.71     63.01 
+     Inc_Own |    98.36    109.19    115.34     95.81     84.86     96.44 
+         NET |    -1.64      9.19     15.34     -4.19    -15.14     -3.56 
+         NPT |     3.00      4.00      5.00      2.00      0.00      1.00 
+--------------------------------------------------------------------------
+
+-----------------------
+             |     FROM 
+-------------+---------
+         CHF |    65.99 
+         DKK |    70.91 
+         EUR |    71.34 
+         GBP |    63.82 
+         NOK |    58.85 
+         SEK |    66.57 
+          TO |   397.48 
+     Inc_Own |          
+         NET |    79.50 
+         NPT |          
+-----------------------
+TCI =  66.25    corrected TCI =  79.50
+TCI including within-group spillovers = 331.23    corrected = 350.71
+
+. cngraph net, frame(cgs_cur)
+
+. cnnetwork, frame(cgs_cur)
+
+. estat group, type(aggregated) frame(cgs_mat) replace ///
+>     groups("Y2: X2YCHF X2YDKK X2YEUR X2YGBP X2YNOK X2YSEK" ///
+>     "Y5: X5YCHF X5YDKK X5YEUR X5YGBP X5YNOK X5YSEK" ///
+>     "Y10: X10YCHF X10YDKK X10YEUR X10YGBP X10YNOK X10YSEK")
+
+Aggregated connectedness                        Units in table      =        3
+Group Y2: X2YCHF X2YDKK X2YEUR X2YGBP X2YNOK X2YSEK
+Group Y5: X5YCHF X5YDKK X5YEUR X5YGBP X5YNOK X5YSEK
+Group Y10: X10YCHF X10YDKK X10YEUR X10YGBP X10YNOK X10YSEK
+Results frame: cgs_mat
+
+
+-----------------------------------------------------
+             |       Y2        Y5       Y10      FROM 
+-------------+---------------------------------------
+          Y2 |    36.96     34.42     28.62     63.04 
+          Y5 |    27.01     37.82     35.17     62.18 
+         Y10 |    22.90     35.78     41.32     58.68 
+          TO |    49.91     70.20     63.79    183.90 
+     Inc_Own |    86.87    108.02    105.11           
+         NET |   -13.13      8.02      5.11     91.95 
+         NPT |     0.00      2.00      1.00           
+-----------------------------------------------------
+TCI =  61.30    corrected TCI =  91.95
+TCI including within-group spillovers = 122.60    corrected = 129.81
+
+. cngraph net, frame(cgs_mat)
+
+. 
+end of do-file
+replication 2022scg: completed
+
+------------------------------------------------------------------------------
+Replication 2023cegg
+------------------------------------------------------------------------------
+
+. * Replication: Chatziantoniou, Elsayed, Gabauer and Gozgor (2023), decomposed 
+> and partial
+. * connectedness of oil price shocks and exchange rates
+. * Mirrors https://gabauerdavid.github.io/ConnectednessApproach/2022Chatzianton
+> iouElsayedGabauerGozgor
+. version 16.1
+
+. use cn_cegg2022, clear
+(Chatziantoniou, Elsayed, Gabauer and Gozgor (2023): oil shocks, FX)
+
+. tsset t
+
+Time variable: t, 1 to 3883
+        Delta: 1 unit
+
+. connectedness Demand_Shock-Japan, model(tvpvar) lags(1) horizon(20) prior(minn
+> esota) ///
+>     gamma(0.1) corrected datevar(date) frame(cegg) replace
+
+Connectedness approach                          Number of variables =       11
+Model:  TVP-VAR(1), minnesota prior             Forecast horizon    =       20
+FEVD:   generalized                             Observations used   =     3883
+Sample: 05jan2006 to 01jul2021                  Periods measured    =     3883
+                                                kappa1, kappa2      = 0.99, 0.99
+Results frame: cegg (first period 05jan2006)
+
+
+--------------------------------------------------------------------------
+             | Demand~k  Supply~k  Risk_S~k    Brazil    Canada    Norway 
+-------------+------------------------------------------------------------
+Demand_Shock |    79.83      4.37      8.50      1.11      0.95      0.71 
+Supply_Shock |     3.76     87.13      2.86      0.82      0.63      0.96 
+  Risk_Shock |     6.33      2.66     84.34      0.89      0.90      0.96 
+      Brazil |    13.63      1.40      6.55     58.58      4.06      3.83 
+      Canada |    15.15      2.65      5.57      3.46     49.73      7.48 
+      Norway |    12.79      1.69      3.80      2.67      6.46     40.06 
+      Russia |    14.49      5.12      7.85      2.18      2.09      5.13 
+       China |     2.39      0.79      1.33      1.40      2.34      4.00 
+      Europe |     7.90      0.93      2.58      1.87      5.60     20.40 
+       India |     6.40      0.92      3.63      3.42      3.26      3.55 
+       Japan |     3.33      1.29      6.19      2.16      3.41      6.33 
+          TO |    86.16     21.82     48.83     20.00     29.70     53.36 
+     Inc_Own |   165.98    108.95    133.16     78.58     79.43     93.42 
+         NET |    65.98      8.95     33.16    -21.42    -20.57     -6.58 
+         NPT |     8.00      9.00     10.00      2.00      4.00      7.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+             |   Russia     China    Europe     India     Japan      FROM 
+-------------+-----------------------------------------------------------
+Demand_Shock |     0.69      0.73      0.75      1.03      1.33     20.17 
+Supply_Shock |     0.99      0.73      0.74      0.70      0.68     12.87 
+  Risk_Shock |     0.57      0.70      1.00      0.72      0.93     15.66 
+      Brazil |     2.71      1.36      2.43      2.97      2.49     41.42 
+      Canada |     2.43      1.85      6.05      2.37      3.27     50.27 
+      Norway |     4.43      2.29     19.18      2.15      4.49     59.94 
+      Russia |    51.65      1.07      6.51      2.30      1.61     48.35 
+       China |     2.70     73.72      5.26      3.05      3.03     26.28 
+      Europe |     5.89      2.65     42.66      1.93      7.59     57.34 
+       India |     3.28      3.08      3.04     67.75      1.67     32.25 
+       Japan |     2.09      1.74     10.02      1.20     62.24     37.76 
+          TO |    25.77     16.21     54.98     18.41     27.08    402.31 
+     Inc_Own |    77.42     89.93     97.64     86.16     89.32           
+         NET |   -22.58    -10.07     -2.36    -13.84    -10.68     40.23 
+         NPT |     5.00      1.00      6.00      0.00      3.00           
+-------------------------------------------------------------------------
+Rows: variance of the row variable explained by the column variable (percent).
+TCI =  36.57    corrected TCI =  40.23    (NET row reports the corrected TCI)
+
+. local G `""Oil: Demand_Shock Supply_Shock Risk_Shock" "Exporters: Brazil Canad
+> a Norway Russia" "Importers: China Europe India Japan""'
+
+. estat group, type(internal) groups(`G') frame(cegg_int) replace
+
+Internal connectedness                          Units in table      =       11
+Group Oil: Demand_Shock Supply_Shock Risk_Shock
+Group Exporters: Brazil Canada Norway Russia
+Group Importers: China Europe India Japan
+Results frame: cegg_int
+
+
+--------------------------------------------------------------------------
+             | Demand~k  Supply~k  Risk_S~k    Brazil    Canada    Norway 
+-------------+------------------------------------------------------------
+Demand_Shock |    79.83      4.37      8.50      0.00      0.00      0.00 
+Supply_Shock |     3.76     87.13      2.86      0.00      0.00      0.00 
+  Risk_Shock |     6.33      2.66     84.34      0.00      0.00      0.00 
+      Brazil |     0.00      0.00      0.00     58.58      4.06      3.83 
+      Canada |     0.00      0.00      0.00      3.46     49.73      7.48 
+      Norway |     0.00      0.00      0.00      2.67      6.46     40.06 
+      Russia |     0.00      0.00      0.00      2.18      2.09      5.13 
+       China |     0.00      0.00      0.00      0.00      0.00      0.00 
+      Europe |     0.00      0.00      0.00      0.00      0.00      0.00 
+       India |     0.00      0.00      0.00      0.00      0.00      0.00 
+       Japan |     0.00      0.00      0.00      0.00      0.00      0.00 
+          TO |    10.09      7.04     11.36      8.32     12.61     16.44 
+     Inc_Own |    89.91     94.17     95.69     66.90     62.33     56.50 
+         NET |    -2.79      0.43      2.36     -2.28     -0.77      2.88 
+         NPT |     0.00      1.00      2.00      0.00      1.00      3.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+             |   Russia     China    Europe     India     Japan      FROM 
+-------------+-----------------------------------------------------------
+Demand_Shock |     0.00      0.00      0.00      0.00      0.00     12.87 
+Supply_Shock |     0.00      0.00      0.00      0.00      0.00      6.61 
+  Risk_Shock |     0.00      0.00      0.00      0.00      0.00      8.99 
+      Brazil |     2.71      0.00      0.00      0.00      0.00     10.60 
+      Canada |     2.43      0.00      0.00      0.00      0.00     13.37 
+      Norway |     4.43      0.00      0.00      0.00      0.00     13.56 
+      Russia |    51.65      0.00      0.00      0.00      0.00      9.40 
+       China |     0.00     73.72      5.26      3.05      3.03     11.34 
+      Europe |     0.00      2.65     42.66      1.93      7.59     12.17 
+       India |     0.00      3.08      3.04     67.75      1.67      7.79 
+       Japan |     0.00      1.74     10.02      1.20     62.24     12.96 
+          TO |     9.56      7.47     18.32      6.18     12.29    119.67 
+     Inc_Own |    61.22     81.19     60.98     73.93     74.53           
+         NET |     0.16     -3.87      6.16     -1.61     -0.68     11.97 
+         NPT |     2.00      1.00      3.00      0.00      2.00           
+-------------------------------------------------------------------------
+TCI =  10.88    corrected TCI =  11.97
+Group TCI, Oil =   2.59    corrected =   2.85
+Group TCI, Exporters =   4.27    corrected =   4.69
+Group TCI, Importers =   4.02    corrected =   4.43
+
+. estat group, type(external) groups(`G') frame(cegg_ext) replace
+
+External connectedness                          Units in table      =       11
+Group Oil: Demand_Shock Supply_Shock Risk_Shock
+Group Exporters: Brazil Canada Norway Russia
+Group Importers: China Europe India Japan
+Results frame: cegg_ext
+
+
+--------------------------------------------------------------------------
+             | Demand~k  Supply~k  Risk_S~k    Brazil    Canada    Norway 
+-------------+------------------------------------------------------------
+Demand_Shock |     0.00      0.00      0.00      1.11      0.95      0.71 
+Supply_Shock |     0.00      0.00      0.00      0.82      0.63      0.96 
+  Risk_Shock |     0.00      0.00      0.00      0.89      0.90      0.96 
+      Brazil |    13.63      1.40      6.55      0.00      0.00      0.00 
+      Canada |    15.15      2.65      5.57      0.00      0.00      0.00 
+      Norway |    12.79      1.69      3.80      0.00      0.00      0.00 
+      Russia |    14.49      5.12      7.85      0.00      0.00      0.00 
+       China |     2.39      0.79      1.33      1.40      2.34      4.00 
+      Europe |     7.90      0.93      2.58      1.87      5.60     20.40 
+       India |     6.40      0.92      3.63      3.42      3.26      3.55 
+       Japan |     3.33      1.29      6.19      2.16      3.41      6.33 
+          TO |    76.07     14.78     37.47     11.68     17.10     36.92 
+     Inc_Own |    76.07     14.78     37.47     11.68     17.10     36.92 
+         NET |    68.77      8.53     30.80    -19.15    -19.80     -9.47 
+         NPT |     8.00      8.00      8.00      2.00      3.00      4.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+             |   Russia     China    Europe     India     Japan      FROM 
+-------------+-----------------------------------------------------------
+Demand_Shock |     0.69      0.73      0.75      1.03      1.33      7.30 
+Supply_Shock |     0.99      0.73      0.74      0.70      0.68      6.26 
+  Risk_Shock |     0.57      0.70      1.00      0.72      0.93      6.67 
+      Brazil |     0.00      1.36      2.43      2.97      2.49     30.82 
+      Canada |     0.00      1.85      6.05      2.37      3.27     36.90 
+      Norway |     0.00      2.29     19.18      2.15      4.49     46.38 
+      Russia |     0.00      1.07      6.51      2.30      1.61     38.94 
+       China |     2.70      0.00      0.00      0.00      0.00     14.95 
+      Europe |     5.89      0.00      0.00      0.00      0.00     45.17 
+       India |     3.28      0.00      0.00      0.00      0.00     24.46 
+       Japan |     2.09      0.00      0.00      0.00      0.00     24.79 
+          TO |    16.21      8.74     36.66     12.24     14.79    282.65 
+     Inc_Own |    16.21      8.74     36.66     12.24     14.79           
+         NET |   -22.74     -6.21     -8.51    -12.22    -10.00     28.26 
+         NPT |     3.00      0.00      3.00      0.00      1.00           
+-------------------------------------------------------------------------
+TCI =  25.70    corrected TCI =  28.26
+Group TCI, Oil =  11.67    corrected =  12.83
+Group TCI, Exporters =   7.45    corrected =   8.19
+Group TCI, Importers =   6.58    corrected =   7.24
+
+. estat group, type(inclusive) groups(Demand_Shock Supply_Shock Risk_Shock) fram
+> e(cegg_inc) replace
+
+Inclusive connectedness                         Units in table      =       11
+Group: Demand_Shock Supply_Shock Risk_Shock
+Results frame: cegg_inc
+
+
+--------------------------------------------------------------------------
+             | Demand~k  Supply~k  Risk_S~k    Brazil    Canada    Norway 
+-------------+------------------------------------------------------------
+Demand_Shock |    79.83      4.37      8.50      1.11      0.95      0.71 
+Supply_Shock |     3.76     87.13      2.86      0.82      0.63      0.96 
+  Risk_Shock |     6.33      2.66     84.34      0.89      0.90      0.96 
+      Brazil |    13.63      1.40      6.55      0.00      0.00      0.00 
+      Canada |    15.15      2.65      5.57      0.00      0.00      0.00 
+      Norway |    12.79      1.69      3.80      0.00      0.00      0.00 
+      Russia |    14.49      5.12      7.85      0.00      0.00      0.00 
+       China |     2.39      0.79      1.33      0.00      0.00      0.00 
+      Europe |     7.90      0.93      2.58      0.00      0.00      0.00 
+       India |     6.40      0.92      3.63      0.00      0.00      0.00 
+       Japan |     3.33      1.29      6.19      0.00      0.00      0.00 
+          TO |    86.16     21.82     48.83      2.83      2.48      2.63 
+     Inc_Own |   165.98    108.95    133.16      2.83      2.48      2.63 
+         NET |    65.98      8.95     33.16    -18.75    -20.88    -15.64 
+         NPT |     8.00      9.00     10.00      0.00      0.00      0.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+             |   Russia     China    Europe     India     Japan      FROM 
+-------------+-----------------------------------------------------------
+Demand_Shock |     0.69      0.73      0.75      1.03      1.33     20.17 
+Supply_Shock |     0.99      0.73      0.74      0.70      0.68     12.87 
+  Risk_Shock |     0.57      0.70      1.00      0.72      0.93     15.66 
+      Brazil |     0.00      0.00      0.00      0.00      0.00     21.58 
+      Canada |     0.00      0.00      0.00      0.00      0.00     23.36 
+      Norway |     0.00      0.00      0.00      0.00      0.00     18.27 
+      Russia |     0.00      0.00      0.00      0.00      0.00     27.45 
+       China |     0.00      0.00      0.00      0.00      0.00      4.50 
+      Europe |     0.00      0.00      0.00      0.00      0.00     11.41 
+       India |     0.00      0.00      0.00      0.00      0.00     10.95 
+       Japan |     0.00      0.00      0.00      0.00      0.00     10.80 
+          TO |     2.25      2.17      2.48      2.45      2.94    177.03 
+     Inc_Own |     2.25      2.17      2.48      2.45      2.94           
+         NET |   -25.20     -2.34     -8.92     -8.50     -7.87     17.70 
+         NPT |     0.00      0.00      0.00      0.00      0.00           
+-------------------------------------------------------------------------
+TCI =  16.09    corrected TCI =  17.70
+
+. estat group, type(exclusive) groups(Demand_Shock Supply_Shock Risk_Shock) fram
+> e(cegg_exc) replace
+
+Exclusive connectedness                         Units in table      =       11
+Group: Demand_Shock Supply_Shock Risk_Shock
+Results frame: cegg_exc
+
+
+--------------------------------------------------------------------------
+             | Demand~k  Supply~k  Risk_S~k    Brazil    Canada    Norway 
+-------------+------------------------------------------------------------
+Demand_Shock |     0.00      0.00      0.00      0.00      0.00      0.00 
+Supply_Shock |     0.00      0.00      0.00      0.00      0.00      0.00 
+  Risk_Shock |     0.00      0.00      0.00      0.00      0.00      0.00 
+      Brazil |     0.00      0.00      0.00     58.58      4.06      3.83 
+      Canada |     0.00      0.00      0.00      3.46     49.73      7.48 
+      Norway |     0.00      0.00      0.00      2.67      6.46     40.06 
+      Russia |     0.00      0.00      0.00      2.18      2.09      5.13 
+       China |     0.00      0.00      0.00      1.40      2.34      4.00 
+      Europe |     0.00      0.00      0.00      1.87      5.60     20.40 
+       India |     0.00      0.00      0.00      3.42      3.26      3.55 
+       Japan |     0.00      0.00      0.00      2.16      3.41      6.33 
+          TO |     0.00      0.00      0.00     17.17     27.22     50.73 
+     Inc_Own |     0.00      0.00      0.00     75.75     76.95     90.79 
+         NET |     0.00      0.00      0.00     -2.67      0.31      9.06 
+         NPT |     0.00      0.00      0.00      2.00      4.00      7.00 
+--------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+             |   Russia     China    Europe     India     Japan      FROM 
+-------------+-----------------------------------------------------------
+Demand_Shock |     0.00      0.00      0.00      0.00      0.00      0.00 
+Supply_Shock |     0.00      0.00      0.00      0.00      0.00      0.00 
+  Risk_Shock |     0.00      0.00      0.00      0.00      0.00      0.00 
+      Brazil |     2.71      1.36      2.43      2.97      2.49     19.84 
+      Canada |     2.43      1.85      6.05      2.37      3.27     26.91 
+      Norway |     4.43      2.29     19.18      2.15      4.49     41.67 
+      Russia |    51.65      1.07      6.51      2.30      1.61     20.90 
+       China |     2.70     73.72      5.26      3.05      3.03     21.78 
+      Europe |     5.89      2.65     42.66      1.93      7.59     45.93 
+       India |     3.28      3.08      3.04     67.75      1.67     21.30 
+       Japan |     2.09      1.74     10.02      1.20     62.24     26.96 
+          TO |    23.52     14.04     52.49     15.97     24.14    225.28 
+     Inc_Own |    75.17     87.76     95.16     83.72     86.38           
+         NET |     2.62     -7.74      6.56     -5.33     -2.81     22.53 
+         NPT |     5.00      1.00      6.00      0.00      3.00           
+-------------------------------------------------------------------------
+TCI =  20.48    corrected TCI =  22.53
+
+. cngraph tci
+
+. cngraph tci, frame(cegg_inc)
+
+. cngraph tci, frame(cegg_exc)
+
+. cngraph net, frame(cegg_inc)
+
+. 
+end of do-file
+replication 2023cegg: completed
+
+. set graphics on
+
+. adopath - "`tmp'"
+  [1]              "../ado"
+  [2]  (BASE)      "C:\Program Files\Stata18\ado\base/"
+  [3]  (SITE)      "C:\Program Files\Stata18\ado\site/"
+  [4]              "."
+  [5]  (PERSONAL)  "C:\Users\<user>\ado\personal/"
+  [6]  (PLUS)      "C:\Users\<user>\ado\plus/"
+  [7]  (OLDPLACE)  "c:\ado/"
+
+. quietly cd "`root'/test"
+
+. display as text "Replication suite return code: " as result `rc'
+Replication suite return code: 0
+
+. log close inst
+      name:  inst
+       log:  <package folder>\test\logs/install_test.log
+  log type:  text
+ closed on:  18 Oct 2026, 13:33:46
+--------------------------------------------------------------------------------
