@@ -1,4 +1,4 @@
-*! version 0.4.0  20oct2026
+*! version 0.5.0  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -771,6 +771,101 @@ string rowvector cn_jointlabels(string rowvector v)
 }
 
 // =============================================================================
+// R2 decomposed connectedness (Naeem et al. 2023; Balli et al. 2023; R function
+// R2Connectedness()) and model-free connectedness (Gabauer, Chatziantoniou and
+// Stenfors 2023; R2 approach with decomposition = FALSE)
+// =============================================================================
+
+// Average ranks (ties share the mean rank), as R's rank()
+real colvector cn_rank(real colvector v)
+{
+    real scalar    n, i, j
+    real colvector o, r
+
+    n = rows(v)
+    o = order(v, 1)
+    r = J(n, 1, .)
+    i = 1
+    while (i <= n) {
+        j = i
+        while (j < n) {
+            if (v[o[j+1]] != v[o[i]]) break
+            j++
+        }
+        r[o[|i \ j|]] = J(j-i+1, 1, (i+j)/2)
+        i = j + 1
+    }
+    return(r)
+}
+
+// Correlation matrix as R's cor(): "pearson", "spearman" (Pearson correlation of
+// average ranks) or "kendall" (tau-b)
+real matrix cn_cor(real matrix Z, string scalar method)
+{
+    real scalar    m, n, a
+    real matrix    R, Sa, G
+    real colvector ss
+
+    m = cols(Z)
+    n = rows(Z)
+    if (method == "pearson") return(correlation(Z))
+    if (method == "spearman") {
+        R = J(n, m, .)
+        for (a=1; a<=m; a++) R[., a] = cn_rank(Z[., a])
+        return(correlation(R))
+    }
+    // tau-b as the cosine similarity of the pairwise sign vectors, accumulated
+    // over i < j without forming n x n matrices
+    G = J(m, m, 0)
+    for (a=1; a<n; a++) {
+        Sa = sign(Z[|a+1, 1 \ n, m|] :- Z[a, .])
+        G  = G + cross(Sa, Sa)
+    }
+    ss = sqrt(diagonal(G))
+    R  = G :/ (ss * ss')
+    return(R)
+}
+
+// R2 decomposition of one window. Z: rows of (x_t, x_{t-1}, ..., x_{t-p}).
+// Cc: contemporaneous shares (k x k, zero diagonal); Cl: lagged shares summed over lags
+void cn_r2decomp(real matrix Z, real scalar k, real scalar p, string scalar method,
+                 real matrix Cc, real matrix Cl)
+{
+    real scalar    m, i, l
+    real matrix    R, V, root
+    real rowvector L
+    real colvector o, cd
+
+    m  = cols(Z)
+    R  = cn_cor(Z, method)
+    if (method == "kendall")  R = sin(0.5*pi()*R)
+    if (method == "spearman") R = 2*sin(pi()/6*R)
+    Cc = J(k, k, 0)
+    Cl = J(k, k, 0)
+    for (i=1; i<=k; i++) {
+        o = selectindex((1::m) :!= i)
+        symeigensystem(R[o, o], V, L)
+        root = V * diag(sqrt(L)) * V'
+        cd   = (root:^2) * (lusolve(root, R[o, i]):^2)
+        Cc[i, o[|1 \ k-1|]'] = cd[|1 \ k-1|]'
+        for (l=1; l<=p; l++) {
+            Cl[i, .] = Cl[i, .] + cd[|k + (l-1)*k \ k-1 + l*k|]'
+        }
+    }
+}
+
+// Model-free (unconditional) table of one window: squared correlations, rows
+// normalized to one (R: cor()^2, with sin(pi/2 x) for Kendall, divided by row sums)
+real matrix cn_modelfree(real matrix X, string scalar method)
+{
+    real matrix C
+
+    C = cn_cor(X, method):^2
+    if (method == "kendall") C = sin(0.5*pi()*C)
+    return(C :/ rowsum(C))
+}
+
+// =============================================================================
 // Driver called by connectedness.ado
 // =============================================================================
 
@@ -781,7 +876,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              string scalar tabname, string scalar fevdname, string scalar scalname,
              string scalar names, string scalar dvar, string scalar approach,
              real rowvector part, string scalar scen, string scalar blabels,
-             real rowvector tau)
+             real rowvector tau, string scalar csufs, string scalar r2m)
 {
     external real matrix   cn__M, cn__CT
     external real colvector cn__tv, cn__dv
@@ -791,7 +886,9 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     real matrix    x, Bt, Qt, B, Q, ct, avg, P, TB, tb, tabsum, blk
     real colvector tv
     real rowvector ma, m, cv, sc
-    string rowvector nm, bl, fn, fl, mn0, ml0
+    string rowvector nm, bl, fn, fl, mn0, ml0, cs
+    real matrix    Z, Cc, Cl
+    real scalar    wr
 
     x  = st_data(., tokens(vars), touse)
     tv = st_data(., tvar, touse)
@@ -800,6 +897,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     kk = k*k
     nm = tokens(names)
     bl = tokens(blabels)
+    cs = tokens(csufs)
 
     if (window==0) {
         ws = T
@@ -810,7 +908,12 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         t0 = T - ws + 1
     }
 
-    if (model=="tvpvar") {
+    if (approach=="r2" | approach=="modelfree") {
+        Z  = (approach=="r2" ? cn_embed(x, p+1) : x)
+        wr = (window==0 ? rows(Z) : window - (approach=="r2" ? 2*p : 0))
+        nT = rows(Z) - wr + 1
+    }
+    else if (model=="tvpvar") {
         if (prior=="minnesota")          pr = cn_minnesotaprior(x, gamma, p)
         else if (prior=="uninformative") pr = cn_uninfprior(x, p)
         else                              pr = cn_bayesprior(x, ws, p)
@@ -852,13 +955,15 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     cn__fl = fl
     if (approach=="frequency") {
         P   = cn_partition(part, H)
-        nb  = cols(P)
+    }
+    nb = cols(cs)
+    if (nb > 0) {
         mn0 = cn__mn
         ml0 = cn__ml
         for (b=1; b<=nb; b++) {
-            cn__mn = cn__mn, mn0 :+ ("_f" + strofreal(b))
+            cn__mn = cn__mn, mn0 :+ ("_" + cs[b])
             cn__ml = cn__ml, ml0 :+ (" [" + bl[b] + "]")
-            cn__fn = cn__fn, fn :+ ("_f" + strofreal(b))
+            cn__fn = cn__fn, fn :+ ("_" + cs[b])
             cn__fl = cn__fl, fl :+ (" [" + bl[b] + "]")
         }
     }
@@ -867,34 +972,52 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     cn__M  = J(nT, cols(cn__mn), .)
     tabsum = J(k+3, k+1, 0)
     for (t=1; t<=nT; t++) {
-        B = rowshape(Bt[t, .], k)
-        Q = rowshape(Qt[t, .], k)
-        if (approach=="frequency") {
-            TB = cn_freqtables(B, Q, H, gen, P, scen)
-            ct = J(k, k, 0)
-            for (b=1; b<=nb; b++) ct = ct + TB[|1, (b-1)*k+1 \ k, b*k|]
+        if (approach=="r2") {
+            cn_r2decomp(Z[|t, 1 \ t+wr-1, cols(Z)|], k, p, r2m, Cc, Cl)
+            ct = 100*(Cc + Cl)
             m  = cn_measures(ct)
             cv = rowshape(ct, 1)
-            for (b=1; b<=nb; b++) {
-                blk = TB[|1, (b-1)*k+1 \ k, b*k|]
-                m   = m, cn_bandmeasures(blk, ct)
-                cv  = cv, rowshape(blk, 1)
+            if (nb > 0) {
+                m  = m, cn_measures(100*Cc), cn_measures(100*Cl)
+                cv = cv, rowshape(100*Cc, 1), rowshape(100*Cl, 1)
             }
         }
-        else if (approach=="joint") {
-            m      = cn_joint(B, Q, H, ct, tb)
-            tabsum = tabsum + tb
-            cv     = rowshape(ct, 1)
-        }
-        else {
-            if (approach=="extjoint") ct = cn_extjoint(B, Q, H)
-            else                      ct = 100 * cn_fevd(B, Q, H, gen)
+        else if (approach=="modelfree") {
+            ct = 100*cn_modelfree(Z[|t, 1 \ t+wr-1, k|], r2m)
             m  = cn_measures(ct)
             cv = rowshape(ct, 1)
         }
-        if (hasmissing(cv) | hasmissing(m)) {
+        else {
+            B = rowshape(Bt[t, .], k)
+            Q = rowshape(Qt[t, .], k)
+            if (approach=="frequency") {
+                TB = cn_freqtables(B, Q, H, gen, P, scen)
+                ct = J(k, k, 0)
+                for (b=1; b<=nb; b++) ct = ct + TB[|1, (b-1)*k+1 \ k, b*k|]
+                m  = cn_measures(ct)
+                cv = rowshape(ct, 1)
+                for (b=1; b<=nb; b++) {
+                    blk = TB[|1, (b-1)*k+1 \ k, b*k|]
+                    m   = m, cn_bandmeasures(blk, ct)
+                    cv  = cv, rowshape(blk, 1)
+                }
+            }
+            else if (approach=="joint") {
+                m      = cn_joint(B, Q, H, ct, tb)
+                tabsum = tabsum + tb
+                cv     = rowshape(ct, 1)
+            }
+            else {
+                if (approach=="extjoint") ct = cn_extjoint(B, Q, H)
+                else                      ct = 100 * cn_fevd(B, Q, H, gen)
+                m  = cn_measures(ct)
+                cv = rowshape(ct, 1)
+            }
+        }
+        // pairwise influence is undefined (missing) when both shares of a pair are zero
+        if (hasmissing(cv) | hasmissing(m[|1 \ min((cols(m), 2+4*k))|])) {
             errprintf("connectedness measures could not be computed for period %g ", t)
-            errprintf("(error covariance not positive definite)\n")
+            errprintf("(covariance or correlation matrix not positive definite)\n")
             exit(error(506))
         }
         cn__CT[t, .] = cv
@@ -926,10 +1049,10 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     sc = (ma[1], ma[2], T, nT, tv[1], tv[T], cn__tv[1])
     for (b=1; b<=nb; b++) {
         avg = rowshape(mean(cn__CT[|1, b*kk+1 \ nT, (b+1)*kk|]), k)
-        cn_posttable(tabname + "f" + strofreal(b), avg, corrected, nm)
-        st_matrix(fevdname + "f" + strofreal(b), avg)
-        st_matrixrowstripe(fevdname + "f" + strofreal(b), (J(k, 1, ""), nm'))
-        st_matrixcolstripe(fevdname + "f" + strofreal(b), (J(k, 1, ""), nm'))
+        cn_posttable(tabname + cs[b], avg, corrected, nm)
+        st_matrix(fevdname + cs[b], avg)
+        st_matrixrowstripe(fevdname + cs[b], (J(k, 1, ""), nm'))
+        st_matrixcolstripe(fevdname + cs[b], (J(k, 1, ""), nm'))
         ma = cn_measures(avg)
         sc = sc, ma[1], ma[2]
     }

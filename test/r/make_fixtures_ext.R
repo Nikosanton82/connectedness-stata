@@ -192,3 +192,66 @@ gcat = run("gcat2022", 1, 100, 200, "QVAR", "Frequency", freq = list(partition =
            rows = 1:600)
 freq_fx("gcat2022_qvar_freq_roll200", gcat)
 ejoint_fx("jcggh2022_qvar_extjoint_q90", run("jcggh2022", 1, 10, NULL, "QVAR", "Extended Joint", tau = 0.9))
+
+# ---------------------------------------------------------------------------
+# R2 decomposed connectedness (Naeem et al. 2023; Balli et al. 2023) and model-free
+# (unconditional) connectedness (Gabauer, Chatziantoniou and Stenfors 2023), from
+# version 0.5.0. Base names hold the overall measures; with lags, the suffixes _c
+# and _l hold the contemporaneous and lagged parts.
+r2run = function(d, nlag, ws = NULL, method = "pearson", decomposition = TRUE, corr = FALSE) {
+  x = get(data(list = d))
+  suppressMessages(ConnectednessApproach(x, nlag = nlag, window.size = ws, connectedness = "R2",
+    corrected = corr, Connectedness_config = list(R2Connectedness = list(method = method,
+    decomposition = decomposition, relative = FALSE))))
+}
+r2_fx = function(nm, dca, nlag) {
+  CT = 100 * dca$CT                        # k x k x t x (nlag+1 > 1 ? 2 : 1)
+  k = dim(CT)[1]
+  nt = dim(CT)[3]
+  TCI = matrix(dca$TCI, nrow = nt)
+  nd = ncol(TCI)
+  sufs = if (nd == 3) c("", "_c", "_l") else ""
+  ts = NULL
+  for (b in 1:nd) {
+    tk = function(A) if (nd == 1) matrix(A, nrow = nt) else matrix(A[, , b], nrow = nt)
+    kk = function(A) if (nd == 1) array(A, c(k, k, nt)) else array(A[, , , b], c(k, k, nt))
+    blk = cbind(TCI[, b], tk(dca$TO), tk(dca$FROM), tk(dca$NET), pairser(kk(dca$NPDC), TRUE))
+    colnames(blk) = paste0(c(if (isTRUE(dca$config$corrected)) "ctci" else "tci",
+                             paste0("to_", 1:k), paste0("from_", 1:k), paste0("net_", 1:k),
+                             paste0("npdc_", pairs(k))), sufs[b])
+    ts = cbind(ts, blk)
+  }
+  if (nd == 3) {
+    avg = apply(CT[, , , 1, drop = FALSE] + CT[, , , 2, drop = FALSE], 1:2, mean)
+    extra = list(fevd_c = apply(CT[, , , 1, drop = FALSE], 1:2, mean),
+                 fevd_l = apply(CT[, , , 2, drop = FALSE], 1:2, mean))
+  } else {
+    avg = apply(CT[, , , 1, drop = FALSE], 1:2, mean)
+    extra = list()
+  }
+  writefx(nm, ts, avg, extra)
+}
+r2cases = list(
+  dy2012_r2_roll200          = list(d = "dy2012", nlag = 1, ws = 200),
+  dy2012_r2_spearman_roll200 = list(d = "dy2012", nlag = 1, ws = 200, method = "spearman"),
+  dy2012_r2_kendall_roll200  = list(d = "dy2012", nlag = 1, ws = 200, method = "kendall"),
+  dy2012_r2_lag0_roll200     = list(d = "dy2012", nlag = 0, ws = 200),
+  dy2012_r2_lag2_static_corr = list(d = "dy2012", nlag = 2, corr = TRUE),
+  cgs2022_r2_static          = list(d = "cgs2022", nlag = 1)
+)
+for (nm in names(r2cases)) {
+  cs = r2cases[[nm]]
+  r2_fx(nm, r2run(cs$d, cs$nlag, cs$ws, if (is.null(cs$method)) "pearson" else cs$method,
+                  corr = isTRUE(cs$corr)), cs$nlag)
+}
+mfcases = list(
+  dy2012_mf_static          = list(d = "dy2012"),
+  dy2012_mf_roll200         = list(d = "dy2012", ws = 200),
+  dy2012_mf_kendall_roll200 = list(d = "dy2012", ws = 200, method = "kendall"),
+  dy2012_mf_spearman_static = list(d = "dy2012", method = "spearman")
+)
+for (nm in names(mfcases)) {
+  cs = mfcases[[nm]]
+  time_fx(nm, r2run(cs$d, 1, cs$ws, if (is.null(cs$method)) "pearson" else cs$method,
+                    decomposition = FALSE))
+}

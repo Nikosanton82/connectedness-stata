@@ -1,0 +1,63 @@
+R fixtures for connectedness v0.5.0: test/r/make_fixtures_ext.R (R2 and model-free cases)
+==========================================================================================
+The fixtures in test/fixtures (R_<case>_*.csv) for the R2 decomposed and model-free
+cases below were written by test/r/make_fixtures_ext.R with the ConnectednessApproach
+1.0.4 sources (CRAN release) under R 4.3.3 on Linux. The same script was then run
+with the CRAN package installed in R 4.5.2 on Windows; its output follows (progress
+bars removed; the R2 cases print no summary line), and the table at the end gives
+the largest relative difference between the two sets of fixtures.
+
+Output of the Windows run (Rscript make_fixtures_ext.R)
+-------------------------------------------------------
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+dy2012_freq_static         periods=    1 mean TCI=16.092250
+dy2012_freq_default        periods=    1 mean TCI=13.824631
+dy2012_freq_roll200        periods=   53 mean TCI=17.287511
+dy2012_freq_wth            periods=    1 mean TCI=44.315128
+dy2009_freq_orth           periods=    1 mean TCI=35.176399
+cgg2022_freq_tvp           periods=  130 mean TCI=59.928946
+acg2020_freq_tvp_corr      periods=   53 mean TCI=68.999186
+Warning message:
+In frequencyConnectedness::getPartition(partition, nfore) :
+  The selected partition does not cover the whole range.
+lw2021_joint_static        periods=    1 mean TCI=67.878577
+lw2021_joint_roll200       periods=  119 mean TCI=72.656839
+bgu2021_joint_tvp          periods=   81 mean TCI=69.398003
+bgu2021_extjoint_tvp       periods=   81 mean TCI=69.398003
+lw2021_extjoint_static     periods=    1 mean TCI=67.878577
+dy2012_extjoint_roll200    periods=   53 mean TCI=16.675479
+cgs2021_qvar_roll200       periods=   52 mean TCI=33.298366
+cgs2021_qvar_q05           periods=    1 mean TCI=84.327586
+cgs2021_qvar_qoq           periods=    1 mean TCI=23.021461
+dy2012_lad_static          periods=    1 mean TCI=12.591766
+dy2012_lad_roll200         periods=   42 mean TCI=16.391987
+There were 24 warnings (use warnings() to see them)
+gcat2022_qvar_freq_roll200 periods=   42 mean TCI=64.903985
+jcggh2022_qvar_extjoint_q90 periods=    1 mean TCI=88.647905
+Warning messages:
+1: In summary.rq(fit) : 1 non-positive fis
+2: In summary.rq(fit) : 1 non-positive fis
+3: In summary.rq(fit) : 5 non-positive fis
+4: In summary.rq(fit) : 3 non-positive fis
+dy2012_mf_static           periods=    1 mean TCI=18.383339
+dy2012_mf_roll200          periods=   53 mean TCI=12.233060
+dy2012_mf_kendall_roll200  periods=   53 mean TCI=8.623614
+dy2012_mf_spearman_static  periods=    1 mean TCI=16.799534
+
+Largest relative difference, Windows R 4.5.2 versus Linux R 4.3.3 fixtures
+(R2 and model-free cases; the other cases are compared in r-fixtures-log-v0.4.0.txt)
+---------------------------------------------------------------------------
+cgs2022_r2_static                1.85e-13
+dy2012_mf_kendall_roll200        0.00e+00
+dy2012_mf_roll200                0.00e+00
+dy2012_mf_spearman_static        0.00e+00
+dy2012_mf_static                 0.00e+00
+dy2012_r2_kendall_roll200        4.72e-14
+dy2012_r2_lag0_roll200           0.00e+00
+dy2012_r2_lag2_static_corr       1.40e-14
+dy2012_r2_roll200                2.90e-14
+dy2012_r2_spearman_roll200       4.20e-14
+
+The two R installations agree to 1.9e-13 or better in every R2 and model-free case.

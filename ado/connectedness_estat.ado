@@ -1,4 +1,4 @@
-*! version 0.4.0  20oct2026
+*! version 0.5.0  20oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -38,8 +38,8 @@ program define Group, rclass
         exit 198
     }
 
-    if !inlist("`e(approach)'", "", "time") {
-        di as err "estat group requires results estimated with approach(time)"
+    if !inlist("`e(approach)'", "", "time", "modelfree") {
+        di as err "estat group requires results estimated with approach(time) or approach(modelfree)"
         exit 198
     }
 

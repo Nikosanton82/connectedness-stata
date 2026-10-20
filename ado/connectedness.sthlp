@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.4.0  20oct2026}{...}
+{* *! version 0.5.0  20oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -37,12 +37,15 @@
 {synopt:{opt gam:ma(#)}}Minnesota prior tightness; default {cmd:0.01}{p_end}
 
 {syntab:Connectedness}
-{synopt:{opt app:roach(approach)}}{cmd:time} (default), {cmd:frequency}, {cmd:joint} or {cmd:extjoint}{p_end}
+{synopt:{opt app:roach(approach)}}{cmd:time} (default), {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
 {synopt:{opt h:orizon(#)}}forecast horizon {it:H}; default {cmd:horizon(10)}{p_end}
 {synopt:{opt gen:eralized}}generalized FEVD; the default{p_end}
 {synopt:{opt orth:ogonalized}}Cholesky (orthogonalized) FEVD{p_end}
 {synopt:{opt corr:ected}}report the corrected total connectedness index{p_end}
 {synopt:{opt asym:metric}}also estimate the systems of positive and negative changes{p_end}
+
+{syntab:R2 and model-free}
+{synopt:{opt corm:ethod(method)}}{cmd:pearson} (default), {cmd:spearman} or {cmd:kendall} correlations{p_end}
 
 {syntab:Frequency}
 {synopt:{opt band:s(numlist)}}band limits in periods, for example {cmd:bands(5 20)}{p_end}
@@ -158,6 +161,20 @@ Gabauer and Gupta (2023). {cmd:joint} gives the joint spillover index of Lastrap
 and Wiesen (2021), and {cmd:extjoint} the extended joint connectedness of Balcilar,
 Gabauer and Umar (2021). {cmd:joint} and {cmd:extjoint} use the generalized
 decomposition and do not allow {opt orthogonalized} or {opt corrected}.
+{cmd:r2} gives the R2 decomposed connectedness of Naeem et al. (2024), extended to
+contemporaneous and lagged components by Balli et al. (2023), and {cmd:modelfree}
+the model-free connectedness of Gabauer, Chatziantoniou and Stenfors (2023). Both
+work on the data directly, so {opt model()}, {opt orthogonalized}, {opt asymmetric}
+and {opt horizon()} do not apply. With {cmd:r2}, {opt lags(#)} may be zero (only
+contemporaneous relations) and {opt window(#)} rows of data give
+{it:#} - 2{it:p} rows of (x_t, ..., x_{t-p}) per window, as in the R package;
+{cmd:modelfree} uses no lags.
+
+{phang}
+{opt cormethod(method)} sets the correlation used by {cmd:approach(r2)} and
+{cmd:approach(modelfree)}: Pearson, Spearman (rank) or Kendall (tau-b). For the
+R2 decomposition, rank correlations are converted as in the R package,
+2 sin(pi r/6) for Spearman and sin(pi tau/2) for Kendall.
 
 {phang}
 {opt corrected} makes the corrected TCI of Chatziantoniou and Gabauer (2021) the
@@ -228,7 +245,8 @@ then uses it as the horizontal axis. This is useful when the data are
 Typing {cmd:connectedness} without arguments redisplays the results. Options
 {opt digits(#)}, {opt notable}, {opt part(positive|negative)} (after
 {opt asymmetric}) and {opt band(#)} (after {cmd:approach(frequency)}, to show the
-table of band {it:#}) are allowed.
+table of band {it:#}) and {opt component(contemporaneous|lagged)} (after
+{cmd:approach(r2)} with lags) are allowed.
 
 {pstd}
 The results reproduce those of {it:ConnectednessApproach} 1.0.4 to numerical
@@ -297,6 +315,16 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. connectedness CrudeOil-Wheat, model(tvpvar) horizon(20) prior(minnesota) gamma(0.1) approach(extjoint) datevar(date) replace}{p_end}
 {phang2}{cmd:. cngraph net}{p_end}
 
+{pstd}Balli et al. (2023): contemporaneous and lagged R2 decomposed connectedness{p_end}
+{phang2}{cmd:. use cn_dy2012, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness SP500 R_10Y DJUBSCOM USDX, approach(r2) lags(1) window(200) datevar(date) replace}{p_end}
+{phang2}{cmd:. connectedness, component(lagged)}{p_end}
+{phang2}{cmd:. cngraph tci}{p_end}
+
+{pstd}Gabauer, Chatziantoniou and Stenfors (2023): model-free connectedness{p_end}
+{phang2}{cmd:. connectedness SP500 R_10Y DJUBSCOM USDX, approach(modelfree) window(200) cormethod(kendall) datevar(date) replace}{p_end}
+
 {pstd}Adekoya et al. (2022): asymmetric connectedness of positive and negative changes{p_end}
 {phang2}{cmd:. use cn_aaacgo2022, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -330,13 +358,15 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(TCI_pos)}, {cmd:e(cTCI_pos)}}TCI of positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
+{synopt:{cmd:e(TCI_c)}, {cmd:e(TCI_l)}}TCI of the contemporaneous and lagged components ({cmd:r2} with lags); also {cmd:e(cTCI_c)}, {cmd:e(cTCI_l)}{p_end}
 {synopt:{cmd:e(TCI_f}{it:b}{cmd:)}, {cmd:e(cTCI_f}{it:b}{cmd:)}}TCI and corrected TCI of band {it:b} ({cmd:frequency}){p_end}
 
 {p2col 5 18 22 2: Macros}{p_end}
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
 {synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad} or {cmd:tvpvar}{p_end}
 {synopt:{cmd:e(quantiles)}}quantile of each equation ({cmd:qvar}){p_end}
-{synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint} or {cmd:extjoint}{p_end}
+{synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
+{synopt:{cmd:e(cormethod)}}correlation used ({cmd:r2}, {cmd:modelfree}){p_end}
 {synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(partition)}}band limits in radians ({cmd:frequency}){p_end}
 {synopt:{cmd:e(scenario)}}{cmd:abs} or {cmd:wth} ({cmd:frequency}){p_end}
@@ -357,6 +387,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(table_pos)}, {cmd:e(fevd_pos)}}same, positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(table_neg)}, {cmd:e(fevd_neg)}}same, negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(table_f}{it:b}{cmd:)}, {cmd:e(fevd_f}{it:b}{cmd:)}}same, frequency band {it:b} ({cmd:frequency}){p_end}
+{synopt:{cmd:e(table_c)}, {cmd:e(fevd_c)}}same, contemporaneous component ({cmd:r2} with lags); {cmd:e(table_l)}, {cmd:e(fevd_l)} for the lagged one{p_end}
 
 {p2col 5 18 22 2: Functions}{p_end}
 {synopt:{cmd:e(sample)}}marks estimation sample{p_end}
@@ -368,7 +399,8 @@ and the variables {cmd:tci}, {cmd:ctci}, {cmd:to_}{it:i}, {cmd:from_}{it:i},
 {cmd:pci_}{it:i}{cmd:_}{it:j} and {cmd:inf_}{it:i}{cmd:_}{it:j}, where {it:i} and
 {it:j} index the variables in {it:varlist}. Variable labels give the names.
 {cmd:npdc_}{it:i}{cmd:_}{it:j} is the net transmission from variable {it:i} to
-variable {it:j}. Unless {opt nofevd} is specified, the frame also holds
+variable {it:j}. {cmd:inf_}{it:i}{cmd:_}{it:j} is missing in periods where both
+pairwise shares are zero. Unless {opt nofevd} is specified, the frame also holds
 {cmd:fevd_}{it:i}{cmd:_}{it:j}, the share (percent) of variable {it:i}'s forecast
 error variance due to variable {it:j}. The frame's characteristics ({cmd:char list})
 record the variable names and settings that {helpb cngraph}, {helpb cnnetwork} and
@@ -381,7 +413,10 @@ each band {it:b} adds the same set with the suffix {cmd:_f}{it:b}, for example
 the frame holds {cmd:tci}, {cmd:to_}{it:i}, {cmd:from_}{it:i} and
 {cmd:net_}{it:i}, the joint measures, and {cmd:fevd_}{it:i}{cmd:_}{it:j}, the
 generalized decomposition. With {cmd:approach(extjoint)}, all variables refer to
-the extended joint table.
+the extended joint table. With {cmd:approach(r2)} and lags, the variables hold the
+overall measures and the suffixes {cmd:_c} and {cmd:_l} the contemporaneous and
+lagged components; {cmd:fevd_}{it:i}{cmd:_}{it:j} then holds the share (percent) of
+variable {it:i}'s variance explained by variable {it:j}.
 
 
 {marker methods}{...}
@@ -424,6 +459,16 @@ extended joint table multiplies row i of the generalized table by FROM_i divided
 its off-diagonal row sum, so that all measures of the time domain are available.
 
 {pstd}
+{it:R2 decomposition.} For each window and variable i, the R2 of a regression of
+x_it on the other variables at time t and on all variables at lags 1 to p is
+split among the regressors by the relative weights of the correlation matrix: with
+{bf:R}_xx = {bf:V} {bf:L} {bf:V}' and {bf:S} = {bf:V} {bf:L}^(1/2) {bf:V}', the
+shares are ({bf:S}.^2) ({bf:S}^(-1) {bf:r}_xy).^2. Contemporaneous shares give the
+contemporaneous table, lag shares summed over lags the lagged table, and their sum
+the overall table, as in {cmd:R2Connectedness()}. {it:Model-free.} The table is
+the matrix of squared correlations with each row divided by its sum.
+
+{pstd}
 For the TVP-VAR, the coefficient prediction covariance is the filtered covariance
 divided by kappa1, and the error covariance is updated as
 kappa2 {bf:Sigma}_{t-1} + (1-kappa2) u_t u_t'.
@@ -446,6 +491,11 @@ connectedness based on time-varying parameter vector autoregressions.
 Balcilar, M., D. Gabauer, and Z. Umar. 2021. Crude oil futures contracts and
 commodity markets: New evidence from a TVP-VAR extended joint connectedness approach.
 {it:Resources Policy} 73: 102219.
+
+{phang}
+Balli, F., H. O. Balli, T. H. N. Dang, and D. Gabauer. 2023. Contemporaneous and
+lagged R2 decomposed connectedness approach: New evidence from the energy futures
+market. {it:Finance Research Letters} 57: 104168.
 
 {phang}
 Baruník, J., and T. Křehlík. 2018. Measuring the frequency dynamics of
@@ -481,6 +531,10 @@ Gabauer, D. 2025. ConnectednessApproach: Connectedness approach. R package versi
 {browse "https://CRAN.R-project.org/package=ConnectednessApproach"}.
 
 {phang}
+Gabauer, D., I. Chatziantoniou, and A. Stenfors. 2023. Model-free connectedness
+measures. {it:Finance Research Letters} 54: 103804.
+
+{phang}
 Gabauer, D., and A. Stenfors. 2024. Quantile-on-quantile connectedness measures:
 Evidence from the US treasury yield curve. {it:Finance Research Letters} 60: 104852.
 
@@ -498,6 +552,11 @@ nonlinear multivariate models. {it:Journal of Econometrics} 74: 119-147.
 {phang}
 Lastrapes, W. D., and T. F. P. Wiesen. 2021. The joint spillover index.
 {it:Economic Modelling} 94: 681-691.
+
+{phang}
+Naeem, M. A., I. Chatziantoniou, D. Gabauer, and S. Karim. 2024. Measuring the G20
+stock market return transmission mechanism: Evidence from the R2 connectedness
+approach. {it:International Review of Financial Analysis} 91: 102986.
 
 {phang}
 Portnoy, S., and R. Koenker. 1997. The Gaussian hare and the Laplacian tortoise:

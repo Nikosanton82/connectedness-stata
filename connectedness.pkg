@@ -5,7 +5,8 @@ d Estimates the connectedness measures of Diebold and Yilmaz (2009, 2012) from s
 d and rolling-window VARs, quantile and LAD VARs and the TVP-VAR connectedness measures of Antonakakis,
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
 d indices, frequency connectedness (Barunik and Krehlik 2018), joint and extended
-d joint connectedness, asymmetric (positive and negative) connectedness, group measures
+d joint connectedness, R2 decomposed and model-free connectedness, asymmetric
+d (positive and negative) connectedness, group measures
 d (aggregated, conditional, inclusive, exclusive, internal, external) and network plots. Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
 d Includes 18 datasets from published applications.
 d

@@ -32,7 +32,11 @@ end
 
 capture program drop cn_check
 program define cn_check
-    syntax , case(string) tol(real) [prefix(string) MATrix(string) FRame(string) BANDs(integer 0)]
+    syntax , case(string) tol(real) [prefix(string) MATrix(string) FRame(string) BANDs(integer 0) ///
+        SUFfixes(string)]
+    forvalues b = 1/`bands' {
+        local suffixes `suffixes' f`b'
+    }
     if "`matrix'" == "" local matrix e(fevd)
     if "`frame'" == ""  local frame `e(frame)'
     local f "fixtures/`prefix'`case'"
@@ -54,12 +58,12 @@ program define cn_check
         }
         matrix `E' = `matrix'
         local d1 = mreldif(`E', `F')
-        forvalues b = 1/`bands' {
+        foreach b of local suffixes {
             frame __fx {
-                quietly import delimited using "`f'_fevd_f`b'.csv", clear varnames(nonames) asdouble
+                quietly import delimited using "`f'_fevd_`b'.csv", clear varnames(nonames) asdouble
                 mkmat _all, matrix(`F')
             }
-            matrix `E' = e(fevd_f`b')
+            matrix `E' = e(fevd_`b')
             local d1 = max(`d1', mreldif(`E', `F'))
         }
     }
@@ -416,7 +420,7 @@ if _rc {
 else di as txt "  frequency bands, joint tables, cngraph and cnnetwork band(): pass"
 cn_expect 198 connectedness SP500 R_10Y, approach(joint) orthogonalized `opt'
 cn_expect 198 connectedness SP500 R_10Y, approach(extjoint) corrected `opt'
-cn_expect 198 connectedness SP500 R_10Y, approach(r2) `opt'
+cn_expect 198 connectedness SP500 R_10Y, approach(bogus) `opt'
 cn_expect 198 connectedness SP500 R_10Y, bands(5) `opt'
 cn_expect 198 connectedness SP500 R_10Y, approach(frequency) horizon(1) `opt'
 cn_expect 198 connectedness SP500 R_10Y, approach(frequency) partition(1 2 0) `opt'
@@ -472,6 +476,63 @@ cn_expect 198 connectedness SP500 R_10Y, quantile(0.5) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(lad) prior(minnesota) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(qvar) kappa2(0.96) `opt'
 
+di _n as txt "{hline 78}" _n "11. R2 decomposed and model-free connectedness (0.5.0)" _n "{hline 78}"
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+connectedness `v', approach(r2) lags(1) window(200) `opt'
+cn_check, case(dy2012_r2_roll200) tol(1e-8) prefix(R_) suffixes(c l)
+connectedness `v', approach(r2) lags(1) window(200) cormethod(spearman) `opt'
+cn_check, case(dy2012_r2_spearman_roll200) tol(1e-8) prefix(R_) suffixes(c l)
+timer on 8
+connectedness `v', approach(r2) lags(1) window(200) cormethod(kendall) `opt'
+timer off 8
+cn_check, case(dy2012_r2_kendall_roll200) tol(1e-8) prefix(R_) suffixes(c l)
+connectedness `v', approach(r2) lags(0) window(200) `opt'
+cn_check, case(dy2012_r2_lag0_roll200) tol(1e-8) prefix(R_)
+connectedness `v', approach(r2) lags(2) corrected `opt'
+cn_check, case(dy2012_r2_lag2_static_corr) tol(1e-8) prefix(R_) suffixes(c l)
+connectedness `v', approach(modelfree) `opt'
+cn_check, case(dy2012_mf_static) tol(1e-8) prefix(R_)
+connectedness `v', approach(modelfree) window(200) `opt'
+cn_check, case(dy2012_mf_roll200) tol(1e-8) prefix(R_)
+connectedness `v', approach(modelfree) window(200) cormethod(kendall) `opt'
+cn_check, case(dy2012_mf_kendall_roll200) tol(1e-8) prefix(R_)
+connectedness `v', approach(modelfree) cormethod(spearman) `opt'
+cn_check, case(dy2012_mf_spearman_static) tol(1e-8) prefix(R_)
+
+use ../data/cn_cgs2022, clear
+tsset t
+connectedness X2YCHF-X10YSEK, approach(r2) lags(1) `opt'
+cn_check, case(cgs2022_r2_static) tol(1e-8) prefix(R_) suffixes(c l)
+
+global cn_tests = $cn_tests + 1
+capture noisily {
+    use ../data/cn_dy2012, clear
+    tsset t
+    connectedness SP500 R_10Y DJUBSCOM USDX, approach(r2) lags(1) window(200) datevar(date) `opt'
+    assert "`e(cormethod)'" == "pearson" & e(TCI_c) < . & e(TCI_l) < .
+    assert reldif(e(TCI), e(TCI_c) + e(TCI_l)) < 1e-10
+    connectedness, component(lagged)
+    cngraph tci, nodraw
+    cngraph net, component(c) nodraw
+    cnnetwork, component(l) nodraw
+    connectedness SP500 R_10Y DJUBSCOM USDX, approach(modelfree) window(200) `opt'
+    estat group, type(inclusive) groups(SP500 R_10Y) frame(cn_grp) replace notable
+}
+if _rc {
+    global cn_fails = $cn_fails + 1
+    di as err "  FAIL: R2 and model-free postestimation (r(" _rc "))"
+}
+else di as txt "  R2 components, model-free group measures, cngraph and cnnetwork: pass"
+cn_expect 198 connectedness SP500 R_10Y, approach(r2) model(tvpvar) `opt'
+cn_expect 198 connectedness SP500 R_10Y, approach(r2) cormethod(bogus) `opt'
+cn_expect 198 connectedness SP500 R_10Y, cormethod(kendall) `opt'
+cn_expect 198 connectedness SP500 R_10Y, lags(0) `opt'
+cn_expect 2001 connectedness SP500 R_10Y DJUBSCOM USDX, approach(r2) lags(2) window(12) `opt'
+quietly connectedness SP500 R_10Y DJUBSCOM USDX, approach(r2) lags(0) `opt'
+cn_expect 198 connectedness, component(lagged)
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -481,6 +542,7 @@ di as txt "Timing: frequency, rolling VAR, H = 50:    " as res %6.1f r(t4) as tx
 di as txt "Timing: frequency, TVP-VAR, H = 100:       " as res %6.1f r(t5) as txt " s"
 di as txt "Timing: extended joint, TVP-VAR, k = 12:   " as res %6.1f r(t6) as txt " s"
 di as txt "Timing: QVAR, rolling, 501 windows:        " as res %6.1f r(t7) as txt " s"
+di as txt "Timing: R2 (Kendall), rolling, 2,571 windows:" as res %6.1f r(t8) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

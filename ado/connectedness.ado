@@ -1,4 +1,4 @@
-*! version 0.4.0  20oct2026
+*! version 0.5.0  20oct2026
 *! connectedness: VAR, QVAR, LAD-VAR and TVP-VAR connectedness measures (time, frequency, joint)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -20,7 +20,7 @@ program define Estimate, eclass
         GAMma(real 0.01) FRame(string) REPLACE SAVEFevd noFEVD    ///
         ASYMmetric DATEvar(varname numeric) noTABle DIGits(integer 2) ///
         APProach(string) BANDs(numlist >1 sort) PARTition(numlist) SCENario(string) ///
-        QUANTile(numlist >0 <1) ]
+        QUANTile(numlist >0 <1) CORMethod(string) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -84,18 +84,42 @@ program define Estimate, eclass
     else if inlist("`approach'", "extjoint", "extendedjoint", "extended joint", "ejoint") {
         local approach extjoint
     }
-    else if "`approach'" == "r2" {
-        di as err "approach(r2) is planned for a later release of {cmd:connectedness}"
-        exit 198
+    else if inlist("`approach'", "r2", "r2decomposed") {
+        local approach r2
+    }
+    else if inlist("`approach'", "modelfree", "model-free", "unconditional") {
+        local approach modelfree
     }
     else {
         di as err "approach(`approach') not allowed; specify {cmd:time}, {cmd:frequency}, " ///
-            "{cmd:joint} or {cmd:extjoint}"
+            "{cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}"
         exit 198
     }
     if "`approach'" != "frequency" & `"`bands'`partition'`scenario'"' != "" {
         di as err "options bands(), partition() and scenario() require approach(frequency)"
         exit 198
+    }
+    // R2 and model-free connectedness work on the data directly
+    local cormethod = lower(strtrim("`cormethod'"))
+    if !inlist("`approach'", "r2", "modelfree") & "`cormethod'" != "" {
+        di as err "option cormethod() requires approach(r2) or approach(modelfree)"
+        exit 198
+    }
+    if inlist("`approach'", "r2", "modelfree") {
+        if "`cormethod'" == "" local cormethod pearson
+        if !inlist("`cormethod'", "pearson", "spearman", "kendall") {
+            di as err "cormethod() must be pearson, spearman or kendall"
+            exit 198
+        }
+        if "`model'" != "var" {
+            di as err "approach(`approach') does not use an estimated model; model() not allowed"
+            exit 198
+        }
+        if "`orthogonalized'" != "" | "`asymmetric'" != "" {
+            di as err "options orthogonalized and asymmetric are not allowed with approach(`approach')"
+            exit 198
+        }
+        if "`approach'" == "modelfree" local lags 0
     }
     if inlist("`approach'", "joint", "extjoint") {
         if "`orthogonalized'" != "" {
@@ -191,6 +215,19 @@ program define Estimate, eclass
         exit 198
     }
 
+    // components stored with suffixes: frequency bands, or R2 parts
+    local csufs
+    if "`approach'" == "frequency" {
+        forvalues b = 1/`nbands' {
+            local csufs `csufs' f`b'
+        }
+    }
+    if "`approach'" == "r2" & `lags' > 0 {
+        local csufs c l
+        local blabels Contemporaneous Lagged
+    }
+    local ncomp : word count `csufs'
+
     local prior = lower(strtrim(`"`prior'"'))
     if "`model'" != "tvpvar" & "`prior'" != "" {
         di as err "option prior() is allowed only with model(tvpvar)"
@@ -217,8 +254,12 @@ program define Estimate, eclass
     local gen  = ("`orthogonalized'" == "")
     local corr = ("`corrected'" != "")
 
-    if `lags' < 1 {
+    if `lags' < 1 & !inlist("`approach'", "r2", "modelfree") {
         di as err "lags() must be a positive integer"
+        exit 198
+    }
+    if `lags' < 0 {
+        di as err "lags() must be zero or a positive integer"
         exit 198
     }
     if `horizon' < 1 {
@@ -252,7 +293,15 @@ program define Estimate, eclass
     if "`model'" == "tvpvar" & "`prior'" != "bayes" {
         local nreg = `T' - `lags'
     }
-    if `nreg' <= `k'*`lags' + 1 {
+    if inlist("`approach'", "r2", "modelfree") {
+        // R2 decomposition: each window holds window - 2*lags rows of (x_t, ..., x_t-p)
+        local nreg = cond(`window' == 0, `T' - `lags', `window' - 2*`lags')
+        if `nreg' <= `k'*(`lags' + 1) {
+            di as err "too few observations per window: `nreg' rows for " `k'*(`lags'+1) " series"
+            exit 2001
+        }
+    }
+    else if `nreg' <= `k'*`lags' + 1 {
         if "`model'" != "tvpvar" {
             di as err "too few observations per VAR estimation: `nreg' observations for " ///
                 `k'*`lags' + 1 " coefficients per equation"
@@ -268,7 +317,7 @@ program define Estimate, eclass
     local np = `k'*(`k'-1)/2
     local nvars = cond("`approach'" == "joint", 1 + 3*`k', 2 + 4*`k' + 3*`np')
     if "`fevd'" == "" local nvars = `nvars' + `k'*`k'
-    local nvars = (`nvars')*(`nbands' + 1) + 2
+    local nvars = (`nvars')*(`ncomp' + 1) + 2
     if `nvars' > c(maxvar) - 10 {
         di as err "the results frame would need `nvars' variables, more than maxvar (" c(maxvar) ") allows;"
         di as err "specify {cmd:nofevd}, reduce the number of variables or frequency bands, or {help set maxvar}"
@@ -338,7 +387,7 @@ program define Estimate, eclass
             `window', `gen', `corr', "`prior'", `kappa1', `kappa2', `gamma',         ///
             "`tab`i''", "`fev`i''", "`sc`i''", "`names'", "`datevar'",               ///
             "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'", ///
-            strtoreal(tokens("`taus'")))
+            strtoreal(tokens("`taus'")), "`csufs'", "`cormethod'")
         capture frame drop `f'
         frame create `f'
         frame `f' {
@@ -356,6 +405,7 @@ program define Estimate, eclass
             char _dta[cn_approach]  "`approach'"
             char _dta[cn_nbands]    "`nbands'"
             char _dta[cn_bands]     "`blabels'"
+            char _dta[cn_comps]     "`csufs'"
         }
     }
     local sc `sc1'
@@ -406,6 +456,17 @@ program define Estimate, eclass
         ereturn local partition "`partstr'"
         ereturn local scenario  "`scenario'"
     }
+    if "`approach'" == "r2" & `lags' > 0 {
+        local j 0
+        foreach c in c l {
+            local ++j
+            ereturn scalar TCI_`c'  = `sc'[1, 6 + 2*`j']
+            ereturn scalar cTCI_`c' = `sc'[1, 7 + 2*`j']
+            ereturn matrix table_`c' = `tab1'`c'
+            ereturn matrix fevd_`c'  = `fev1'`c'
+        }
+    }
+    if inlist("`approach'", "r2", "modelfree") ereturn local cormethod "`cormethod'"
     ereturn matrix table = `tab1'
     ereturn matrix fevd  = `fev1'
     if "`asymmetric'" != "" {
@@ -431,6 +492,9 @@ program define Estimate, eclass
     ereturn local depvar   "`varlist'"
     ereturn local corrected "`corrected'"
     ereturn local fevdtype = cond(`gen', "generalized", "orthogonalized")
+    if "`approach'" == "r2" ereturn local fevdtype "R2 decomposition (`cormethod')"
+    if "`approach'" == "modelfree" ereturn local fevdtype "squared correlations (`cormethod')"
+    if inlist("`approach'", "r2", "modelfree") ereturn scalar horizon = .
     ereturn local approach "`approach'"
     ereturn local model    "`model'"
     ereturn local title    "Connectedness approach"
@@ -441,7 +505,7 @@ program define Estimate, eclass
 end
 
 program define Display
-    syntax [, DIGits(integer 2) PARt(string) BANd(integer 0) noTABle]
+    syntax [, DIGits(integer 2) PARt(string) BANd(integer 0) COMPonent(string) noTABle]
     if `digits' < 0 | `digits' > 8 {
         di as err "digits() must be between 0 and 8"
         exit 198
@@ -475,16 +539,41 @@ program define Display
         }
         local suf _f`band'
     }
+    local component = lower("`component'")
+    if "`component'" != "" {
+        if "`approach'" != "r2" | "`e(TCI_c)'" == "" {
+            di as err "component() requires results estimated with approach(r2) and lags() > 0"
+            exit 198
+        }
+        if "`suf'" != "" {
+            di as err "component() may not be combined with part() or band()"
+            exit 184
+        }
+        if inlist("`component'", "c", "cont", "contemporaneous") local suf _c
+        else if inlist("`component'", "l", "lag", "lagged") local suf _l
+        else {
+            di as err "component() must be contemporaneous or lagged"
+            exit 198
+        }
+    }
     local w = `digits' + 6
     local mname "VAR"
     if "`e(model)'" == "qvar" local mname "QVAR"
     if "`e(model)'" == "lad"  local mname "LAD-VAR"
-    if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
+    local wdesc = cond(e(window) > 0, "rolling window", "static")
+    if "`approach'" == "r2" local mdesc "R2, `e(lags)' lag(s), `wdesc'"
+    else if "`approach'" == "modelfree" local mdesc "model-free, `wdesc'"
+    else if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
     else if e(window) > 0      local mdesc "`mname'(`e(lags)'), rolling window"
     else                       local mdesc "`mname'(`e(lags)'), static"
 
     di _n as txt "`e(title)'" _col(49) "Number of variables = " as res %8.0g e(k)
-    di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Forecast horizon    = " as res %8.0g e(horizon)
+    if inlist("`approach'", "r2", "modelfree") {
+        di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Lags                = " as res %8.0g e(lags)
+    }
+    else {
+        di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Forecast horizon    = " as res %8.0g e(horizon)
+    }
     di as txt "FEVD:   " as res "`e(fevdtype)'" _col(49) as txt "Observations used   = " as res %8.0g e(N)
     di as txt "Sample: " as res "`e(first)' to `e(last)'" _col(49) as txt "Periods measured    = " as res %8.0g e(T0)
     if "`e(model)'" == "tvpvar" {
@@ -513,6 +602,14 @@ program define Display
     else if "`approach'" == "extjoint" {
         di as txt "Approach: " as res "extended joint" as txt " (Balcilar, Gabauer and Umar 2021)"
     }
+    else if "`approach'" == "r2" {
+        di as txt "Approach: " as res "R2 decomposed connectedness" as txt " (" as res "`e(cormethod)'" ///
+            as txt " correlations)"
+    }
+    else if "`approach'" == "modelfree" {
+        di as txt "Approach: " as res "model-free connectedness" as txt " (" as res "`e(cormethod)'" ///
+            as txt " correlations)"
+    }
     local fr "`e(frame)'"
     if inlist("`suf'", "_pos", "_neg") local fr "`e(frame`suf')'"
     di as txt "Results frame: " as res "`fr'" as txt " (first period " as res "`e(firstm)'" as txt ")"
@@ -524,6 +621,12 @@ program define Display
     if `band' {
         di as txt "Frequency band: " as res "`: word `band' of `e(bands)''" as txt " periods"
     }
+    else if inlist("`suf'", "_c", "_l") {
+        di as txt "Component: " as res cond("`suf'" == "_c", "contemporaneous", "lagged")
+    }
+    else if "`approach'" == "r2" & "`e(TCI_c)'" != "" {
+        di as txt "Table: " as res "overall" as txt "; see {cmd:connectedness, component()}"
+    }
     else if "`approach'" == "frequency" {
         di as txt "Table: " as res "total over the bands" as txt "; see {cmd:connectedness, band()}"
     }
@@ -533,6 +636,9 @@ program define Display
             rowtitle(" ") twidth(12)
         if "`approach'" == "joint" {
             di as txt "Rows: generalized FEVD (percent); TO, FROM and NET are joint spillovers."
+        }
+        else if "`approach'" == "r2" {
+            di as txt "Rows: share of the row variable's variance explained by the column variable (R2, percent)."
         }
         else {
             di as txt "Rows: variance of the row variable explained by the column variable (percent)."
@@ -549,6 +655,14 @@ program define Display
     if "`e(asymmetric)'" != "" & "`suf'" == "" {
         di as txt "Positive changes: TCI = " as res %6.`digits'f e(TCI_pos) ///
             as txt "    Negative changes: TCI = " as res %6.`digits'f e(TCI_neg)
+    }
+    if "`approach'" == "r2" & "`e(TCI_c)'" != "" & "`suf'" == "" {
+        di _n as txt %-16s "Component" %12s "TCI" %16s "corrected TCI"
+        di as txt "{hline 44}"
+        di as txt %-16s "Contemporaneous" as res %12.`digits'f e(TCI_c) %16.`digits'f e(cTCI_c)
+        di as txt %-16s "Lagged" as res %12.`digits'f e(TCI_l) %16.`digits'f e(cTCI_l)
+        di as txt "{hline 44}"
+        di as txt %-16s "Overall" as res %12.`digits'f e(TCI) %16.`digits'f e(cTCI)
     }
     if "`approach'" == "frequency" & `band' == 0 {
         di _n as txt %-16s "Band (periods)" %12s "TCI" %16s "corrected TCI"

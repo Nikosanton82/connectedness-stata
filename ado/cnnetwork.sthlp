@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.4.0  20oct2026}{...}
+{* *! version 0.5.0  20oct2026}{...}
 {title:Title}
 
 {phang}
@@ -20,6 +20,7 @@ pairwise connectedness index{p_end}
 {synopt:{opt at(exp)}}draw one period, matched on the time or date variable; default is the average over all periods{p_end}
 {synopt:{opt fr:ame(name)}}use the measures in frame {it:name}; default is the results frame of the last estimates{p_end}
 {synopt:{opt ban:d(#)}}draw frequency band {it:#} after {cmd:approach(frequency)}; default is the total{p_end}
+{synopt:{opt comp:onent(name)}}draw the {cmd:contemporaneous} or {cmd:lagged} component after {cmd:approach(r2)}{p_end}
 {synopt:{opt ti:tle(string)}}title{p_end}
 {synopt:{opt name(name[, replace])}}name of the graph{p_end}
 {synopt:{opt sav:ing(filename[, replace])}}save the graph{p_end}

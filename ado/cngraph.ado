@@ -1,4 +1,4 @@
-*! version 0.4.0  20oct2026
+*! version 0.5.0  20oct2026
 *! cngraph: graphs of dynamic connectedness measures after -connectedness-
 program define cngraph
     version 16.1
@@ -10,7 +10,7 @@ program define cngraph
         exit 198
     }
     syntax [, FRame(name) COMPare(namelist) SELect(string) RAW TItle(string) ///
-        NAME(string) SAVing(string) noDRAW COMBopts(string) BANd(integer 0) * ]
+        NAME(string) SAVing(string) noDRAW COMBopts(string) BANd(integer 0) COMPonent(string) * ]
 
     local utitle `"`title'"'
 
@@ -36,6 +36,7 @@ program define cngraph
         local appr   : char _dta[cn_approach]
         local nbands : char _dta[cn_nbands]
         local blabs  : char _dta[cn_bands]
+        local comps  : char _dta[cn_comps]
     }
     if "`appr'" == "" local appr time
     if "`nbands'" == "" local nbands 0
@@ -50,6 +51,23 @@ program define cngraph
             exit 198
         }
         local suf _f`band'
+    }
+    local component = lower("`component'")
+    if "`component'" != "" {
+        if "`comps'" != "c l" {
+            di as err "component() requires a frame estimated with approach(r2) and lags() > 0"
+            exit 198
+        }
+        if `band' {
+            di as err "options band() and component() may not be combined"
+            exit 184
+        }
+        if inlist("`component'", "c", "cont", "contemporaneous") local suf _c
+        else if inlist("`component'", "l", "lag", "lagged") local suf _l
+        else {
+            di as err "component() must be contemporaneous or lagged"
+            exit 198
+        }
     }
     if "`appr'" == "joint" & inlist("`what'", "npt", "npdc", "pci", "inf") {
         di as err "`what' is not available after approach(joint)"
@@ -133,6 +151,11 @@ program define cngraph
                 local blegend `"`blegend' "`: word `b' of `blabs''""'
             }
         }
+        if "`appr'" == "r2" & "`comps'" == "c l" & "`suf'" == "" & `nov' == 0 {
+            local single 3
+            local blegend `""Overall" "Contemporaneous" "Lagged""'
+            local panels `panels' `=cond(`usec', "ctci", "tci")'_c `=cond(`usec', "ctci", "tci")'_l
+        }
     }
     else if "`what'" == "tciext" {
         if "`gtype'" != "aggregated" {
@@ -195,6 +218,9 @@ program define cngraph
     if `band' & `"`utitle'"' == "" {
         local bl : word `band' of `blabs'
         local title `"`title', band `bl' periods"'
+    }
+    if inlist("`suf'", "_c", "_l") & `"`utitle'"' == "" {
+        local title `"`title', `=cond("`suf'" == "_c", "contemporaneous", "lagged")'"'
     }
     local np : word count `panels'
     if `np' > 36 {

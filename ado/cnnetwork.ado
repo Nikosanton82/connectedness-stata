@@ -1,9 +1,9 @@
-*! version 0.4.0  20oct2026
+*! version 0.5.0  20oct2026
 *! cnnetwork: network plot of pairwise connectedness after -connectedness-
 program define cnnetwork
     version 16.1
     syntax [, Method(string) THReshold(real 0) AT(string) FRame(name) ///
-        TItle(string) NAME(string) SAVing(string) noDRAW BANd(integer 0) * ]
+        TItle(string) NAME(string) SAVing(string) noDRAW BANd(integer 0) COMPonent(string) * ]
 
     local method = lower("`method'")
     if "`method'" == "" local method npdc
@@ -33,6 +33,7 @@ program define cnnetwork
         local appr  : char _dta[cn_approach]
         local nbands : char _dta[cn_nbands]
         local blabs : char _dta[cn_bands]
+        local comps : char _dta[cn_comps]
     }
     if "`appr'" == "joint" {
         di as err "cnnetwork is not available after approach(joint); pairwise measures are not defined"
@@ -50,6 +51,23 @@ program define cnnetwork
             exit 198
         }
         local suf _f`band'
+    }
+    local component = lower("`component'")
+    if "`component'" != "" {
+        if "`comps'" != "c l" {
+            di as err "component() requires a frame estimated with approach(r2) and lags() > 0"
+            exit 198
+        }
+        if `band' {
+            di as err "options band() and component() may not be combined"
+            exit 184
+        }
+        if inlist("`component'", "c", "cont", "contemporaneous") local suf _c
+        else if inlist("`component'", "l", "lag", "lagged") local suf _l
+        else {
+            di as err "component() must be contemporaneous or lagged"
+            exit 198
+        }
     }
     if "`names'" == "" {
         di as err "frame {bf:`frame'} was not created by {cmd:connectedness} or {cmd:estat group}"
@@ -137,6 +155,7 @@ program define cnnetwork
             local bl : word `band' of `blabs'
             local when "`when'; band `bl' periods"
         }
+        if inlist("`suf'", "_c", "_l") local when "`when'; `=cond("`suf'" == "_c", "contemporaneous", "lagged")'"
         if `"`name'"' != ""   local nameopt name(`name')
         if `"`saving'"' != "" local saveopt saving(`saving')
         twoway `plots', aspectratio(1) xscale(off range(-1.7 1.7)) yscale(off range(-1.4 1.4)) ///

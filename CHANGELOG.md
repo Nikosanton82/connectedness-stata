@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 (2026-10-20)
+- `approach(r2)`: R2 decomposed connectedness (Naeem et al. 2024), with contemporaneous
+  and lagged components when `lags()` > 0 (Balli et al. 2023). The overall measures
+  use the base names; the components get the suffixes `_c` and `_l`.
+- `approach(modelfree)`: model-free connectedness from squared correlations
+  (Gabauer, Chatziantoniou and Stenfors 2023); `estat group` works on these results.
+- `cormethod(pearson|spearman|kendall)` for both approaches.
+- `connectedness, component()`, `cngraph, component()` and `cnnetwork, component()`
+  show the contemporaneous or lagged parts; `cngraph tci` draws all three TCIs.
+- The pairwise influence index is stored as missing, instead of stopping the
+  estimation, in periods where both shares of a pair are zero.
+- Validation: 10 new R cases (Pearson, Spearman and Kendall; 0, 1 and 2 lags; static
+  and rolling; 18 variables); largest relative difference from R below 1e-12;
+  119 of 119 certification tests pass (`docs/certification-log-v0.5.0.txt`).
+
 ## 0.4.0 (2026-10-20)
 - `model(qvar)`: quantile VAR connectedness (Chatziantoniou, Gabauer and Stenfors
   2021), with `quantile()` set to one value or one value per variable
