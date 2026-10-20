@@ -32,7 +32,7 @@ end
 
 capture program drop cn_check
 program define cn_check
-    syntax , case(string) tol(real) [prefix(string) MATrix(string) FRame(string)]
+    syntax , case(string) tol(real) [prefix(string) MATrix(string) FRame(string) BANDs(integer 0)]
     if "`matrix'" == "" local matrix e(fevd)
     if "`frame'" == ""  local frame `e(frame)'
     local f "fixtures/`prefix'`case'"
@@ -54,6 +54,14 @@ program define cn_check
         }
         matrix `E' = `matrix'
         local d1 = mreldif(`E', `F')
+        forvalues b = 1/`bands' {
+            frame __fx {
+                quietly import delimited using "`f'_fevd_f`b'.csv", clear varnames(nonames) asdouble
+                mkmat _all, matrix(`F')
+            }
+            matrix `E' = e(fevd_f`b')
+            local d1 = max(`d1', mreldif(`E', `F'))
+        }
     }
     else local ttxt "(no table)"
     frame __fx: quietly import delimited using "`f'_ts.csv", clear varnames(1) asdouble
@@ -321,11 +329,114 @@ quietly connectedness SP500 R_10Y DJUBSCOM USDX, nofevd `opt'
 cn_expect 198 estat group, type(external) groups("SP500 R_10Y" "USDX") frame(cn_grp) replace
 cn_expect 198 connectedness, part(positive)
 
+di _n as txt "{hline 78}" _n "9. Frequency, joint and extended joint connectedness (0.3.0)" _n "{hline 78}"
+* fixtures from test/r/make_fixtures_ext.R (R package only)
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+connectedness `v', lags(4) horizon(100) approach(frequency) bands(5 20) `opt'
+cn_check, case(dy2012_freq_static) tol(1e-8) prefix(R_) bands(3)
+connectedness `v', lags(4) horizon(10) approach(frequency) `opt'
+cn_check, case(dy2012_freq_default) tol(1e-8) prefix(R_) bands(2)
+connectedness `v', lags(4) horizon(100) approach(frequency) bands(5 20) scenario(wth) `opt'
+cn_check, case(dy2012_freq_wth) tol(1e-8) prefix(R_) bands(3)
+timer on 4
+connectedness `v', lags(4) horizon(50) window(200) approach(frequency) bands(5) `opt'
+timer off 4
+cn_check, case(dy2012_freq_roll200) tol(1e-8) prefix(R_) bands(2)
+connectedness `v', lags(4) horizon(10) window(200) approach(extjoint) `opt'
+cn_check, case(dy2012_extjoint_roll200) tol(1e-8) prefix(R_)
+
+use ../data/cn_dy2009, clear
+tsset t
+quietly ds t date, not
+connectedness `r(varlist)', lags(2) horizon(100) orthogonalized approach(frequency) bands(5) `opt'
+cn_check, case(dy2009_freq_orth) tol(1e-8) prefix(R_) bands(2)
+
+use ../data/cn_cgg2022, clear
+tsset t
+quietly ds t date, not
+timer on 5
+connectedness `r(varlist)', model(tvpvar) horizon(100) window(200) approach(frequency) bands(5) `opt'
+timer off 5
+cn_check, case(cgg2022_freq_tvp) tol(1e-6) prefix(R_) bands(2)
+
+use ../data/cn_acg2020, clear
+tsset month
+connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) corrected ///
+    approach(frequency) bands(3 12) `opt'
+cn_check, case(acg2020_freq_tvp_corr) tol(1e-6) prefix(R_) bands(3)
+
+use ../data/cn_lw2021, clear
+tsset t
+quietly ds t date, not
+local v `r(varlist)'
+connectedness `v', lags(2) horizon(30) approach(joint) `opt'
+cn_check, case(lw2021_joint_static) tol(1e-8) prefix(R_)
+connectedness `v', lags(2) horizon(30) window(200) approach(joint) `opt'
+cn_check, case(lw2021_joint_roll200) tol(1e-8) prefix(R_)
+connectedness `v', lags(2) horizon(30) approach(extjoint) `opt'
+cn_check, case(lw2021_extjoint_static) tol(1e-8) prefix(R_)
+
+use ../data/cn_bgu2021, clear
+tsset t
+quietly ds t date, not
+local v `r(varlist)'
+connectedness `v', model(tvpvar) horizon(20) prior(minnesota) gamma(0.1) approach(joint) `opt'
+cn_check, case(bgu2021_joint_tvp) tol(1e-6) prefix(R_)
+timer on 6
+connectedness `v', model(tvpvar) horizon(20) prior(minnesota) gamma(0.1) approach(extjoint) `opt'
+timer off 6
+cn_check, case(bgu2021_extjoint_tvp) tol(1e-6) prefix(R_)
+
+global cn_tests = $cn_tests + 1
+capture noisily {
+    use ../data/cn_dy2012, clear
+    tsset t
+    connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(50) window(200) datevar(date) ///
+        approach(frequency) bands(5) `opt'
+    assert e(nbands) == 2 & "`e(bands)'" == "1-5 5-Inf" & "`e(approach)'" == "frequency"
+    assert reldif(e(TCI), e(TCI_f1) + e(TCI_f2)) < 1e-10
+    connectedness, band(2)
+    cngraph tci, nodraw
+    cngraph net, band(1) nodraw
+    cngraph npdc, band(2) select(SP500) nodraw
+    cnnetwork, band(1) nodraw
+    connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) approach(joint) `opt'
+    assert e(cTCI) == . & rowsof(e(table)) == 7
+    cngraph tci, nodraw
+    cngraph net, nodraw
+    connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) approach(extjoint) window(200) `opt'
+    cnnetwork, method(pci) nodraw
+}
+if _rc {
+    global cn_fails = $cn_fails + 1
+    di as err "  FAIL: frequency and joint postestimation (r(" _rc "))"
+}
+else di as txt "  frequency bands, joint tables, cngraph and cnnetwork band(): pass"
+cn_expect 198 connectedness SP500 R_10Y, approach(joint) orthogonalized `opt'
+cn_expect 198 connectedness SP500 R_10Y, approach(extjoint) corrected `opt'
+cn_expect 198 connectedness SP500 R_10Y, approach(r2) `opt'
+cn_expect 198 connectedness SP500 R_10Y, bands(5) `opt'
+cn_expect 198 connectedness SP500 R_10Y, approach(frequency) horizon(1) `opt'
+cn_expect 198 connectedness SP500 R_10Y, approach(frequency) partition(1 2 0) `opt'
+cn_expect 184 connectedness SP500 R_10Y, approach(frequency) bands(5) partition(3 1 0) `opt'
+quietly connectedness SP500 R_10Y DJUBSCOM USDX, approach(frequency) `opt'
+cn_expect 198 estat group, type(internal) groups("SP500 R_10Y" "USDX") frame(cn_grp) replace
+cn_expect 198 connectedness, band(3)
+quietly connectedness SP500 R_10Y DJUBSCOM USDX, approach(joint) `opt'
+cn_expect 198 cngraph npdc, nodraw
+cn_expect 198 cnnetwork, nodraw
+cn_expect 198 connectedness, band(1)
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
 di as txt "Timing: TVP-VAR, k = 11, T = 3,915:        " as res %6.1f r(t2) as txt " s"
 di as txt "Timing: TVP-VAR, k = 18, T = 5,558:        " as res %6.1f r(t3) as txt " s"
+di as txt "Timing: frequency, rolling VAR, H = 50:    " as res %6.1f r(t4) as txt " s"
+di as txt "Timing: frequency, TVP-VAR, H = 100:       " as res %6.1f r(t5) as txt " s"
+di as txt "Timing: extended joint, TVP-VAR, k = 12:   " as res %6.1f r(t6) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

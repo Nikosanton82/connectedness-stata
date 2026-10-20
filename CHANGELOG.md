@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.0 (2026-10-20)
+- `approach()` option: `frequency` (Baruník and Křehlík 2018; with `model(tvpvar)`,
+  Chatziantoniou, Gabauer and Gupta 2023), `joint` (Lastrapes and Wiesen 2021) and
+  `extjoint` (Balcilar, Gabauer and Umar 2021), for static, rolling and TVP-VAR models.
+- Frequency bands set in periods with `bands()` or in radians with `partition()`;
+  `scenario(abs|wth)` for absolute or within-band measures. The results frame holds the
+  total and, for each band, the same measures with the suffix `_f<b>`.
+- `connectedness, band(#)` and `estat table, band(#)` show a band's table; the header
+  lists the band TCIs.
+- `cngraph`: `band()` option; `cngraph tci` draws the total and every band after
+  `approach(frequency)`. `cnnetwork`: `band()` option.
+- `estat group` requires `approach(time)`, as in the R package.
+- Validation: 13 new R cases from `test/r/make_fixtures_ext.R` (ConnectednessApproach
+  1.0.4), covering generalized and orthogonalized, ABS and WTH, static, rolling and
+  TVP-VAR, and corrected frequency results; NumPy reference port in
+  `test/python/ca_reference_ext.py`. Largest relative difference from R: 1.4e-12 for
+  static and rolling models, 2.6e-8 for the TVP-VAR (Minnesota prior, k = 12);
+  90 of 90 certification tests pass (`docs/certification-log-v0.3.0.txt`).
+- Replication do-files for Baruník and Křehlík (2018), Lastrapes and Wiesen (2021),
+  Balcilar, Gabauer and Umar (2021) and Chatziantoniou, Gabauer and Gupta (2023).
+
 ## 0.2.1 (2026-10-18), prepared for Stata Journal submission
 - `notable` (in `connectedness` and `estat group`) now suppresses only the table; the
   header and the TCIs are still shown.

@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.2.1  18oct2026}{...}
+{* *! version 0.3.0  20oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
@@ -34,11 +34,13 @@ internal and external connectedness{p_end}
 {title:Syntax for estat table}
 
 {p 8 16 2}
-{cmd:estat} {cmdab:tab:le} [{cmd:,} {opt dig:its(#)} {opt par:t(all|positive|negative)}]
+{cmd:estat} {cmdab:tab:le} [{cmd:,} {opt dig:its(#)} {opt par:t(all|positive|negative)} {opt ban:d(#)} {opt notab:le}]
 
 {pstd}
 Typing {cmd:connectedness} without arguments has the same effect. {opt part()} shows
-the tables of positive or negative changes after {cmd:connectedness, asymmetric}.
+the tables of positive or negative changes after {cmd:connectedness, asymmetric};
+{opt band(#)} shows the table of frequency band {it:#} after
+{cmd:connectedness, approach(frequency)}.
 
 
 {marker group}{...}
@@ -74,7 +76,8 @@ as they are.
 
 {pstd}
 {cmd:estat group} works on the decomposition stored for every period in the results
-frame, so {cmd:connectedness} must not have been run with {cmd:nofevd}. For each
+frame, so {cmd:connectedness} must not have been run with {cmd:nofevd}, and it
+requires the time-domain measures ({cmd:approach(time)}), as in the R package. For each
 period it transforms the decomposition and recomputes TCI, corrected TCI, TO, FROM,
 NET, NPT and NPDC; it displays the table of the averaged transformed decomposition
 and stores the series in {opt frame()} (default {cmd:cn_group}), which

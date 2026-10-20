@@ -1,4 +1,4 @@
-*! version 0.2.1  18oct2026
+*! version 0.3.0  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -390,6 +390,250 @@ string rowvector cn_measlabels(string rowvector v)
 }
 
 // =============================================================================
+// Frequency connectedness (Barunik and Krehlik 2018): R functions
+// FrequencyConnectedness() and FEVD(type="frequency"), with the frequency bands of
+// frequencyConnectedness::getPartition()
+// =============================================================================
+
+// Moving-average matrices Psi_0, ..., Psi_H side by side (k x k*(H+1))
+real matrix cn_psi(real matrix B, real scalar H)
+{
+    real scalar k, p, h, j
+    real matrix PS, P
+
+    k  = rows(B)
+    p  = cols(B)/k
+    PS = J(k, k*(H+1), 0)
+    PS[|1, 1 \ k, k|] = I(k)
+    for (h=1; h<=H; h++) {
+        P = J(k, k, 0)
+        for (j=1; j<=min((h, p)); j++) {
+            P = P + B[|1, (j-1)*k+1 \ k, j*k|] * PS[|1, (h-j)*k+1 \ k, (h-j+1)*k|]
+        }
+        PS[|1, h*k+1 \ k, (h+1)*k|] = P
+    }
+    return(PS)
+}
+
+// getIndeces(n, up, down): DFT positions (1 to n) whose frequency lies in [down, up)
+real colvector cn_getindices(real scalar n, real scalar up, real scalar down)
+{
+    real scalar    m, L
+    real colvector sp, o
+
+    m  = floor(n/2)
+    sp = (0::m) / m * pi()
+    o  = (sp :>= down) :& (sp :< up)
+    L  = rows(o)
+    if (mod(n, 2) == 0) o = o \ o[((L-1)::2)]
+    else                o = o \ o[(L::2)]
+    return(selectindex(o))
+}
+
+// n x nb indicator of the DFT positions in each band; part holds the band
+// boundaries in radians in decreasing order (R's partition argument)
+real matrix cn_partition(real rowvector part, real scalar H)
+{
+    real scalar    b, nb
+    real matrix    P
+    real colvector ix
+
+    nb = cols(part) - 1
+    P  = J(H+1, nb, 0)
+    for (b=1; b<=nb; b++) {
+        ix = cn_getindices(H+1, part[b], part[b+1])
+        if (rows(ix) == 0) {
+            errprintf("frequency band %g contains no frequency at horizon %g;\n", b, H)
+            errprintf("increase horizon() or change the bands\n")
+            exit(error(198))
+        }
+        P[ix, b] = J(rows(ix), 1, 1)
+    }
+    return(P)
+}
+
+// Band connectedness tables (percent), side by side: k x k*nb.
+// P: indicator from cn_partition(); scen: "abs" or "wth"
+real matrix cn_freqtables(real matrix B, real matrix S, real scalar H, real scalar gen,
+                          real matrix P, string scalar scen)
+{
+    real scalar    k, n, nb, r, b, h
+    real matrix    PS, W, Om, L, f, FQ, out, blk
+    complex matrix F, Pw
+    real colvector rng, den, tot
+    real rowvector s2
+
+    k   = rows(S)
+    n   = H + 1
+    nb  = cols(P)
+    PS  = cn_psi(B, H)
+    W   = J(n, k*k, .)
+    for (h=0; h<=H; h++) W[h+1, .] = rowshape(PS[|1, h*k+1 \ k, (h+1)*k|], 1)
+    Om  = (0::H) * (0..H)
+    F   = exp(C(0, -2*pi()/n) :* Om) * W               // row r: DFT of Psi at frequency r
+    rng = selectindex(rowsum(P) :> 0)
+    den = J(k, 1, 0)
+    for (r=1; r<=rows(rng); r++) {
+        Pw  = rowshape(F[rng[r], .], k)
+        den = den + Re(diagonal(Pw * S * Pw'))
+    }
+    den = den / H
+    FQ  = J(n, k*k, .)                                  // row r: rowshape of the FEVD at r
+    if (gen) {
+        s2  = diagonal(S)'
+        tot = J(k, 1, 0)
+        for (r=1; r<=n; r++) {
+            Pw = rowshape(F[r, .], k)
+            f  = (abs(Pw * S):^2 / n) :/ (den * s2)
+            FQ[r, .] = rowshape(f, 1)
+            if (rowsum(P[r, .]) > 0) tot = tot + rowsum(f)
+        }
+        for (r=1; r<=n; r++) FQ[r, .] = rowshape(rowshape(FQ[r, .], k) :/ tot, 1)
+    }
+    else {
+        L = cholesky(S)
+        if (hasmissing(L)) return(J(k, k*nb, .))
+        for (r=1; r<=n; r++) {
+            Pw = rowshape(F[r, .], k)
+            FQ[r, .] = rowshape((abs(Pw * L):^2 / n) :/ den, 1)
+        }
+    }
+    out = J(k, k*nb, .)
+    for (b=1; b<=nb; b++) {
+        blk = rowshape(colsum(FQ[selectindex(P[., b]), .]), k)
+        if (scen == "wth") blk = blk / sum(blk) * k
+        out[|1, (b-1)*k+1 \ k, b*k|] = 100 * blk
+    }
+    return(out)
+}
+
+// Band measures as cn_measures(), except that the pairwise connectedness and
+// influence indices use the total table in their denominators (as in R)
+real rowvector cn_bandmeasures(real matrix cb, real matrix ct)
+{
+    real scalar    k, i, j, c, np
+    real rowvector m, pci, inf
+
+    k   = rows(cb)
+    np  = k*(k-1)/2
+    m   = cn_measures(cb)
+    pci = J(1, np, .)
+    inf = J(1, np, .)
+    c   = 0
+    for (i=1; i<k; i++) {
+        for (j=i+1; j<=k; j++) {
+            c++
+            pci[c] = 200*(cb[i, j] + cb[j, i]) / (ct[i, i] + ct[i, j] + ct[j, i] + ct[j, j])
+            inf[c] = 100*abs(cb[j, i] - cb[i, j]) / (ct[i, j] + ct[j, i])
+        }
+    }
+    m[|2+4*k+np+1 \ 2+4*k+2*np|]   = pci
+    m[|2+4*k+2*np+1 \ 2+4*k+3*np|] = inf
+    return(m)
+}
+
+// =============================================================================
+// Joint connectedness (Lastrapes and Wiesen 2021; R JointConnectedness()) and
+// extended joint connectedness (Balcilar, Gabauer and Umar 2021; R
+// ExtendedJointConnectedness())
+// =============================================================================
+
+// Joint spillovers FROM all others to each variable, in percent (row vector)
+real rowvector cn_jointfrom(real matrix B, real matrix S, real scalar H)
+{
+    real scalar    k, i, h
+    real matrix    PS, P, Xi, So, Gi
+    real rowvector s, a
+    real colvector o
+
+    k  = rows(S)
+    PS = cn_psi(B, H-1)
+    Xi = J(k, k, 0)
+    s  = J(1, k, 0)
+    for (h=0; h<H; h++) {
+        P  = PS[|1, h*k+1 \ k, (h+1)*k|]
+        Xi = Xi + P*S*P'
+    }
+    for (i=1; i<=k; i++) {
+        o  = selectindex((1::k) :!= i)
+        So = S[., o]
+        Gi = cn_ginv(S[o, o])
+        for (h=0; h<H; h++) {
+            a    = PS[|i, h*k+1 \ i, (h+1)*k|] * So
+            s[i] = s[i] + a * Gi * a'
+        }
+    }
+    return(100 * s :/ diagonal(Xi)')
+}
+
+// Joint connectedness of one period. ct: generalized FEVD (percent);
+// returns (TCI, TO, FROM, NET); tb: this period's connectedness table as in R
+real rowvector cn_joint(real matrix B, real matrix S, real scalar H,
+                        real matrix ct, real matrix tb)
+{
+    real scalar    k, gsoi, jsoi
+    real matrix    off
+    real rowvector from, to
+
+    k    = rows(S)
+    ct   = 100 * cn_fevd(B, S, H, 1)
+    off  = ct - diag(diagonal(ct))
+    gsoi = mean(rowsum(off))
+    from = cn_jointfrom(B, S, H)
+    jsoi = mean(from')
+    to   = colsum(off) / (gsoi/jsoi)
+    tb   = J(k+3, k+1, 0)
+    tb[|1, 1 \ k, k|]     = ct
+    tb[|1, k+1 \ k, k+1|] = from'
+    tb[|k+1, 1 \ k+1, k|] = to
+    tb[k+1, k+1]          = sum(to)
+    tb[|k+2, 1 \ k+2, k|] = colsum(ct)
+    tb[|k+3, 1 \ k+3, k|] = to - from
+    tb[k+3, k+1]          = jsoi
+    return((jsoi, to, from, to - from))
+}
+
+// Extended joint connectedness table of one period (percent)
+real matrix cn_extjoint(real matrix B, real matrix S, real scalar H)
+{
+    real matrix    g, off, jt
+    real rowvector s
+
+    g   = 100 * cn_fevd(B, S, H, 1)
+    off = g - diag(diagonal(g))
+    s   = cn_jointfrom(B, S, H)
+    jt  = off :* (s' :/ rowsum(off))
+    jt  = jt + diag(100 :- rowsum(jt))
+    return(jt)
+}
+
+// Names and labels of the joint connectedness measures
+string rowvector cn_jointnames(real scalar k)
+{
+    real scalar      i
+    string rowvector nm
+
+    nm = "tci"
+    for (i=1; i<=k; i++) nm = nm, "to_"   + strofreal(i)
+    for (i=1; i<=k; i++) nm = nm, "from_" + strofreal(i)
+    for (i=1; i<=k; i++) nm = nm, "net_"  + strofreal(i)
+    return(nm)
+}
+
+string rowvector cn_jointlabels(string rowvector v)
+{
+    real scalar      i, k
+    string rowvector lb
+
+    k  = cols(v)
+    lb = "Joint total connectedness index (jSOI)"
+    for (i=1; i<=k; i++) lb = lb, "Joint TO others: "   + v[i]
+    for (i=1; i<=k; i++) lb = lb, "Joint FROM others: " + v[i]
+    for (i=1; i<=k; i++) lb = lb, "Joint NET: "         + v[i]
+    return(lb)
+}
+
+// =============================================================================
 // Driver called by connectedness.ado
 // =============================================================================
 
@@ -398,22 +642,26 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              real scalar gen, real scalar corrected, string scalar prior,
              real scalar kappa1, real scalar kappa2, real scalar gamma,
              string scalar tabname, string scalar fevdname, string scalar scalname,
-             string scalar names, string scalar dvar)
+             string scalar names, string scalar dvar, string scalar approach,
+             real rowvector part, string scalar scen, string scalar blabels)
 {
     external real matrix   cn__M, cn__CT
     external real colvector cn__tv, cn__dv
+    external string rowvector cn__mn, cn__ml, cn__fn, cn__fl
     struct cn_prior scalar pr
-    real scalar    T, k, ws, t0, nT, t
-    real matrix    x, Bt, Qt, B, Q, ct, avg
+    real scalar    T, k, ws, t0, nT, t, nb, b, kk
+    real matrix    x, Bt, Qt, B, Q, ct, avg, P, TB, tb, tabsum, blk
     real colvector tv
-    real rowvector ma
-    string rowvector nm
+    real rowvector ma, m, cv, sc
+    string rowvector nm, bl, fn, fl, mn0, ml0
 
     x  = st_data(., tokens(vars), touse)
     tv = st_data(., tvar, touse)
     T  = rows(x)
     k  = cols(x)
+    kk = k*k
     nm = tokens(names)
+    bl = tokens(blabels)
 
     if (window==0) {
         ws = T
@@ -442,17 +690,76 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         nT = t0
     }
 
-    cn__CT = J(nT, k*k, .)
-    cn__M  = J(nT, 2 + 4*k + 3*k*(k-1)/2, .)
+    // names of the stored measures and of the decompositions
+    nb = 0
+    fn = J(1, 0, "")
+    fl = J(1, 0, "")
+    for (t=1; t<=k; t++) {
+        for (b=1; b<=k; b++) {
+            fn = fn, "fevd_" + strofreal(t) + "_" + strofreal(b)
+            fl = fl, "FEVD share of " + nm[t] + " due to " + nm[b]
+        }
+    }
+    if (approach=="joint") {
+        cn__mn = cn_jointnames(k)
+        cn__ml = cn_jointlabels(nm)
+        fl     = "Generalized " :+ fl
+    }
+    else {
+        cn__mn = cn_measnames(k)
+        cn__ml = cn_measlabels(nm)
+    }
+    cn__fn = fn
+    cn__fl = fl
+    if (approach=="frequency") {
+        P   = cn_partition(part, H)
+        nb  = cols(P)
+        mn0 = cn__mn
+        ml0 = cn__ml
+        for (b=1; b<=nb; b++) {
+            cn__mn = cn__mn, mn0 :+ ("_f" + strofreal(b))
+            cn__ml = cn__ml, ml0 :+ (" [" + bl[b] + "]")
+            cn__fn = cn__fn, fn :+ ("_f" + strofreal(b))
+            cn__fl = cn__fl, fl :+ (" [" + bl[b] + "]")
+        }
+    }
+
+    cn__CT = J(nT, kk*(nb+1), .)
+    cn__M  = J(nT, cols(cn__mn), .)
+    tabsum = J(k+3, k+1, 0)
     for (t=1; t<=nT; t++) {
-        ct = 100 * cn_fevd(rowshape(Bt[t, .], k), rowshape(Qt[t, .], k), H, gen)
-        if (hasmissing(ct)) {
-            errprintf("FEVD could not be computed for period %g ", t)
+        B = rowshape(Bt[t, .], k)
+        Q = rowshape(Qt[t, .], k)
+        if (approach=="frequency") {
+            TB = cn_freqtables(B, Q, H, gen, P, scen)
+            ct = J(k, k, 0)
+            for (b=1; b<=nb; b++) ct = ct + TB[|1, (b-1)*k+1 \ k, b*k|]
+            m  = cn_measures(ct)
+            cv = rowshape(ct, 1)
+            for (b=1; b<=nb; b++) {
+                blk = TB[|1, (b-1)*k+1 \ k, b*k|]
+                m   = m, cn_bandmeasures(blk, ct)
+                cv  = cv, rowshape(blk, 1)
+            }
+        }
+        else if (approach=="joint") {
+            m      = cn_joint(B, Q, H, ct, tb)
+            tabsum = tabsum + tb
+            cv     = rowshape(ct, 1)
+        }
+        else {
+            if (approach=="extjoint") ct = cn_extjoint(B, Q, H)
+            else                      ct = 100 * cn_fevd(B, Q, H, gen)
+            m  = cn_measures(ct)
+            cv = rowshape(ct, 1)
+        }
+        if (hasmissing(cv) | hasmissing(m)) {
+            errprintf("connectedness measures could not be computed for period %g ", t)
             errprintf("(error covariance not positive definite)\n")
             exit(error(506))
         }
-        cn__CT[t, .] = rowshape(ct, 1)
-        cn__M[t, .]  = cn_measures(ct)
+        cn__CT[t, .] = cv
+        cn__M[t, .]  = m
     }
     cn__tv = tv[|T-nT+1 \ T|]
     if (dvar != "") {
@@ -460,31 +767,57 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         cn__dv = cn__dv[|T-nT+1 \ T|]
     }
 
-    avg = rowshape(mean(cn__CT), k)
-    ma  = cn_measures(avg)
-    st_matrix(tabname, cn_table(avg, corrected))
-    st_matrixrowstripe(tabname, (J(k+4, 1, ""), (nm, ("TO", "Inc_Own", "NET", "NPT"))'))
+    // time averages: tables and summary scalars
+    avg = rowshape(mean(cn__CT[|1, 1 \ nT, kk|]), k)
+    if (approach=="joint") {
+        tb = tabsum / nT
+        tb[k+2, k+1] = .z
+        st_matrix(tabname, tb)
+        st_matrixrowstripe(tabname, (J(k+3, 1, ""), (nm, ("TO", "Inc_Own", "NET"))'))
+        ma = (tb[k+3, k+1], .)
+    }
+    else {
+        cn_posttable(tabname, avg, corrected, nm)
+        ma = cn_measures(avg)
+    }
     st_matrixcolstripe(tabname, (J(k+1, 1, ""), (nm, "FROM")'))
     st_matrix(fevdname, avg)
     st_matrixrowstripe(fevdname, (J(k, 1, ""), nm'))
     st_matrixcolstripe(fevdname, (J(k, 1, ""), nm'))
-    st_matrix(scalname, (ma[1], ma[2], T, nT, tv[1], tv[T], cn__tv[1]))
+    sc = (ma[1], ma[2], T, nT, tv[1], tv[T], cn__tv[1])
+    for (b=1; b<=nb; b++) {
+        avg = rowshape(mean(cn__CT[|1, b*kk+1 \ nT, (b+1)*kk|]), k)
+        cn_posttable(tabname + "f" + strofreal(b), avg, corrected, nm)
+        st_matrix(fevdname + "f" + strofreal(b), avg)
+        st_matrixrowstripe(fevdname + "f" + strofreal(b), (J(k, 1, ""), nm'))
+        st_matrixcolstripe(fevdname + "f" + strofreal(b), (J(k, 1, ""), nm'))
+        ma = cn_measures(avg)
+        sc = sc, ma[1], ma[2]
+    }
+    st_matrix(scalname, sc)
+}
+
+// Connectedness table of a time-averaged decomposition, with row and column names
+void cn_posttable(string scalar tabname, real matrix avg, real scalar corrected,
+                  string rowvector nm)
+{
+    real scalar k
+
+    k = rows(avg)
+    st_matrix(tabname, cn_table(avg, corrected))
+    st_matrixrowstripe(tabname, (J(k+4, 1, ""), (nm, ("TO", "Inc_Own", "NET", "NPT"))'))
+    st_matrixcolstripe(tabname, (J(k+1, 1, ""), (nm, "FROM")'))
 }
 
 // Write the per-period results into the current (results) frame
-void cn_postframe(string scalar tvar, string scalar tfmt, string scalar labnames,
-                  real scalar savefevd, string scalar dvar, string scalar dfmt)
+void cn_postframe(string scalar tvar, string scalar tfmt, real scalar savefevd,
+                  string scalar dvar, string scalar dfmt)
 {
     external real matrix    cn__M, cn__CT
     external real colvector cn__tv, cn__dv
-    real scalar      k, i, j
+    external string rowvector cn__mn, cn__ml, cn__fn, cn__fl
+    real scalar      i
     real rowvector   idx
-    string rowvector nm, lb, fn, fl, v
-
-    v  = tokens(labnames)
-    k  = cols(v)
-    nm = cn_measnames(k)
-    lb = cn_measlabels(v)
 
     st_addobs(rows(cn__M))
     idx = st_addvar("double", tvar)
@@ -495,22 +828,13 @@ void cn_postframe(string scalar tvar, string scalar tfmt, string scalar labnames
         st_store(., idx, cn__dv)
         st_varformat(dvar, dfmt)
     }
-    idx = st_addvar("double", nm)
+    idx = st_addvar("double", cn__mn)
     st_store(., idx, cn__M)
-    for (i=1; i<=cols(nm); i++) st_varlabel(nm[i], substr(lb[i], 1, 80))
-
+    for (i=1; i<=cols(cn__mn); i++) st_varlabel(cn__mn[i], substr(cn__ml[i], 1, 80))
     if (savefevd) {
-        fn = J(1, 0, "")
-        fl = J(1, 0, "")
-        for (i=1; i<=k; i++) {
-            for (j=1; j<=k; j++) {
-                fn = fn, "fevd_" + strofreal(i) + "_" + strofreal(j)
-                fl = fl, "FEVD share of " + v[i] + " due to " + v[j]
-            }
-        }
-        idx = st_addvar("double", fn)
+        idx = st_addvar("double", cn__fn)
         st_store(., idx, cn__CT)
-        for (i=1; i<=cols(fn); i++) st_varlabel(fn[i], substr(fl[i], 1, 80))
+        for (i=1; i<=cols(cn__fn); i++) st_varlabel(cn__fn[i], substr(cn__fl[i], 1, 80))
     }
 }
 
@@ -681,7 +1005,8 @@ void cn_postgroup(string scalar type, string scalar labnames, real colvector tv,
 // Reads npdc_i_j or pci_i_j and net_i from the current frame (all rows, or row r)
 // and returns node and edge matrices for drawing.
 void cn_netdata(string scalar method, real scalar k, real scalar r,
-                real scalar threshold, string scalar nodename, string scalar edgename)
+                real scalar threshold, string scalar nodename, string scalar edgename,
+                string scalar suf)
 {
     real scalar    i, j, c, np, wmax, v, th
     real matrix    P, W, N, E
@@ -694,11 +1019,11 @@ void cn_netdata(string scalar method, real scalar k, real scalar r,
     for (i=1; i<k; i++) {
         for (j=i+1; j<=k; j++) {
             c++
-            pn[c] = method + "_" + strofreal(i) + "_" + strofreal(j)
+            pn[c] = method + "_" + strofreal(i) + "_" + strofreal(j) + suf
         }
     }
     nn = J(1, k, "")
-    for (i=1; i<=k; i++) nn[i] = "net_" + strofreal(i)
+    for (i=1; i<=k; i++) nn[i] = "net_" + strofreal(i) + suf
     P   = st_data(., pn)
     net = st_data(., nn)
     if (r < .) {

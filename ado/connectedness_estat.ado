@@ -1,4 +1,4 @@
-*! version 0.2.1  18oct2026
+*! version 0.3.0  20oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -35,6 +35,11 @@ program define Group, rclass
     local single = inlist("`type'", "conditional", "inclusive", "exclusive")
     if `digits' < 0 | `digits' > 8 {
         di as err "digits() must be between 0 and 8"
+        exit 198
+    }
+
+    if !inlist("`e(approach)'", "", "time") {
+        di as err "estat group requires results estimated with approach(time)"
         exit 198
     }
 

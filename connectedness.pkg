@@ -4,14 +4,15 @@ d
 d Estimates the connectedness measures of Diebold and Yilmaz (2009, 2012) from static
 d and rolling-window VARs and the TVP-VAR connectedness measures of Antonakakis,
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
-d indices, asymmetric (positive and negative) connectedness, group measures
+d indices, frequency connectedness (Barunik and Krehlik 2018), joint and extended
+d joint connectedness, asymmetric (positive and negative) connectedness, group measures
 d (aggregated, conditional, inclusive, exclusive, internal, external) and network plots. Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
 d Includes 18 datasets from published applications.
 d
 d Requires: Stata 16.1 or newer
 d Author: Nikolaos Antonakakis, University of Nicosia
 d Support: antonakakis.n@unic.ac.cy
-d Distribution-Date: 20261018
+d Distribution-Date: 20261020
 d License: GPL-3
 f ado/connectedness.ado
 f ado/connectedness_estat.ado

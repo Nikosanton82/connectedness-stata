@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.2.1  18oct2026}{...}
+{* *! version 0.3.0  20oct2026}{...}
 {title:Title}
 
 {phang}
@@ -19,6 +19,7 @@ pairwise connectedness index{p_end}
 {synopt:{opt thr:eshold(#)}}omit edges whose normalized strength is at most {it:#}, 0 <= {it:#} < 1; default 0{p_end}
 {synopt:{opt at(exp)}}draw one period, matched on the time or date variable; default is the average over all periods{p_end}
 {synopt:{opt fr:ame(name)}}use the measures in frame {it:name}; default is the results frame of the last estimates{p_end}
+{synopt:{opt ban:d(#)}}draw frequency band {it:#} after {cmd:approach(frequency)}; default is the total{p_end}
 {synopt:{opt ti:tle(string)}}title{p_end}
 {synopt:{opt name(name[, replace])}}name of the graph{p_end}
 {synopt:{opt sav:ing(filename[, replace])}}save the graph{p_end}
@@ -42,6 +43,11 @@ connectedness index. Edge widths are drawn in five classes.
 {pstd}
 {cmd:method(npdc)} also works on frames written by {cmd:estat group}, for example to
 draw the network of aggregated groups.
+
+{pstd}
+After {cmd:connectedness, approach(frequency)}, {opt band(#)} draws the network of
+one frequency band. {cmd:cnnetwork} is not available after {cmd:approach(joint)},
+which has no pairwise measures; {cmd:approach(extjoint)} has them.
 
 
 {title:Examples}

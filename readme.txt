@@ -1,6 +1,6 @@
 connectedness: VAR and TVP-VAR connectedness measures for Stata
 ================================================================
-Version 0.2.1, 18 October 2026 (prepared for Stata Journal submission)
+Version 0.3.0, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -22,7 +22,8 @@ Contents
                   Python and R scripts that generate them
 
 Commands
-  connectedness   estimation (static VAR, rolling VAR, TVP-VAR; asymmetric option)
+  connectedness   estimation (static VAR, rolling VAR, TVP-VAR; time, frequency, joint
+                  and extended joint connectedness; asymmetric option)
   estat table     redisplay the connectedness table
   estat group     aggregated, conditional, inclusive, exclusive, internal and
                   external connectedness
@@ -43,4 +44,5 @@ Reproducing the checks
   installs the package into a temporary directory and runs every replication. To check against R itself,
   run test/r/make_fixtures.R first (on Windows, test/r/run_r_fixtures.bat; edit the R
   path inside it if needed; the script installs ConnectednessApproach if missing);
-  the certification script then also compares with the R_* fixtures.
+  the certification script then also compares with the R_* fixtures. The fixtures of
+  the extensions (version 0.3.0 onwards) come from test/r/make_fixtures_ext.R.

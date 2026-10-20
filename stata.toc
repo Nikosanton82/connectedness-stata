@@ -1,4 +1,4 @@
 v 3
 d Nikolaos Antonakakis, University of Nicosia
 d connectedness: VAR and TVP-VAR connectedness measures for Stata
-p connectedness VAR and TVP-VAR connectedness measures (Diebold-Yilmaz; Antonakakis-Chatziantoniou-Gabauer)
+p connectedness VAR and TVP-VAR connectedness measures: time, frequency and joint (Diebold-Yilmaz; Antonakakis-Chatziantoniou-Gabauer)

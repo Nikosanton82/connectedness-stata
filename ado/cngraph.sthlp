@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.2.1  18oct2026}{...}
+{* *! version 0.3.0  20oct2026}{...}
 {title:Title}
 
 {phang}
@@ -33,6 +33,7 @@
 {synopt:{opt comp:are(namelist)}}overlay the same measures from stored {cmd:connectedness} results{p_end}
 {synopt:{opt raw}}plot uncorrected TCIs even if {cmd:corrected} was specified{p_end}
 {synopt:{opt sel:ect(name)}}show only panels involving {it:name}{p_end}
+{synopt:{opt ban:d(#)}}graph frequency band {it:#} after {cmd:approach(frequency)}; default is the total{p_end}
 {synopt:{opt ti:tle(string)}}overall title{p_end}
 {synopt:{opt name(name[, replace])}}name of the graph{p_end}
 {synopt:{opt sav:ing(filename[, replace])}}save the graph{p_end}
@@ -62,6 +63,12 @@ TVP-VAR results can be compared; the legend labels the current results by model
 positive and negative changes are overlaid automatically. Overlaid panels are drawn as
 lines and a note gives the line patterns; single panels show areas, as in the R
 package.
+
+{pstd}
+After {cmd:connectedness, approach(frequency)}, {cmd:cngraph tci} draws the total
+TCI and the TCI of every band in one graph; the other measures show the total
+unless {opt band(#)} picks a band. After {cmd:approach(joint)}, only {cmd:tci},
+{cmd:to}, {cmd:from} and {cmd:net} are available.
 
 {pstd}
 When the horizontal axis is a daily date, it is labeled by year.

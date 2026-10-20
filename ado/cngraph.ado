@@ -1,4 +1,4 @@
-*! version 0.2.1  18oct2026
+*! version 0.3.0  20oct2026
 *! cngraph: graphs of dynamic connectedness measures after -connectedness-
 program define cngraph
     version 16.1
@@ -10,7 +10,9 @@ program define cngraph
         exit 198
     }
     syntax [, FRame(name) COMPare(namelist) SELect(string) RAW TItle(string) ///
-        NAME(string) SAVing(string) noDRAW COMBopts(string) * ]
+        NAME(string) SAVing(string) noDRAW COMBopts(string) BANd(integer 0) * ]
+
+    local utitle `"`title'"'
 
     // ------------------------------------------------------------- base frame
     if "`frame'" == "" {
@@ -31,6 +33,27 @@ program define cngraph
         local kind   : char _dta[cn_kind]
         local gtype  : char _dta[cn_gtype]
         local gnames : char _dta[cn_gnames]
+        local appr   : char _dta[cn_approach]
+        local nbands : char _dta[cn_nbands]
+        local blabs  : char _dta[cn_bands]
+    }
+    if "`appr'" == "" local appr time
+    if "`nbands'" == "" local nbands 0
+    local suf
+    if `band' != 0 {
+        if "`appr'" != "frequency" {
+            di as err "band() requires a frame estimated with approach(frequency)"
+            exit 198
+        }
+        if `band' < 0 | `band' > `nbands' {
+            di as err "band() must be between 1 and `nbands'"
+            exit 198
+        }
+        local suf _f`band'
+    }
+    if "`appr'" == "joint" & inlist("`what'", "npt", "npdc", "pci", "inf") {
+        di as err "`what' is not available after approach(joint)"
+        exit 198
     }
     if "`names'" == "" {
         di as err "frame {bf:`frame'} was not created by {cmd:connectedness} or {cmd:estat group}"
@@ -90,10 +113,22 @@ program define cngraph
     local panels
     local ptitles
     if "`what'" == "tci" {
-        local panels = cond(`usec', "ctci", "tci")
+        local panels = cond(`usec', "ctci", "tci") + "`suf'"
         local single 1
         if `"`title'"' == "" local title = cond(`usec', "Corrected total connectedness index", ///
             "Total connectedness index")
+        if "`appr'" == "joint" & `"`title'"' == "Total connectedness index" {
+            local title "Joint total connectedness index"
+        }
+        // frequency results: the total and each band in one graph
+        if "`appr'" == "frequency" & `band' == 0 & `nov' == 0 {
+            local single 3
+            local blegend `""Total""'
+            forvalues b = 1/`nbands' {
+                local panels `panels' `=cond(`usec', "ctci", "tci")'_f`b'
+                local blegend `"`blegend' "`: word `b' of `blabs''""'
+            }
+        }
     }
     else if "`what'" == "tciext" {
         if "`gtype'" != "aggregated" {
@@ -120,7 +155,7 @@ program define cngraph
         local single 0
         forvalues i = 1/`k' {
             if `sel' == 0 | `sel' == `i' {
-                local panels `panels' `what'_`i'
+                local panels `panels' `what'_`i'`suf'
                 local ptitles `"`ptitles' `"`: word `i' of `names''"'"'
             }
         }
@@ -141,7 +176,7 @@ program define cngraph
         forvalues i = 1/`=`k'-1' {
             forvalues j = `=`i'+1'/`k' {
                 if `sel' == 0 | `sel' == `i' | `sel' == `j' {
-                    local panels `panels' `what'_`i'_`j'
+                    local panels `panels' `what'_`i'_`j'`suf'
                     local ptitles `"`ptitles' `"`: word `i' of `names''`sep'`: word `j' of `names''"'"'
                 }
             }
@@ -152,6 +187,7 @@ program define cngraph
             if "`what'" == "inf"  local title "Pairwise influence index"
         }
     }
+    if `band' & `"`utitle'"' == "" local title `"`title', band `: word `band' of `blabs'' periods"'
     local np : word count `panels'
     if `np' > 36 {
         di as err "`np' panels requested; use select() to focus on one variable"
@@ -192,6 +228,7 @@ program define cngraph
             local ++c
             local plots `plots' (line `v' `x')
             if `single' == 2 local leg `leg' `c' "`: word `c' of `gnames''"
+            if `single' == 3 local leg `leg' `c' `"`: word `c' of `blegend''"'
         }
         forvalues o = 1/`nov' {
             local p : word `=`o'+1' of `pats'

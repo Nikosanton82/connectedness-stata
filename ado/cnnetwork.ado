@@ -1,9 +1,9 @@
-*! version 0.2.1  18oct2026
+*! version 0.3.0  20oct2026
 *! cnnetwork: network plot of pairwise connectedness after -connectedness-
 program define cnnetwork
     version 16.1
     syntax [, Method(string) THReshold(real 0) AT(string) FRame(name) ///
-        TItle(string) NAME(string) SAVing(string) noDRAW * ]
+        TItle(string) NAME(string) SAVing(string) noDRAW BANd(integer 0) * ]
 
     local method = lower("`method'")
     if "`method'" == "" local method npdc
@@ -30,6 +30,26 @@ program define cnnetwork
         local tvar  : char _dta[cn_timevar]
         local dvar  : char _dta[cn_datevar]
         local kind  : char _dta[cn_kind]
+        local appr  : char _dta[cn_approach]
+        local nbands : char _dta[cn_nbands]
+        local blabs : char _dta[cn_bands]
+    }
+    if "`appr'" == "joint" {
+        di as err "cnnetwork is not available after approach(joint); pairwise measures are not defined"
+        exit 198
+    }
+    if "`nbands'" == "" local nbands 0
+    local suf
+    if `band' != 0 {
+        if "`appr'" != "frequency" {
+            di as err "band() requires a frame estimated with approach(frequency)"
+            exit 198
+        }
+        if `band' < 0 | `band' > `nbands' {
+            di as err "band() must be between 1 and `nbands'"
+            exit 198
+        }
+        local suf _f`band'
     }
     if "`names'" == "" {
         di as err "frame {bf:`frame'} was not created by {cmd:connectedness} or {cmd:estat group}"
@@ -69,7 +89,7 @@ program define cnnetwork
         quietly do `"`r(fn)'"'
     }
     tempname N E nf
-    frame `frame': mata: cn_netdata("`method'", `k', `r', `threshold', "`N'", "`E'")
+    frame `frame': mata: cn_netdata("`method'", `k', `r', `threshold', "`N'", "`E'", "`suf'")
 
     frame create `nf'
     frame `nf' {
@@ -113,6 +133,7 @@ program define cnnetwork
             local title = cond("`method'" == "npdc", "Net pairwise directional connectedness", ///
                 "Pairwise connectedness")
         }
+        if `band' local when "`when'; band `: word `band' of `blabs'' periods"
         if `"`name'"' != ""   local nameopt name(`name')
         if `"`saving'"' != "" local saveopt saving(`saving')
         twoway `plots', aspectratio(1) xscale(off range(-1.7 1.7)) yscale(off range(-1.4 1.4)) ///

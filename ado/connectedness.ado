@@ -1,5 +1,5 @@
-*! version 0.2.1  18oct2026
-*! connectedness: VAR and TVP-VAR connectedness measures
+*! version 0.3.0  20oct2026
+*! connectedness: VAR and TVP-VAR connectedness measures (time, frequency, joint)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
 program define connectedness, eclass
@@ -18,7 +18,8 @@ program define Estimate, eclass
         Window(integer 0) ORThogonalized GENeralized CORRected    ///
         KAPPA1(real 0.99) KAPPA2(real 0.99) PRior(string)         ///
         GAMma(real 0.01) FRame(string) REPLACE SAVEFevd noFEVD    ///
-        ASYMmetric DATEvar(varname numeric) noTABle DIGits(integer 2) ]
+        ASYMmetric DATEvar(varname numeric) noTABle DIGits(integer 2) ///
+        APProach(string) BANDs(numlist >1 sort) PARTition(numlist) SCENario(string) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -61,6 +62,103 @@ program define Estimate, eclass
     else {
         di as err "model(`model') not allowed; specify {cmd:var} or {cmd:tvpvar}"
         exit 198
+    }
+
+    local approach = lower(strtrim(`"`approach'"'))
+    if inlist("`approach'", "", "time") {
+        local approach time
+    }
+    else if inlist("`approach'", "frequency", "freq") {
+        local approach frequency
+    }
+    else if "`approach'" == "joint" {
+        local approach joint
+    }
+    else if inlist("`approach'", "extjoint", "extendedjoint", "extended joint", "ejoint") {
+        local approach extjoint
+    }
+    else if "`approach'" == "r2" {
+        di as err "approach(r2) is planned for a later release of {cmd:connectedness}"
+        exit 198
+    }
+    else {
+        di as err "approach(`approach') not allowed; specify {cmd:time}, {cmd:frequency}, " ///
+            "{cmd:joint} or {cmd:extjoint}"
+        exit 198
+    }
+    if "`approach'" != "frequency" & `"`bands'`partition'`scenario'"' != "" {
+        di as err "options bands(), partition() and scenario() require approach(frequency)"
+        exit 198
+    }
+    if inlist("`approach'", "joint", "extjoint") {
+        if "`orthogonalized'" != "" {
+            di as err "approach(`approach') is based on the generalized FEVD; " ///
+                "option orthogonalized is not allowed"
+            exit 198
+        }
+        if "`corrected'" != "" {
+            di as err "option corrected is not available with approach(`approach')"
+            exit 198
+        }
+    }
+
+    // frequency bands: partition in radians, in decreasing order (R's partition)
+    local partstr
+    local blabels
+    local nbands 0
+    local scenario = lower(strtrim("`scenario'"))
+    if "`approach'" == "frequency" {
+        if "`bands'" != "" & "`partition'" != "" {
+            di as err "options bands() and partition() may not be combined"
+            exit 184
+        }
+        if `horizon' < 2 {
+            di as err "approach(frequency) requires horizon() of at least 2"
+            exit 198
+        }
+        if "`scenario'" == "" local scenario abs
+        if !inlist("`scenario'", "abs", "wth") {
+            di as err "scenario() must be abs or wth"
+            exit 198
+        }
+        if "`bands'" != "" {
+            local partstr : display %21.17g c(pi) + 0.00001
+            foreach b of local bands {
+                local pv : display %21.17g c(pi)/`b'
+                local partstr `partstr' `pv'
+            }
+            local partstr `partstr' 0
+        }
+        else if "`partition'" != "" {
+            local prev .
+            foreach v of local partition {
+                if `v' < 0 | `v' >= `prev' {
+                    di as err "partition() must list the band limits in radians in decreasing " ///
+                        "order, ending at zero or above"
+                    exit 198
+                }
+                local prev `v'
+                local pv : display %21.17g `v'
+                local partstr `partstr' `pv'
+            }
+            if `: word count `partstr'' < 2 {
+                di as err "partition() needs at least two limits"
+                exit 198
+            }
+        }
+        else {
+            local p1 : display %21.17g c(pi)
+            local p2 : display %21.17g c(pi)/2
+            local partstr `p1' `p2' 0
+        }
+        local nbands = `: word count `partstr'' - 1
+        forvalues b = 1/`nbands' {
+            local hi : word `b' of `partstr'
+            local lo : word `=`b'+1' of `partstr'
+            local phi = round(c(pi)/`hi')
+            local plo = cond(`lo' == 0, "Inf", string(round(c(pi)/`lo')))
+            local blabels `blabels' `phi'-`plo'
+        }
     }
 
     local prior = lower(strtrim(`"`prior'"'))
@@ -136,6 +234,17 @@ program define Estimate, eclass
         exit 2001
     }
 
+    // number of variables in the results frame
+    local np = `k'*(`k'-1)/2
+    local nvars = cond("`approach'" == "joint", 1 + 3*`k', 2 + 4*`k' + 3*`np')
+    if "`fevd'" == "" local nvars = `nvars' + `k'*`k'
+    local nvars = (`nvars')*(`nbands' + 1) + 2
+    if `nvars' > c(maxvar) - 10 {
+        di as err "the results frame would need `nvars' variables, more than maxvar (" c(maxvar) ") allows;"
+        di as err "specify {cmd:nofevd}, reduce the number of variables or frequency bands, or {help set maxvar}"
+        exit 900
+    }
+
     // ---------------------------------------------------------- results frame
     if `"`frame'"' == "" local frame cn_results
     confirm name `frame'
@@ -197,11 +306,12 @@ program define Estimate, eclass
         tempname tab`i' fev`i' sc`i'
         mata: cn_main("`vars'", "`touse'", "`timevar'", "`model'", `lags', `horizon', ///
             `window', `gen', `corr', "`prior'", `kappa1', `kappa2', `gamma',         ///
-            "`tab`i''", "`fev`i''", "`sc`i''", "`names'", "`datevar'")
+            "`tab`i''", "`fev`i''", "`sc`i''", "`names'", "`datevar'",               ///
+            "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'")
         capture frame drop `f'
         frame create `f'
         frame `f' {
-            mata: cn_postframe("`timevar'", "`tfmt'", "`names'", `savef', "`datevar'", "`dfmt'")
+            mata: cn_postframe("`timevar'", "`tfmt'", `savef', "`datevar'", "`dfmt'")
             quietly tsset `timevar', delta(`delta')
             label data "connectedness results (`part')"
             char _dta[cn_kind]      "main"
@@ -212,6 +322,9 @@ program define Estimate, eclass
             char _dta[cn_datevar]   "`datevar'"
             char _dta[cn_corrected] "`corrected'"
             char _dta[cn_fevd]      "`savef'"
+            char _dta[cn_approach]  "`approach'"
+            char _dta[cn_nbands]    "`nbands'"
+            char _dta[cn_bands]     "`blabels'"
         }
     }
     local sc `sc1'
@@ -238,11 +351,24 @@ program define Estimate, eclass
     ereturn scalar window  = `window'
     ereturn scalar TCI     = `sc'[1,1]
     ereturn scalar cTCI    = `sc'[1,2]
+    if "`approach'" == "joint" ereturn scalar cTCI = .
     if "`model'" == "tvpvar" {
         ereturn scalar kappa1 = `kappa1'
         ereturn scalar kappa2 = `kappa2'
         if "`prior'" == "minnesota" ereturn scalar gamma = `gamma'
         ereturn local prior "`prior'"
+    }
+    if "`approach'" == "frequency" {
+        forvalues b = 1/`nbands' {
+            ereturn scalar TCI_f`b'  = `sc'[1, 6 + 2*`b']
+            ereturn scalar cTCI_f`b' = `sc'[1, 7 + 2*`b']
+            ereturn matrix table_f`b' = `tab1'f`b'
+            ereturn matrix fevd_f`b'  = `fev1'f`b'
+        }
+        ereturn scalar nbands = `nbands'
+        ereturn local bands     "`blabels'"
+        ereturn local partition "`partstr'"
+        ereturn local scenario  "`scenario'"
     }
     ereturn matrix table = `tab1'
     ereturn matrix fevd  = `fev1'
@@ -269,7 +395,7 @@ program define Estimate, eclass
     ereturn local depvar   "`varlist'"
     ereturn local corrected "`corrected'"
     ereturn local fevdtype = cond(`gen', "generalized", "orthogonalized")
-    ereturn local approach "time"
+    ereturn local approach "`approach'"
     ereturn local model    "`model'"
     ereturn local title    "Connectedness approach"
     ereturn local estat_cmd "connectedness_estat"
@@ -279,7 +405,7 @@ program define Estimate, eclass
 end
 
 program define Display
-    syntax [, DIGits(integer 2) PARt(string) noTABle]
+    syntax [, DIGits(integer 2) PARt(string) BANd(integer 0) noTABle]
     if `digits' < 0 | `digits' > 8 {
         di as err "digits() must be between 0 and 8"
         exit 198
@@ -295,6 +421,23 @@ program define Display
     if "`suf'" != "" & "`e(asymmetric)'" == "" {
         di as err "part() requires results estimated with the asymmetric option"
         exit 198
+    }
+    local approach "`e(approach)'"
+    if "`approach'" == "" local approach time
+    if `band' != 0 {
+        if "`approach'" != "frequency" {
+            di as err "band() requires results estimated with approach(frequency)"
+            exit 198
+        }
+        if `band' < 0 | `band' > e(nbands) {
+            di as err "band() must be between 1 and " e(nbands)
+            exit 198
+        }
+        if "`suf'" != "" {
+            di as err "band() may not be combined with part()"
+            exit 184
+        }
+        local suf _f`band'
     }
     local w = `digits' + 6
     if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
@@ -314,19 +457,46 @@ program define Display
     else if e(window) > 0 {
         di as txt "Window: " as res e(window) as txt " observations"
     }
+    if "`approach'" == "frequency" {
+        local bl "`e(bands)'"
+        local bl : subinstr local bl " " ", ", all
+        di as txt "Approach: " as res "frequency" as txt " (bands in periods: " as res "`bl'" ///
+            as txt "; " as res strupper("`e(scenario)'") as txt ")"
+    }
+    else if "`approach'" == "joint" {
+        di as txt "Approach: " as res "joint" as txt " (Lastrapes and Wiesen 2021)"
+    }
+    else if "`approach'" == "extjoint" {
+        di as txt "Approach: " as res "extended joint" as txt " (Balcilar, Gabauer and Umar 2021)"
+    }
     local fr "`e(frame)'"
-    if "`suf'" != "" local fr "`e(frame`suf')'"
+    if inlist("`suf'", "_pos", "_neg") local fr "`e(frame`suf')'"
     di as txt "Results frame: " as res "`fr'" as txt " (first period " as res "`e(firstm)'" as txt ")"
     if "`e(asymmetric)'" != "" {
         local ptxt = cond("`suf'" == "_pos", "positive", cond("`suf'" == "_neg", "negative", "all"))
         di as txt "Asymmetric connectedness: " as res "`ptxt'" as txt " changes shown; " ///
             "see {cmd:connectedness, part()}"
     }
+    if `band' {
+        di as txt "Frequency band: " as res "`: word `band' of `e(bands)''" as txt " periods"
+    }
+    else if "`approach'" == "frequency" {
+        di as txt "Table: " as res "total over the bands" as txt "; see {cmd:connectedness, band()}"
+    }
     di
     if "`table'" == "" {
         matlist e(table`suf'), format(%`w'.`digits'f) border(rows) lines(oneline) nodotz ///
             rowtitle(" ") twidth(12)
-        di as txt "Rows: variance of the row variable explained by the column variable (percent)."
+        if "`approach'" == "joint" {
+            di as txt "Rows: generalized FEVD (percent); TO, FROM and NET are joint spillovers."
+        }
+        else {
+            di as txt "Rows: variance of the row variable explained by the column variable (percent)."
+        }
+    }
+    if "`approach'" == "joint" {
+        di as txt "Joint TCI = " as res %6.`digits'f e(TCI)
+        exit
     }
     di as txt "TCI = " as res %6.`digits'f e(TCI`suf') as txt "    corrected TCI = " ///
         as res %6.`digits'f e(cTCI`suf') _c
@@ -335,5 +505,15 @@ program define Display
     if "`e(asymmetric)'" != "" & "`suf'" == "" {
         di as txt "Positive changes: TCI = " as res %6.`digits'f e(TCI_pos) ///
             as txt "    Negative changes: TCI = " as res %6.`digits'f e(TCI_neg)
+    }
+    if "`approach'" == "frequency" & `band' == 0 {
+        di _n as txt %-16s "Band (periods)" %12s "TCI" %16s "corrected TCI"
+        di as txt "{hline 44}"
+        forvalues b = 1/`=e(nbands)' {
+            di as txt %-16s "`: word `b' of `e(bands)''" as res %12.`digits'f e(TCI_f`b') ///
+                %16.`digits'f e(cTCI_f`b')
+        }
+        di as txt "{hline 44}"
+        di as txt %-16s "Total" as res %12.`digits'f e(TCI) %16.`digits'f e(cTCI)
     }
 end

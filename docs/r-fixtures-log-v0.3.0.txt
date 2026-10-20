@@ -1,0 +1,50 @@
+R fixtures for connectedness v0.3.0: test/r/make_fixtures_ext.R
+===================================================================
+The fixtures in test/fixtures (R_<case>_*.csv) for the cases below were written by
+test/r/make_fixtures_ext.R with the ConnectednessApproach 1.0.4 sources (CRAN
+release) under R 4.3.3 on Linux. The same script was then run with the CRAN
+package installed in R 4.5.2 on Windows; its output follows, and the table at the
+end gives the largest relative difference between the two sets of fixtures.
+
+Output of the Windows run (Rscript make_fixtures_ext.R)
+-------------------------------------------------------
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+dy2012_freq_static         periods=    1 mean TCI=16.092250
+dy2012_freq_default        periods=    1 mean TCI=13.824631
+dy2012_freq_roll200        periods=   53 mean TCI=17.287511
+dy2012_freq_wth            periods=    1 mean TCI=44.315128
+dy2009_freq_orth           periods=    1 mean TCI=35.176399
+cgg2022_freq_tvp           periods=  130 mean TCI=59.928946
+acg2020_freq_tvp_corr      periods=   53 mean TCI=68.999186
+Warning message:
+In frequencyConnectedness::getPartition(partition, nfore) :
+  The selected partition does not cover the whole range.
+lw2021_joint_static        periods=    1 mean TCI=67.878577
+lw2021_joint_roll200       periods=  119 mean TCI=72.656839
+bgu2021_joint_tvp          periods=   81 mean TCI=69.398003
+bgu2021_extjoint_tvp       periods=   81 mean TCI=69.398003
+lw2021_extjoint_static     periods=    1 mean TCI=67.878577
+dy2012_extjoint_roll200    periods=   53 mean TCI=16.675479
+
+Largest relative difference, Windows R 4.5.2 versus Linux R 4.3.3 fixtures
+---------------------------------------------------------------------------
+acg2020_freq_tvp_corr            8.86e-14
+bgu2021_extjoint_tvp             2.69e-08
+bgu2021_joint_tvp                4.75e-09
+cgg2022_freq_tvp                 2.37e-11
+dy2009_freq_orth                 6.40e-15
+dy2012_extjoint_roll200          4.82e-14
+dy2012_freq_default              9.99e-16
+dy2012_freq_roll200              2.10e-14
+dy2012_freq_static               4.55e-15
+dy2012_freq_wth                  6.18e-15
+lw2021_extjoint_static           1.31e-13
+lw2021_joint_roll200             0.00e+00
+lw2021_joint_static              0.00e+00
+
+The two R installations agree to 2.4e-11 or better except for the TVP-VAR cases with
+the Minnesota prior and 12 variables (bgu2021), where floating-point differences
+accumulate in the Kalman filter; there they differ by up to 2.7e-8, the same size
+as the difference between Stata and R in docs/certification-log-v0.3.0.txt.

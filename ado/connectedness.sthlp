@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.2.1  18oct2026}{...}
+{* *! version 0.3.0  20oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -12,7 +12,7 @@
 {title:Title}
 
 {phang}
-{bf:connectedness} {hline 2} VAR and TVP-VAR connectedness measures
+{bf:connectedness} {hline 2} VAR and TVP-VAR connectedness measures in the time and frequency domains
 
 
 {marker syntax}{...}
@@ -36,11 +36,17 @@
 {synopt:{opt gam:ma(#)}}Minnesota prior tightness; default {cmd:0.01}{p_end}
 
 {syntab:Connectedness}
+{synopt:{opt app:roach(approach)}}{cmd:time} (default), {cmd:frequency}, {cmd:joint} or {cmd:extjoint}{p_end}
 {synopt:{opt h:orizon(#)}}forecast horizon {it:H}; default {cmd:horizon(10)}{p_end}
 {synopt:{opt gen:eralized}}generalized FEVD; the default{p_end}
 {synopt:{opt orth:ogonalized}}Cholesky (orthogonalized) FEVD{p_end}
 {synopt:{opt corr:ected}}report the corrected total connectedness index{p_end}
 {synopt:{opt asym:metric}}also estimate the systems of positive and negative changes{p_end}
+
+{syntab:Frequency}
+{synopt:{opt band:s(numlist)}}band limits in periods, for example {cmd:bands(5 20)}{p_end}
+{synopt:{opt part:ition(numlist)}}band limits in radians, in decreasing order{p_end}
+{synopt:{opt scen:ario(scenario)}}{cmd:abs} (default) or {cmd:wth}{p_end}
 
 {syntab:Results}
 {synopt:{opt fr:ame(name)}}frame for the time-varying measures; default {cmd:cn_results}{p_end}
@@ -130,8 +136,46 @@ which is the default, or the Cholesky decomposition used by Diebold and Yilmaz (
 which depends on the order of {it:varlist}.
 
 {phang}
+{opt approach(approach)} selects the connectedness framework applied to the
+estimated model. {cmd:time} (the default) gives the time-domain measures of
+Diebold and Yilmaz (2012) and their refinements. {cmd:frequency} decomposes them
+into frequency bands as in Baruník and Křehlík (2018); with
+{cmd:model(tvpvar)} this is the TVP-VAR frequency approach of Chatziantoniou,
+Gabauer and Gupta (2023). {cmd:joint} gives the joint spillover index of Lastrapes
+and Wiesen (2021), and {cmd:extjoint} the extended joint connectedness of Balcilar,
+Gabauer and Umar (2021). {cmd:joint} and {cmd:extjoint} use the generalized
+decomposition and do not allow {opt orthogonalized} or {opt corrected}.
+
+{phang}
 {opt corrected} makes the corrected TCI of Chatziantoniou and Gabauer (2021) the
 headline index in the table and in {helpb cngraph}. Both versions are always stored.
+
+{dlgtab:Frequency}
+
+{phang}
+{opt bands(numlist)} sets the frequency bands by their limits in periods (cycle
+lengths), each greater than 1. {cmd:bands(5 20)} gives three bands, of 1 to 5,
+5 to 20 and more than 20 periods. The band limits in radians are pi/{it:#}, and the
+upper limit of the first band is pi + 0.00001 so that the highest frequency is
+included, as in the replications of the R package.
+
+{phang}
+{opt partition(numlist)} sets the band limits directly in radians, in decreasing
+order, as the {cmd:partition} argument of the R package. Each band covers the
+frequencies in [{it:lower}, {it:upper}). Without {opt bands()} or {opt partition()},
+the R default {cmd:partition(}pi pi/2 0{cmd:)} is used; note that it leaves out the
+frequency pi itself.
+
+{phang}
+{opt scenario(scenario)} selects how the band tables are scaled. {cmd:abs} (the
+default) keeps the absolute contributions, so that the band measures add up to the
+total; {cmd:wth} rescales each band's table to sum to k, giving within-band
+measures.
+
+{pstd}
+The frequency decomposition uses the discrete Fourier transform of the
+moving-average matrices for horizons 0 to {it:H}, so {opt horizon()} sets the
+frequency resolution; replications of the R package use {cmd:horizon(100)}.
 
 {dlgtab:Results}
 
@@ -166,6 +210,12 @@ then uses it as the horizontal axis. This is useful when the data are
 
 {marker remarks}{...}
 {title:Remarks}
+
+{pstd}
+Typing {cmd:connectedness} without arguments redisplays the results. Options
+{opt digits(#)}, {opt notable}, {opt part(positive|negative)} (after
+{opt asymmetric}) and {opt band(#)} (after {cmd:approach(frequency)}, to show the
+table of band {it:#}) are allowed.
 
 {pstd}
 The results reproduce those of {it:ConnectednessApproach} 1.0.4 to numerical
@@ -209,6 +259,25 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. cngraph tci}{p_end}
 {phang2}{cmd:. cnnetwork}{p_end}
 
+{pstd}Chatziantoniou, Gabauer and Gupta (2023): TVP-VAR frequency connectedness{p_end}
+{phang2}{cmd:. use cn_cgg2022, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness Europe-OPEC, model(tvpvar) window(200) horizon(100) approach(frequency) bands(5) datevar(date) replace}{p_end}
+{phang2}{cmd:. connectedness, band(1)}{p_end}
+{phang2}{cmd:. cngraph tci}{p_end}
+{phang2}{cmd:. cngraph net, band(2)}{p_end}
+
+{pstd}Lastrapes and Wiesen (2021): joint spillover index{p_end}
+{phang2}{cmd:. use cn_lw2021, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness energy-utilities, lags(2) horizon(30) approach(joint)}{p_end}
+
+{pstd}Balcilar, Gabauer and Umar (2021): extended joint connectedness{p_end}
+{phang2}{cmd:. use cn_bgu2021, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness CrudeOil-Wheat, model(tvpvar) horizon(20) prior(minnesota) gamma(0.1) approach(extjoint) datevar(date) replace}{p_end}
+{phang2}{cmd:. cngraph net}{p_end}
+
 {pstd}Adekoya et al. (2022): asymmetric connectedness of positive and negative changes{p_end}
 {phang2}{cmd:. use cn_aaacgo2022, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -240,11 +309,16 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(gamma)}}Minnesota prior tightness ({cmd:prior(minnesota)}){p_end}
 {synopt:{cmd:e(TCI_pos)}, {cmd:e(cTCI_pos)}}TCI of positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
+{synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
+{synopt:{cmd:e(TCI_f}{it:b}{cmd:)}, {cmd:e(cTCI_f}{it:b}{cmd:)}}TCI and corrected TCI of band {it:b} ({cmd:frequency}){p_end}
 
 {p2col 5 18 22 2: Macros}{p_end}
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
 {synopt:{cmd:e(model)}}{cmd:var} or {cmd:tvpvar}{p_end}
-{synopt:{cmd:e(approach)}}{cmd:time}{p_end}
+{synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint} or {cmd:extjoint}{p_end}
+{synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
+{synopt:{cmd:e(partition)}}band limits in radians ({cmd:frequency}){p_end}
+{synopt:{cmd:e(scenario)}}{cmd:abs} or {cmd:wth} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(fevdtype)}}{cmd:generalized} or {cmd:orthogonalized}{p_end}
 {synopt:{cmd:e(corrected)}}{cmd:corrected} or empty{p_end}
 {synopt:{cmd:e(prior)}}prior ({cmd:tvpvar}){p_end}
@@ -257,10 +331,11 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(frame_pos)}, {cmd:e(frame_neg)}}results frames of positive and negative changes{p_end}
 
 {p2col 5 18 22 2: Matrices}{p_end}
-{synopt:{cmd:e(table)}}connectedness table, (k+4) x (k+1){p_end}
+{synopt:{cmd:e(table)}}connectedness table, (k+4) x (k+1); (k+3) x (k+1) for {cmd:joint}{p_end}
 {synopt:{cmd:e(fevd)}}averaged decomposition in percent, k x k{p_end}
 {synopt:{cmd:e(table_pos)}, {cmd:e(fevd_pos)}}same, positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(table_neg)}, {cmd:e(fevd_neg)}}same, negative changes ({cmd:asymmetric}){p_end}
+{synopt:{cmd:e(table_f}{it:b}{cmd:)}, {cmd:e(fevd_f}{it:b}{cmd:)}}same, frequency band {it:b} ({cmd:frequency}){p_end}
 
 {p2col 5 18 22 2: Functions}{p_end}
 {synopt:{cmd:e(sample)}}marks estimation sample{p_end}
@@ -277,6 +352,15 @@ variable {it:j}. Unless {opt nofevd} is specified, the frame also holds
 error variance due to variable {it:j}. The frame's characteristics ({cmd:char list})
 record the variable names and settings that {helpb cngraph}, {helpb cnnetwork} and
 {cmd:estat group} read.
+
+{pstd}
+With {cmd:approach(frequency)}, these variables hold the total over the bands, and
+each band {it:b} adds the same set with the suffix {cmd:_f}{it:b}, for example
+{cmd:tci_f1}, {cmd:net_2_f1} and {cmd:fevd_1_2_f1}. With {cmd:approach(joint)},
+the frame holds {cmd:tci}, {cmd:to_}{it:i}, {cmd:from_}{it:i} and
+{cmd:net_}{it:i}, the joint measures, and {cmd:fevd_}{it:i}{cmd:_}{it:j}, the
+generalized decomposition. With {cmd:approach(extjoint)}, all variables refer to
+the extended joint table.
 
 
 {marker methods}{...}
@@ -298,6 +382,27 @@ corrected TCI = TCI k/(k-1) and
 PCI_ij = 200 (w_ij + w_ji)/(w_ii + w_ij + w_ji + w_jj).
 
 {pstd}
+{it:Frequency.} Let {bf:Psi}(w) = sum_{h=0}^{H} {bf:A}_h exp(-i w h) at the
+Fourier frequencies w_r = 2 pi r/(H+1), r = 0, ..., H. With generalized shocks,
+the contribution of frequency w is |({bf:Psi}(w) {bf:Sigma})_ij|^2 /
+(sigma_jj d_i), where d_i is the frequency-domain forecast error variance of
+variable i over the frequencies used; each row is then scaled so that it sums to
+one over those frequencies. A band's table sums these contributions over the
+frequencies in the band. The band PCI and influence index use the total table in
+their denominators. These steps follow {cmd:FrequencyConnectedness()} in the R
+package.
+
+{pstd}
+{it:Joint.} FROM_i is the share of variable i's forecast error variance explained
+by the joint shock of all other variables,
+100 sum_h e_i' {bf:A}_h {bf:Sigma} {bf:M}_i ({bf:M}_i' {bf:Sigma} {bf:M}_i)^(-1)
+{bf:M}_i' {bf:Sigma} {bf:A}_h' e_i / (sum_h e_i' {bf:A}_h {bf:Sigma} {bf:A}_h' e_i),
+where {bf:M}_i removes variable i; the joint TCI is the mean of FROM_i, and TO_j
+rescales the generalized TO_j by the ratio of the generalized and joint TCIs. The
+extended joint table multiplies row i of the generalized table by FROM_i divided by
+its off-diagonal row sum, so that all measures of the time domain are available.
+
+{pstd}
 For the TVP-VAR, the coefficient prediction covariance is the filtered covariance
 divided by kappa1, and the error covariance is updated as
 kappa2 {bf:Sigma}_{t-1} + (1-kappa2) u_t u_t'.
@@ -317,9 +422,24 @@ connectedness based on time-varying parameter vector autoregressions.
 {it:Journal of Risk and Financial Management} 13: 84.
 
 {phang}
+Balcilar, M., D. Gabauer, and Z. Umar. 2021. Crude oil futures contracts and
+commodity markets: New evidence from a TVP-VAR extended joint connectedness approach.
+{it:Resources Policy} 73: 102219.
+
+{phang}
+Baruník, J., and T. Křehlík. 2018. Measuring the frequency dynamics of
+financial connectedness and systemic risk. {it:Journal of Financial Econometrics}
+16: 271-296.
+
+{phang}
 Chatziantoniou, I., and D. Gabauer. 2021. EMU risk-synchronisation and financial
 fragility through the prism of dynamic connectedness.
 {it:Quarterly Review of Economics and Finance} 79: 1-14.
+
+{phang}
+Chatziantoniou, I., D. Gabauer, and R. Gupta. 2023. Integration and risk
+transmission in the market for crude oil: New evidence from a time-varying parameter
+frequency connectedness approach. {it:Resources Policy} 84: 103729.
 
 {phang}
 Diebold, F. X., and K. Yilmaz. 2009. Measuring financial asset return and volatility
@@ -341,6 +461,10 @@ Koop, G., and D. Korobilis. 2013. Large time-varying parameter VARs.
 {phang}
 Koop, G., M. H. Pesaran, and S. M. Potter. 1996. Impulse response analysis in
 nonlinear multivariate models. {it:Journal of Econometrics} 74: 119-147.
+
+{phang}
+Lastrapes, W. D., and T. F. P. Wiesen. 2021. The joint spillover index.
+{it:Economic Modelling} 94: 681-691.
 
 {phang}
 Pesaran, M. H., and Y. Shin. 1998. Generalized impulse response analysis in linear
