@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0 (2026-10-20)
+- `model(dccgarch)`: DCC-GARCH(1,1) volatility connectedness (Gabauer 2020), as R's
+  `ConnectednessApproach(..., model = "DCC-GARCH")`. GARCH(1,1) margins with a
+  constant mean and normal errors and a DCC(1,1) correlation model are estimated in
+  two steps by maximum likelihood (Newton-Raphson with analytic gradients), following
+  the conventions of `rugarch` and `rmgarch::dccfit()`; the volatility FEVD of every
+  period is a port of R's `VFEVD()`.
+- Options `standardize` (R's `DCC_config = list(standardize = TRUE)`) and
+  `dccparams()`, which uses given parameters instead of estimating them.
+- Stored results `e(garch)`, `e(dcc)`, `e(ll)` and `e(converged)`.
+- `cngraph, compare()` labels LASSO, ridge, elastic-net and DCC-GARCH results.
+- Validation: 3 R cases (the Gabauer 2020 data with the default settings and with
+  `standardize`, `corrected` and `horizon(20)`, and the data of Cocca, Gabauer and
+  Pomberger 2024). With R's parameters the measures agree
+  to 1.9e-12 and the log likelihood to 1e-15; Stata's own estimates agree with R's
+  to 5.3e-6 (the precision of R's optimizer) and the measures to 8.0e-4.
+  151 of 151 certification tests pass (`docs/certification-log-v0.7.0.txt`).
+- Replication do-file `cn_rep_2020g.do`.
+
 ## 0.6.0 (2026-10-20)
 - `model(lasso)`, `model(ridge)` and `model(elasticnet)`: penalized VARs as in R's
   `ElasticNetVAR()` (Gabauer, Gupta, Marfatia and Miller 2024). Each equation is

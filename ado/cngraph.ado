@@ -1,4 +1,4 @@
-*! version 0.6.0  20oct2026
+*! version 0.7.0  20oct2026
 *! cngraph: graphs of dynamic connectedness measures after -connectedness-
 program define cngraph
     version 16.1
@@ -109,7 +109,11 @@ program define cngraph
             if "`e(model)'" == "qvar" local mn "QVAR, tau `e(quantiles)'"
             if "`e(model)'" == "qvar" & "`e(quantile)'" != "" local mn "QVAR, tau `=e(quantile)'"
             if "`e(model)'" == "lad" local mn "LAD-VAR"
+            if "`e(model)'" == "lasso" local mn "LASSO-VAR"
+            if "`e(model)'" == "ridge" local mn "ridge VAR"
+            if "`e(model)'" == "elasticnet" local mn "elastic-net VAR"
             if "`e(model)'" == "tvpvar" local lab0 "TVP-VAR"
+            else if "`e(model)'" == "dccgarch" local lab0 "DCC-GARCH"
             else if e(window) > 0 local lab0 "`mn', window `e(window)'"
             else local lab0 "`mn'"
         }

@@ -1,0 +1,80 @@
+R fixtures for connectedness v0.7.0: test/r/make_fixtures_ext.R (DCC-GARCH)
+===========================================================================
+The fixtures in test/fixtures (R_<case>_*.csv) for the DCC-GARCH cases below were
+written by test/r/make_fixtures_ext.R with the ConnectednessApproach 1.0.4 sources
+(CRAN release), rugarch 1.5-6 and rmgarch 1.4-3 under R 4.3.3 on Linux. The same
+script was then run with the CRAN packages installed in R 4.5.2 on Windows (rugarch
+1.5-3, rmgarch 1.3-9). Its full output follows (progress bars removed), and the tables
+at the end compare the two sets of DCC-GARCH fixtures. The other cases are compared
+in r-fixtures-log-v0.4.0.txt, r-fixtures-log-v0.5.0.txt and r-fixtures-log-v0.6.0.txt.
+
+Output of the Windows run (Rscript make_fixtures_ext.R)
+-------------------------------------------------------
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+dy2012_freq_static         periods=    1 mean TCI=16.092250
+dy2012_freq_default        periods=    1 mean TCI=13.824631
+dy2012_freq_roll200        periods=   53 mean TCI=17.287511
+dy2012_freq_wth            periods=    1 mean TCI=44.315128
+dy2009_freq_orth           periods=    1 mean TCI=35.176399
+cgg2022_freq_tvp           periods=  130 mean TCI=59.928946
+acg2020_freq_tvp_corr      periods=   53 mean TCI=68.999186
+Warning message:
+In frequencyConnectedness::getPartition(partition, nfore) :
+  The selected partition does not cover the whole range.
+lw2021_joint_static        periods=    1 mean TCI=67.878577
+lw2021_joint_roll200       periods=  119 mean TCI=72.656839
+bgu2021_joint_tvp          periods=   81 mean TCI=69.398003
+bgu2021_extjoint_tvp       periods=   81 mean TCI=69.398003
+lw2021_extjoint_static     periods=    1 mean TCI=67.878577
+dy2012_extjoint_roll200    periods=   53 mean TCI=16.675479
+cgs2021_qvar_roll200       periods=   52 mean TCI=33.298366
+cgs2021_qvar_q05           periods=    1 mean TCI=84.327586
+cgs2021_qvar_qoq           periods=    1 mean TCI=23.021461
+dy2012_lad_static          periods=    1 mean TCI=12.591766
+dy2012_lad_roll200         periods=   42 mean TCI=16.391987
+There were 24 warnings (use warnings() to see them)
+gcat2022_qvar_freq_roll200 periods=   42 mean TCI=64.903985
+jcggh2022_qvar_extjoint_q90 periods=    1 mean TCI=88.647905
+Warning messages:
+1: In summary.rq(fit) : 1 non-positive fis
+2: In summary.rq(fit) : 1 non-positive fis
+3: In summary.rq(fit) : 5 non-positive fis
+4: In summary.rq(fit) : 3 non-positive fis
+dy2012_mf_static           periods=    1 mean TCI=18.383339
+dy2012_mf_roll200          periods=   53 mean TCI=12.233060
+dy2012_mf_kendall_roll200  periods=   53 mean TCI=8.623614
+dy2012_mf_spearman_static  periods=    1 mean TCI=16.799534
+dy2012_lasso_static        periods=    1 mean TCI=10.331284
+dy2012_ridge_static        periods=    1 mean TCI=13.172299
+dy2012_elastic_static      periods=    1 mean TCI=11.458269
+dy2012_elastic_a05_mse     periods=    1 mean TCI=12.692317
+dy2012_lasso_roll200       periods=  202 mean TCI=11.831761
+dy2012_elastic4_roll200    periods=  102 mean TCI=9.565719
+gghm2022_lasso_static      periods=    1 mean TCI=86.768478
+g2020_dcc                  periods=   85 mean TCI=43.654988
+g2020_dcc_std_corr         periods=   85 mean TCI=45.419615
+cgp2024_dcc                periods=   65 mean TCI=38.037841
+rugarch version: 1.5.3  rmgarch version: 1.3.9 
+
+Largest relative difference of the connectedness measures, Windows versus Linux
+---------------------------------------------------------------------------------
+cgp2024_dcc                      6.14e-05
+g2020_dcc                        1.70e-05
+g2020_dcc_std_corr               4.35e-05
+
+Largest relative difference of the estimates (R_<case>_par.csv), and difference of
+the log likelihood, Windows versus Linux
+-------------------------------------------------------------------------------
+cgp2024_dcc                      estimates 7.15e-07   log likelihood +1.48e-05
+g2020_dcc                        estimates 7.79e-08   log likelihood -8.16e-06
+g2020_dcc_std_corr               estimates 7.79e-08   log likelihood -8.16e-06
+
+The DCC-GARCH model is estimated numerically by rmgarch's solnp optimizer, and its
+estimates depend on the optimizer's stopping point: the two R installations, with
+different rugarch and rmgarch versions, differ by up to 7.2e-7 in the estimates and
+6.1e-5 in the measures. The certification script therefore checks Stata twice: with
+R's estimates entered through dccparams(), where the measures agree to 1.9e-12, and
+with Stata's own estimates, which agree with R's to 5.3e-6 (see
+certification-log-v0.7.0.txt).

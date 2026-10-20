@@ -1,6 +1,6 @@
-connectedness: VAR and TVP-VAR connectedness measures for Stata
-================================================================
-Version 0.6.0, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
+connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
+================================================================================
+Version 0.7.0, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -23,7 +23,7 @@ Contents
 
 Commands
   connectedness   estimation (static and rolling VAR, QVAR and LAD-VAR, LASSO, ridge
-                  and elastic-net VARs, TVP-VAR; time,
+                  and elastic-net VARs, TVP-VAR, DCC-GARCH; time,
                   frequency, joint, extended joint, R2 decomposed and model-free
                   connectedness; asymmetric option)
   estat table     redisplay the connectedness table
@@ -47,4 +47,6 @@ Reproducing the checks
   run test/r/make_fixtures.R first (on Windows, test/r/run_r_fixtures.bat; edit the R
   path inside it if needed; the script installs ConnectednessApproach if missing);
   the certification script then also compares with the R_* fixtures. The fixtures of
-  the extensions (version 0.3.0 onwards) come from test/r/make_fixtures_ext.R.
+  the extensions (version 0.3.0 onwards) come from test/r/make_fixtures_ext.R; its
+  DCC-GARCH cases (version 0.7.0) use the rugarch and rmgarch packages, which are
+  installed with ConnectednessApproach.

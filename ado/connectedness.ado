@@ -1,5 +1,5 @@
-*! version 0.6.0  20oct2026
-*! connectedness: VAR, QVAR, LAD-VAR and TVP-VAR connectedness measures (time, frequency, joint)
+*! version 0.7.0  20oct2026
+*! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
 program define connectedness, eclass
@@ -22,7 +22,8 @@ program define Estimate, eclass
         APProach(string) BANDs(numlist >1 sort) PARTition(numlist) SCENario(string) ///
         QUANTile(numlist >0 <1) CORMethod(string)                 ///
         ALPha(numlist max=1 >=0 <=1) NALPha(integer 10) NFOLDs(integer 10) ///
-        LOSS(string) FOLDs(string) SEED(string) ]
+        LOSS(string) FOLDs(string) SEED(string)                   ///
+        STANDardize DCCParams(name) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -70,13 +71,12 @@ program define Estimate, eclass
     else if inlist("`model'", "elastic", "elasticnet", "enet") {
         local model elasticnet
     }
-    else if inlist("`model'", "dccgarch", "dcc-garch") {
-        di as err "model(`model') is planned for a later release of {cmd:connectedness}"
-        exit 198
+    else if inlist("`model'", "dccgarch", "dcc-garch", "dcc") {
+        local model dccgarch
     }
     else {
         di as err "model(`model') not allowed; specify {cmd:var}, {cmd:tvpvar}, {cmd:qvar}, " ///
-            "{cmd:lad}, {cmd:lasso}, {cmd:ridge} or {cmd:elasticnet}"
+            "{cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet} or {cmd:dccgarch}"
         exit 198
     }
 
@@ -140,6 +140,32 @@ program define Estimate, eclass
             di as err "option corrected is not available with approach(`approach')"
             exit 198
         }
+    }
+
+    // DCC-GARCH: full-sample estimation, time-domain volatility FEVD (as in R)
+    local dcc = ("`model'" == "dccgarch")
+    if !`dcc' & ("`standardize'" != "" | "`dccparams'" != "") {
+        di as err "options standardize and dccparams() are allowed only with model(dccgarch)"
+        exit 198
+    }
+    if `dcc' {
+        if "`approach'" != "time" {
+            di as err "model(dccgarch) is available with approach(time) only"
+            exit 198
+        }
+        if `window' != 0 {
+            di as err "model(dccgarch) is estimated on the full sample; option window() not allowed"
+            exit 198
+        }
+        if "`orthogonalized'" != "" | "`asymmetric'" != "" {
+            di as err "options orthogonalized and asymmetric are not allowed with model(dccgarch)"
+            exit 198
+        }
+        if `T' < 100 {
+            di as err "model(dccgarch) requires at least 100 observations, as rmgarch does"
+            exit 2001
+        }
+        if "`dccparams'" != "" confirm matrix `dccparams'
     }
 
     // frequency bands: partition in radians, in decreasing order (R's partition)
@@ -355,6 +381,9 @@ program define Estimate, eclass
             exit 2001
         }
     }
+    else if `dcc' {
+        // no VAR: the lags() option is not used
+    }
     else if `nreg' <= `k'*`lags' + 1 {
         if "`model'" != "tvpvar" {
             di as err "too few observations per VAR estimation: `nreg' observations for " ///
@@ -442,7 +471,8 @@ program define Estimate, eclass
             "`tab`i''", "`fev`i''", "`sc`i''", "`names'", "`datevar'",               ///
             "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'", ///
             strtoreal(tokens("`taus'")), "`csufs'", "`cormethod'",                ///
-            strtoreal(tokens("`alphas'")), `nfolds', "`loss'", "`folds'")
+            strtoreal(tokens("`alphas'")), `nfolds', "`loss'", "`folds'",         ///
+            ("`standardize'" != ""), "`dccparams'")
         capture frame drop `f'
         frame create `f'
         frame `f' {
@@ -557,6 +587,25 @@ program define Estimate, eclass
     if "`approach'" == "r2" ereturn local fevdtype "R2 decomposition (`cormethod')"
     if "`approach'" == "modelfree" ereturn local fevdtype "squared correlations (`cormethod')"
     if inlist("`approach'", "r2", "modelfree") ereturn scalar horizon = .
+    if `dcc' {
+        tempname gp dp
+        matrix `gp' = `tab1'_g
+        matrix `dp' = `tab1'_d
+        matrix rownames `gp' = `names'
+        matrix colnames `gp' = mu omega alpha beta
+        ereturn matrix garch = `gp'
+        matrix `dp' = `dp'[1, 1..2]
+        matrix colnames `dp' = a b
+        ereturn scalar ll        = `tab1'_d[1, 3]
+        ereturn scalar converged = `tab1'_d[1, 4]
+        ereturn matrix dcc = `dp'
+        ereturn scalar lags = .
+        ereturn local standardize "`standardize'"
+        ereturn local dccparams   "`dccparams'"
+        ereturn local fevdtype = cond("`standardize'" != "", "volatility FEVD (standardized)", ///
+            "volatility FEVD")
+        matrix drop `tab1'_g `tab1'_d
+    }
     ereturn local approach "`approach'"
     ereturn local model    "`model'"
     ereturn local title    "Connectedness approach"
@@ -564,6 +613,10 @@ program define Estimate, eclass
     ereturn local cmd      "connectedness"
 
     Display, digits(`digits') `table'
+    if `dcc' & e(converged) == 0 {
+        di as txt "{p 0 6 2}note: the maximum likelihood optimization did not report convergence; " ///
+            "check the estimates in {cmd:e(garch)} and {cmd:e(dcc)}{p_end}"
+    }
 end
 
 program define Display
@@ -629,6 +682,7 @@ program define Display
     if "`approach'" == "r2" local mdesc "R2, `e(lags)' lag(s), `wdesc'"
     else if "`approach'" == "modelfree" local mdesc "model-free, `wdesc'"
     else if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
+    else if "`e(model)'" == "dccgarch" local mdesc "DCC-GARCH(1,1), full sample"
     else if e(window) > 0      local mdesc "`mname'(`e(lags)'), rolling window"
     else                       local mdesc "`mname'(`e(lags)'), static"
 
@@ -654,6 +708,10 @@ program define Display
         local qtxt = cond("`e(quantile)'" != "", strofreal(e(quantile)), "`e(quantiles)'")
         di _col(49) as txt "Quantile (tau)      = " as res %8s "`qtxt'"
     }
+    else if "`e(model)'" == "dccgarch" {
+        di as txt "DCC(1,1): a = " as res %6.4f el(e(dcc), 1, 1) as txt ", b = " ///
+            as res %6.4f el(e(dcc), 1, 2) _col(49) as txt "Log likelihood = " as res %11.3f e(ll)
+    }
     else if inlist("`e(model)'", "lasso", "ridge", "elasticnet") {
         local na : word count `e(alphas)'
         local atxt = cond(`na' == 1, "`e(alphas)'", "`na' values")
@@ -675,6 +733,9 @@ program define Display
     else if "`approach'" == "r2" {
         di as txt "Approach: " as res "R2 decomposed connectedness" as txt " (" as res "`e(cormethod)'" ///
             as txt " correlations)"
+    }
+    else if "`e(model)'" == "dccgarch" {
+        di as txt "Approach: " as res "volatility connectedness" as txt " (Gabauer 2020)"
     }
     else if "`approach'" == "modelfree" {
         di as txt "Approach: " as res "model-free connectedness" as txt " (" as res "`e(cormethod)'" ///

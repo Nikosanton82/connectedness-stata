@@ -328,3 +328,37 @@ for (nm in names(encases)) {
   time_fx(nm, enrun(cs$d, cs$nlag, cs$nfore, cs$model, cs$ws, cs$rows,
                     if (is.null(cs$en)) list() else cs$en))
 }
+
+# ---------------------------------------------------------------------------
+# DCC-GARCH volatility connectedness (Gabauer 2020), from version 0.7.0. The model
+# is estimated by rmgarch::dccfit() with the specification ConnectednessApproach()
+# uses; R_<case>_par.csv holds its estimates (mu, omega, alpha1, beta1 of each
+# variable, then dcca1, dccb1) and the log likelihood, so that the Stata results
+# can be checked both with these parameters fixed and with its own estimates.
+suppressPackageStartupMessages({library(rugarch); library(rmgarch)})
+dccdata = function(d) {
+  x = get(data(list = d))
+  if (!is(x, "zoo")) x = zoo::zoo(as.matrix(x[, -1]), as.Date(x[, 1]))
+  x
+}
+dccrun = function(nm, d, nfore, standardize = FALSE, corr = FALSE) {
+  x = dccdata(d)
+  k = ncol(x)
+  us = rugarch::ugarchspec(mean.model = list(armaOrder = c(0, 0)),
+                           variance.model = list(garchOrder = c(1, 1), model = "sGARCH"),
+                           distribution.model = "norm")
+  ms = rmgarch::dccspec(uspec = rugarch::multispec(replicate(k, us)), dccOrder = c(1, 1),
+                        distribution = "mvnorm")
+  fit = rmgarch::dccfit(ms, data = x)
+  par = c(fit@mfit$matcoef[, 1], llh = fit@mfit$llh)
+  write.table(t(par), file.path(out, paste0("R_", nm, "_par.csv")), sep = ",",
+              row.names = FALSE, col.names = TRUE)
+  dca = suppressMessages(ConnectednessApproach(x, nfore = nfore, model = "DCC-GARCH", corrected = corr,
+                         DCC_config = list(standardize = standardize)))
+  time_fx(nm, dca)
+}
+dccrun("g2020_dcc", "g2020", 10)
+dccrun("g2020_dcc_std_corr", "g2020", 20, standardize = TRUE, corr = TRUE)
+dccrun("cgp2024_dcc", "cgp2024", 10)
+cat("rugarch version:", as.character(packageVersion("rugarch")),
+    " rmgarch version:", as.character(packageVersion("rmgarch")), "\n")

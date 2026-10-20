@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.6.0  20oct2026}{...}
+{* *! version 0.7.0  20oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -12,7 +12,7 @@
 {title:Title}
 
 {phang}
-{bf:connectedness} {hline 2} VAR, quantile VAR and TVP-VAR connectedness measures in the time and frequency domains
+{bf:connectedness} {hline 2} Connectedness measures from VAR-type, TVP-VAR and DCC-GARCH models
 
 
 {marker syntax}{...}
@@ -25,7 +25,7 @@
 {synopthdr}
 {synoptline}
 {syntab:Model}
-{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet} or {cmd:tvpvar}{p_end}
+{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:tvpvar} or {cmd:dccgarch}{p_end}
 {synopt:{opt l:ags(#)}}VAR lag order; default is {cmd:lags(1)}{p_end}
 {synopt:{opt w:indow(#)}}rolling-window size ({cmd:var}, {cmd:qvar}, {cmd:lad}) or prior training sample ({cmd:tvpvar}); default 0{p_end}
 {synopt:{opt quant:ile(numlist)}}quantile tau for {cmd:qvar}, one value or one per variable; default {cmd:0.5}{p_end}
@@ -43,6 +43,10 @@
 {synopt:{opt kappa2(#)}}decay factor for the error covariance; default {cmd:0.99}{p_end}
 {synopt:{opt pr:ior(prior)}}{cmd:bayes} (default), {cmd:minnesota} or {cmd:uninformative}{p_end}
 {synopt:{opt gam:ma(#)}}Minnesota prior tightness; default {cmd:0.01}{p_end}
+
+{syntab:DCC-GARCH}
+{synopt:{opt stand:ardize}}subtract the response without the shock (standardized volatility impulse responses){p_end}
+{synopt:{opt dccp:arams(matname)}}use the given 4k+2 parameters instead of estimating them{p_end}
 
 {syntab:Connectedness}
 {synopt:{opt app:roach(approach)}}{cmd:time} (default), {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
@@ -93,6 +97,12 @@ directional (NPDC), pairwise connectedness (PCI) and influence measures in a
 separate frame.
 
 {pstd}
+The same measures are available from quantile, least absolute deviation, LASSO, ridge
+and elastic-net VARs and, for volatility connectedness, from a DCC-GARCH model
+(Gabauer 2020); see {opt model()}. Besides the time domain, {opt approach()} gives
+frequency, joint, extended joint, R2 decomposed and model-free connectedness.
+
+{pstd}
 The command is a port of the {it:ConnectednessApproach} R package (Gabauer 2025)
 and reproduces its results; see {it:Remarks}.
 
@@ -140,6 +150,18 @@ only with the same folds; {opt folds(interleaved)} assigns observation {it:i} to
 fold 1 + mod({it:i}-1, {it:nfolds}) and is used by the certification script.
 
 {phang}
+{cmd:dccgarch} fits the DCC-GARCH(1,1) model of Engle (2002) and gives the volatility
+connectedness of Gabauer (2020), as R's {cmd:ConnectednessApproach(}..., {cmd:model="DCC-GARCH")}.
+Each variable follows a GARCH(1,1) (Bollerslev 1986) with a constant mean and normal
+errors; the conditional correlations follow a DCC(1,1). The model is estimated in two
+steps by maximum likelihood, as R's {cmd:rmgarch::dccfit()} does: first each GARCH
+margin, then the DCC parameters from the standardized residuals. The decomposition
+comes from the volatility impulse responses of Gabauer (2020), computed for every
+period of the sample, so {opt window()} is not allowed and {opt lags()} is not used.
+Only {cmd:approach(time)} is available, as in the R package; {opt orthogonalized} and
+{opt asymmetric} are not allowed. At least 100 observations are required.
+
+{phang}
 {opt quantile(numlist)} sets the quantile tau, strictly between 0 and 1, for
 {cmd:model(qvar)}. With one value per variable, equation {it:i} is estimated at the
 {it:i}th quantile, which gives the quantile-on-quantile connectedness of Gabauer and
@@ -154,6 +176,21 @@ each rolling regression uses {it:#} - {it:p} observations, so a window of 200
 with one lag uses 199 rows of data. With {cmd:model(tvpvar)} and {cmd:prior(bayes)},
 the prior is an OLS VAR on the first {it:#} - {it:p} observations;
 {cmd:window(0)} uses the whole sample.
+
+{dlgtab:DCC-GARCH}
+
+{phang}
+{opt standardize} computes the volatility impulse responses as the difference between
+the conditional covariance paths with and without the shock, as the
+{cmd:DCC_config=list(standardize=TRUE)} setting of the R package does. By default the
+path with the shock is used.
+
+{phang}
+{opt dccparams(matname)} skips the estimation and uses the parameters in the Stata
+matrix {it:matname}, a row or column vector of 4k+2 values in the order of
+{cmd:rmgarch}: mu, omega, alpha1 and beta1 of each variable in {it:varlist} order,
+followed by the DCC parameters a and b. The parameters estimated by R can thus be
+entered to reproduce its results exactly; the certification script does this.
 
 {dlgtab:TVP-VAR}
 
@@ -291,6 +328,18 @@ shrinks the state to 0.99 times its previous value. The certification script
 in the package's {cmd:test} folder checks these results against the R package.
 
 {pstd}
+With {cmd:model(dccgarch)}, the conditional covariances, the log likelihood and the
+volatility decomposition follow {cmd:rmgarch} and {cmd:VFEVD()} exactly, including
+their conventions: the GARCH recursion starts at the mean squared residual; the DCC
+parameters are estimated with a presample standardized residual of zero, while the
+reported correlations and the log likelihood are filtered, as in {cmd:rmgarch}, with
+a presample value of one. The estimates themselves come from a different optimizer
+(Newton-Raphson with analytic gradients here, {cmd:solnp} in R), so they agree with
+R's to the precision of R's optimizer, about 1e-5 in the certification cases; with
+the same parameters ({opt dccparams()}) the results agree to numerical precision.
+Stata's estimates attain a likelihood at least as high as R's.
+
+{pstd}
 Data from 18 published applications are installed with the package as
 {cmd:cn_}{it:name}{cmd:.dta}, for example {cmd:cn_dy2012.dta} and
 {cmd:cn_acg2020.dta}. They are ancillary files: type {cmd:net get connectedness} to copy
@@ -363,6 +412,13 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {pstd}Gabauer, Chatziantoniou and Stenfors (2023): model-free connectedness{p_end}
 {phang2}{cmd:. connectedness SP500 R_10Y DJUBSCOM USDX, approach(modelfree) window(200) cormethod(kendall) datevar(date) replace}{p_end}
 
+{pstd}Gabauer (2020): DCC-GARCH volatility connectedness{p_end}
+{phang2}{cmd:. use cn_g2020, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness EUR GBP CHF JPY, model(dccgarch) datevar(date) replace}{p_end}
+{phang2}{cmd:. matrix list e(garch)}{p_end}
+{phang2}{cmd:. cngraph tci}{p_end}
+
 {pstd}Adekoya et al. (2022): asymmetric connectedness of positive and negative changes{p_end}
 {phang2}{cmd:. use cn_aaacgo2022, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -399,10 +455,12 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
 {synopt:{cmd:e(TCI_c)}, {cmd:e(TCI_l)}}TCI of the contemporaneous and lagged components ({cmd:r2} with lags); also {cmd:e(cTCI_c)}, {cmd:e(cTCI_l)}{p_end}
 {synopt:{cmd:e(TCI_f}{it:b}{cmd:)}, {cmd:e(cTCI_f}{it:b}{cmd:)}}TCI and corrected TCI of band {it:b} ({cmd:frequency}){p_end}
+{synopt:{cmd:e(ll)}}log likelihood of the DCC-GARCH model ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(converged)}}1 if the optimizations converged, 0 otherwise ({cmd:dccgarch}){p_end}
 
 {p2col 5 18 22 2: Macros}{p_end}
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
-{synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad} or {cmd:tvpvar}{p_end}
+{synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:tvpvar} or {cmd:dccgarch}{p_end}
 {synopt:{cmd:e(quantiles)}}quantile of each equation ({cmd:qvar}){p_end}
 {synopt:{cmd:e(alphas)}}alpha values considered ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(loss)}, {cmd:e(folds)}, {cmd:e(seed)}}cross-validation settings{p_end}
@@ -411,7 +469,9 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(partition)}}band limits in radians ({cmd:frequency}){p_end}
 {synopt:{cmd:e(scenario)}}{cmd:abs} or {cmd:wth} ({cmd:frequency}){p_end}
-{synopt:{cmd:e(fevdtype)}}{cmd:generalized} or {cmd:orthogonalized}{p_end}
+{synopt:{cmd:e(fevdtype)}}type of decomposition, for example {cmd:generalized}{p_end}
+{synopt:{cmd:e(standardize)}}{cmd:standardize} or empty ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(dccparams)}}name of the matrix in {opt dccparams()} ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(corrected)}}{cmd:corrected} or empty{p_end}
 {synopt:{cmd:e(prior)}}prior ({cmd:tvpvar}){p_end}
 {synopt:{cmd:e(names)}}variable names{p_end}
@@ -429,6 +489,8 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(table_neg)}, {cmd:e(fevd_neg)}}same, negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(table_f}{it:b}{cmd:)}, {cmd:e(fevd_f}{it:b}{cmd:)}}same, frequency band {it:b} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(table_c)}, {cmd:e(fevd_c)}}same, contemporaneous component ({cmd:r2} with lags); {cmd:e(table_l)}, {cmd:e(fevd_l)} for the lagged one{p_end}
+{synopt:{cmd:e(garch)}}GARCH(1,1) parameters mu, omega, alpha and beta, k x 4 ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(dcc)}}DCC(1,1) parameters a and b, 1 x 2 ({cmd:dccgarch}){p_end}
 
 {p2col 5 18 22 2: Functions}{p_end}
 {synopt:{cmd:e(sample)}}marks estimation sample{p_end}
@@ -510,6 +572,21 @@ the overall table, as in {cmd:R2Connectedness()}. {it:Model-free.} The table is
 the matrix of squared correlations with each row divided by its sum.
 
 {pstd}
+{it:DCC-GARCH.} With residuals r_it = x_it - mu_i, the conditional variances are
+h_it = omega_i + alpha_i r_i,t-1^2 + beta_i h_i,t-1, starting at the mean of r_it^2.
+With z_t the standardized residuals and {bf:Qbar} their sample covariance,
+{bf:Q}_t = (1-a-b) {bf:Qbar} + a z_t-1 z_t-1' + b {bf:Q}_t-1, {bf:R}_t is {bf:Q}_t
+scaled to unit diagonal, and {bf:H}_t = {bf:D}_t {bf:R}_t {bf:D}_t with
+{bf:D}_t = diag(h_t)^(1/2). For each period, the volatility impulse response
+follows {cmd:VFEVD()}: a unit shock to all variables enters the GARCH recursions at
+the first step, h_1 = alpha + beta.*diag({bf:H}_t), and afterwards
+h_j+1 = beta.*h_j; the correlations follow {bf:Q}_1 = (1-a-b) {bf:Qbar} +
+a diag(h_1) + b {bf:H}_t and {bf:Q}_j+1 = (1-a-b) {bf:Qbar} + (a+b) {bf:Q}_j. With
+{bf:V}_j the covariance path (minus the path without the shock under
+{opt standardize}), the table is the transpose of sum_{j=0}^{H} {bf:V}_j.^2 with
+each row divided by its sum.
+
+{pstd}
 For the TVP-VAR, the coefficient prediction covariance is the filtered covariance
 divided by kappa1, and the error covariance is updated as
 kappa2 {bf:Sigma}_{t-1} + (1-kappa2) u_t u_t'.
@@ -544,6 +621,10 @@ financial connectedness and systemic risk. {it:Journal of Financial Econometrics
 16: 271-296.
 
 {phang}
+Bollerslev, T. 1986. Generalized autoregressive conditional heteroskedasticity.
+{it:Journal of Econometrics} 31: 307-327.
+
+{phang}
 Chatziantoniou, I., and D. Gabauer. 2021. EMU risk-synchronisation and financial
 fragility through the prism of dynamic connectedness.
 {it:Quarterly Review of Economics and Finance} 79: 1-14.
@@ -559,6 +640,11 @@ transmission mechanism of monetary policy: A quantile connectedness approach.
 {it:Economics Letters} 204: 109891.
 
 {phang}
+Cocca, T., D. Gabauer, and S. Pomberger. 2024. Clean energy market connectedness and
+investment strategies: New evidence from DCC-GARCH R2 decomposed connectedness
+measures. {it:Energy Economics} 136: 107680.
+
+{phang}
 Diebold, F. X., and K. Yilmaz. 2009. Measuring financial asset return and volatility
 spillovers, with application to global equity markets. {it:Economic Journal} 119: 158-171.
 
@@ -568,9 +654,18 @@ directional measurement of volatility spillovers.
 {it:International Journal of Forecasting} 28: 57-66.
 
 {phang}
+Engle, R. 2002. Dynamic conditional correlation: A simple class of multivariate
+generalized autoregressive conditional heteroskedasticity models.
+{it:Journal of Business and Economic Statistics} 20: 339-350.
+
+{phang}
 Friedman, J., T. Hastie, and R. Tibshirani. 2010. Regularization paths for
 generalized linear models via coordinate descent. {it:Journal of Statistical Software}
 33(1): 1-22.
+
+{phang}
+Gabauer, D. 2020. Volatility impulse response analysis for DCC-GARCH models: The role
+of volatility transmission mechanisms. {it:Journal of Forecasting} 39: 788-796.
 
 {phang}
 Gabauer, D. 2025. ConnectednessApproach: Connectedness approach. R package version 1.0.4.
@@ -589,6 +684,10 @@ ridge vector autoregressive models. {it:International Review of Economics and Fi
 {phang}
 Gabauer, D., and A. Stenfors. 2024. Quantile-on-quantile connectedness measures:
 Evidence from the US treasury yield curve. {it:Finance Research Letters} 60: 104852.
+
+{phang}
+Ghalanos, A. 2026. rmgarch: Multivariate GARCH models. R package version 1.4-3.
+{browse "https://CRAN.R-project.org/package=rmgarch"}.
 
 {phang}
 Koenker, R. 2005. {it:Quantile Regression}. Cambridge: Cambridge University Press.

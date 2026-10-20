@@ -1,4 +1,4 @@
-*! version 0.6.0  20oct2026
+*! version 0.7.0  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -1165,6 +1165,378 @@ real matrix cn_modelfree(real matrix X, string scalar method)
 }
 
 // =============================================================================
+// DCC-GARCH(1,1) and the volatility FEVD (Gabauer 2020). R: rmgarch::dccfit() with
+// rugarch sGARCH(1,1) margins (constant mean, normal errors), then VFEVD()
+// =============================================================================
+
+// rugarch's sGARCH(1,1) variance recursion. g = (mu, omega, alpha, beta) and r holds
+// the residuals y - mu. The recursion starts at the mean squared residual.
+real colvector cn_garchh(real colvector r, real rowvector g)
+{
+    real scalar    T, t
+    real colvector h, e
+
+    T    = rows(r)
+    e    = r:^2
+    h    = J(T, 1, .)
+    h[1] = mean(e)
+    for (t=2; t<=T; t++) h[t] = g[2] + g[3]*e[t-1] + g[4]*h[t-1]
+    return(h)
+}
+
+// Gaussian log likelihood of one GARCH(1,1) margin
+real scalar cn_garchll(real colvector y, real rowvector g)
+{
+    real colvector r, h
+
+    r = y :- g[1]
+    h = cn_garchh(r, g)
+    if (min(h) <= 0) return(.)
+    return(-0.5*(rows(y)*ln(2*pi()) + sum(ln(h)) + sum((r:^2) :/ h)))
+}
+
+// (mu, omega, alpha, beta) from the unrestricted parameters used in the optimization:
+// omega = exp(th2), alpha + beta = invlogit(th3), alpha/(alpha + beta) = invlogit(th4),
+// which keeps omega > 0, alpha, beta > 0 and alpha + beta < 1 as rugarch's bounds and
+// stationarity constraint do
+real rowvector cn_garchpar(real rowvector th)
+{
+    real scalar s, w
+
+    s = invlogit(th[3])
+    w = invlogit(th[4])
+    return((th[1], exp(th[2]), s*w, s*(1-w)))
+}
+
+// Log likelihood of one margin and, with todo >= 1, its analytic gradient with respect
+// to the unrestricted parameters (the Hessian is then obtained numerically)
+void cn_garch_ev(real scalar todo, real rowvector th, real colvector y,
+                 real scalar v, real rowvector g, real matrix H)
+{
+    real scalar    T, t, s, w
+    real rowvector p, dh, gp
+    real colvector r, h, e
+    real matrix    J
+
+    pragma unused H
+    p = cn_garchpar(th)
+    r = y :- p[1]
+    h = cn_garchh(r, p)
+    if (min(h) <= 0) {
+        v = .
+        return
+    }
+    e = r:^2
+    v = -0.5*(rows(y)*ln(2*pi()) + sum(ln(h)) + sum(e :/ h))
+    if (todo < 1) return
+    // dh_t/d(mu, omega, alpha, beta), recursively; h_1 = mean(r^2) depends on mu only
+    T  = rows(y)
+    dh = (-2*mean(r), 0, 0, 0)
+    gp = (r[1]/h[1], 0, 0, 0) - 0.5*(1/h[1] - e[1]/h[1]^2)*dh
+    for (t=2; t<=T; t++) {
+        dh = (-2*p[3]*r[t-1], 1, e[t-1], h[t-1]) + p[4]*dh
+        gp = gp + (r[t]/h[t], 0, 0, 0) - 0.5*(1/h[t] - e[t]/h[t]^2)*dh
+    }
+    // chain rule to the unrestricted parameters
+    s = invlogit(th[3])
+    w = invlogit(th[4])
+    J = (1, 0, 0, 0 \ 0, p[2], 0, 0 \ 0, 0, w*s*(1-s), (1-w)*s*(1-s) \ 0, 0, s*w*(1-w), -s*w*(1-w))'
+    g = gp*J
+}
+
+// Maximum likelihood estimates of one margin; conv is set to 0 if the
+// optimization did not converge
+real rowvector cn_garchfit(real colvector y, real scalar conv)
+{
+    transmorphic   S
+    real rowvector th0
+
+    th0 = (mean(y), ln(0.05*variance(y)), logit(0.95), logit(0.05/0.95))
+    S = optimize_init()
+    optimize_init_evaluator(S, &cn_garch_ev())
+    optimize_init_evaluatortype(S, "d1")
+    optimize_init_argument(S, 1, y)
+    optimize_init_params(S, th0)
+    optimize_init_which(S, "max")
+    optimize_init_technique(S, "nr")
+    optimize_init_conv_maxiter(S, 500)
+    optimize_init_conv_ptol(S, 1e-10)
+    optimize_init_conv_vtol(S, 1e-13)
+    optimize_init_conv_nrtol(S, 1e-10)
+    optimize_init_tracelevel(S, "none")
+    optimize_init_conv_warning(S, "off")
+    if (_optimize(S)) {
+        optimize_init_technique(S, "bfgs")
+        optimize_init_params(S, th0)
+        if (_optimize(S)) {
+            conv = 0
+            return(J(1, 4, .))
+        }
+    }
+    conv = optimize_result_converged(S)
+    return(cn_garchpar(optimize_result_params(S)))
+}
+
+// DCC(1,1) recursion as rmgarch: Q_t = (1-a-b) Qbar + a z_{t-1} z_{t-1}' + b Q_{t-1},
+// with Q_0 = Qbar and a presample z_0 whose elements all equal pad (rmgarch uses 0
+// in the estimation and 1 in the final filter). Returns
+// -0.5 sum_t (ln|R_t| + z_t' R_t^-1 z_t); with save != 0, row t of Rt receives R_t.
+real scalar cn_dccll(real matrix Z, real matrix Qbar, real scalar a, real scalar b,
+                     real scalar pad, real scalar save, real matrix Rt)
+{
+    real scalar    T, k, t, ll
+    real matrix    C, Q, R, L
+    real rowvector zp
+    real colvector d, u
+
+    T  = rows(Z)
+    k  = cols(Z)
+    C  = (1-a-b)*Qbar
+    Q  = Qbar
+    zp = J(1, k, pad)
+    ll = 0
+    if (save) Rt = J(T, k*k, .)
+    for (t=1; t<=T; t++) {
+        Q = C + a*(zp'*zp) + b*Q
+        d = sqrt(diagonal(Q))
+        R = Q :/ (d*d')
+        L = cholesky(R)
+        if (hasmissing(L)) return(.)
+        u  = solvelower(L, Z[t, .]')
+        ll = ll + 2*sum(ln(diagonal(L))) + u'*u
+        if (save) Rt[t, .] = rowshape(R, 1)
+        zp = Z[t, .]
+    }
+    return(-0.5*ll)
+}
+
+// DCC log likelihood (presample z_0 = 0) and, with todo >= 1, its analytic gradient
+// with respect to the unrestricted parameters
+void cn_dcc_ev(real scalar todo, real rowvector th, real matrix Z, real matrix Qbar,
+               real scalar v, real rowvector g, real matrix H)
+{
+    real scalar    s, w, a, b, T, k, t, ll
+    real matrix    C, Q, Qa, Qb, R, W, L, Rt, dR, ss
+    real rowvector zp, ga
+    real colvector q, u, z, va, dq
+
+    pragma unused H
+    s = invlogit(th[1])
+    w = invlogit(th[2])
+    a = s*w
+    b = s*(1-w)
+    if (todo < 1) {
+        v = cn_dccll(Z, Qbar, a, b, 0, 0, Rt)
+        return
+    }
+    T  = rows(Z)
+    k  = cols(Z)
+    C  = (1-a-b)*Qbar
+    Q  = Qbar
+    Qa = J(k, k, 0)
+    Qb = J(k, k, 0)
+    zp = J(1, k, 0)
+    ll = 0
+    ga = (0, 0)
+    for (t=1; t<=T; t++) {
+        // derivatives use Q_{t-1} before Q is updated
+        Qa = -Qbar + zp'*zp + b*Qa
+        Qb = -Qbar + Q + b*Qb
+        Q  = C + a*(zp'*zp) + b*Q
+        q  = 1 :/ sqrt(diagonal(Q))
+        ss = q*q'
+        R  = Q :* ss
+        L  = cholesky(R)
+        if (hasmissing(L)) {
+            v = .
+            return
+        }
+        z  = Z[t, .]'
+        u  = solvelower(L, z)
+        ll = ll + 2*sum(ln(diagonal(L))) + u'*u
+        W  = cholinv(R)
+        va = W*z
+        dq = -0.5*(q:^3) :* diagonal(Qa)
+        dR = Qa :* ss + Q :* (dq*q' + q*dq')
+        ga[1] = ga[1] + sum(W :* dR) - va'*dR*va
+        dq = -0.5*(q:^3) :* diagonal(Qb)
+        dR = Qb :* ss + Q :* (dq*q' + q*dq')
+        ga[2] = ga[2] + sum(W :* dR) - va'*dR*va
+        zp = Z[t, .]
+    }
+    v = -0.5*ll
+    g = -0.5*ga*(w*s*(1-s), s*w*(1-w) \ (1-w)*s*(1-s), -s*w*(1-w))
+}
+
+// Maximum likelihood estimates (a, b) of the DCC(1,1) stage, as rmgarch's first
+// DCC likelihood (presample z_0 = 0)
+real rowvector cn_dccfit(real matrix Z, real matrix Qbar, real scalar conv)
+{
+    transmorphic   S
+    real rowvector th0, th
+    real scalar    s, w
+
+    th0 = (logit(0.95), logit(0.05/0.95))
+    S = optimize_init()
+    optimize_init_evaluator(S, &cn_dcc_ev())
+    optimize_init_evaluatortype(S, "d1")
+    optimize_init_argument(S, 1, Z)
+    optimize_init_argument(S, 2, Qbar)
+    optimize_init_params(S, th0)
+    optimize_init_which(S, "max")
+    optimize_init_technique(S, "nr")
+    optimize_init_conv_maxiter(S, 500)
+    optimize_init_conv_ptol(S, 1e-10)
+    optimize_init_conv_vtol(S, 1e-13)
+    optimize_init_conv_nrtol(S, 1e-10)
+    optimize_init_tracelevel(S, "none")
+    optimize_init_conv_warning(S, "off")
+    if (_optimize(S)) {
+        optimize_init_technique(S, "bfgs")
+        optimize_init_params(S, th0)
+        if (_optimize(S)) {
+            conv = 0
+            return((., .))
+        }
+    }
+    conv = optimize_result_converged(S)
+    th = optimize_result_params(S)
+    s  = invlogit(th[1])
+    w  = invlogit(th[2])
+    return((s*w, s*(1-w)))
+}
+
+// Paths of the conditional covariance after a unit shock to all variables (shock = 1)
+// or without it (shock = 0), as R's VFEVD(): k x k*(nf+1), horizons 0, ..., nf.
+// R's code is reproduced as written, including that the horizon-1 correlation uses
+// H_t in place of Q_t and that only the first-step ARCH term responds to the shock.
+real matrix cn_vpath(real matrix H0, real matrix Qbar, real colvector al,
+                     real colvector be, real scalar A, real scalar B, real scalar nf,
+                     real scalar shock)
+{
+    real scalar    k, j
+    real matrix    P, C, Q, Hj
+    real colvector h, d, q
+
+    k  = rows(H0)
+    P  = J(k, k*(nf+1), 0)
+    P[|1, 1 \ k, k|] = H0
+    C  = (1-A-B)*Qbar
+    Hj = H0
+    Q  = Qbar
+    for (j=1; j<=nf; j++) {
+        h = be :* diagonal(Hj)
+        if (shock & j==1) h = al + h
+        d = sqrt(h)
+        if (j==1) Q = C + B*H0 + (shock ? A*diag(h) : J(k, k, 0))
+        else      Q = C + (A+B)*Q
+        q  = sqrt(diagonal(Q))
+        Hj = (d*d') :* (Q :/ (q*q'))
+        P[|1, j*k+1 \ k, (j+1)*k|] = Hj
+    }
+    return(P)
+}
+
+// Volatility FEVD of every period (shares, row-major k x k in each row)
+real matrix cn_vfevd(real matrix Ht, real matrix Qbar, real colvector al,
+                     real colvector be, real scalar A, real scalar B, real scalar nf,
+                     real scalar stdz)
+{
+    real scalar    T, k, t, j
+    real matrix    F, H0, V, num, f
+
+    T = rows(Ht)
+    k = cols(Qbar)
+    F = J(T, k*k, .)
+    for (t=1; t<=T; t++) {
+        H0 = rowshape(Ht[t, .], k)
+        V  = cn_vpath(H0, Qbar, al, be, A, B, nf, 1)
+        if (stdz) V = V - cn_vpath(H0, Qbar, al, be, A, B, nf, 0)
+        num = J(k, k, 0)
+        for (j=0; j<=nf; j++) num = num + V[|1, j*k+1 \ k, (j+1)*k|]:^2
+        f = num'
+        f = f :/ rowsum(f)
+        F[t, .] = rowshape(f, 1)
+    }
+    return(F)
+}
+
+// Two-step DCC-GARCH(1,1) estimation and the volatility FEVD. fixname, if not empty,
+// names a Stata matrix with the 4k+2 parameters in rmgarch's order (mu, omega,
+// alpha1, beta1 of each variable, then dcca1, dccb1), which are then used as given.
+// Returns the FEVD shares in F (T x k*k), the GARCH parameters in G (k x 4) and
+// D = (a, b, log likelihood, converged).
+void cn_dccgarch(real matrix x, real scalar nf, real scalar stdz, string scalar fixname,
+                 real matrix F, real matrix G, real rowvector D)
+{
+    real scalar    T, k, i, t, a, b, conv, c, ll
+    real rowvector pv, ab
+    real matrix    S, Z, Qbar, Rt, Ht
+    real colvector r, h
+
+    T    = rows(x)
+    k    = cols(x)
+    G    = J(k, 4, .)
+    conv = 1
+    if (fixname != "") {
+        pv = vec(st_matrix(fixname))'
+        if (cols(pv) != 4*k+2) {
+            errprintf("dccparams() must hold %g values (4 per variable and 2 DCC parameters)\n", 4*k+2)
+            exit(error(503))
+        }
+        for (i=1; i<=k; i++) G[i, .] = pv[|4*(i-1)+1 \ 4*i|]
+        a = pv[4*k+1]
+        b = pv[4*k+2]
+    }
+    else {
+        for (i=1; i<=k; i++) {
+            c = 1
+            G[i, .] = cn_garchfit(x[., i], c)
+            conv = conv & c
+        }
+    }
+    if (hasmissing(G)) {
+        errprintf("the GARCH(1,1) model could not be estimated\n")
+        exit(error(430))
+    }
+    S = J(T, k, .)
+    Z = J(T, k, .)
+    for (i=1; i<=k; i++) {
+        r = x[., i] :- G[i, 1]
+        h = cn_garchh(r, G[i, .])
+        if (min(h) <= 0) {
+            errprintf("nonpositive conditional variance for variable %g\n", i)
+            exit(error(430))
+        }
+        S[., i] = sqrt(h)
+        Z[., i] = r :/ S[., i]
+    }
+    Qbar = variance(Z)
+    if (fixname == "") {
+        c  = 1
+        ab = cn_dccfit(Z, Qbar, c)
+        if (hasmissing(ab)) {
+            errprintf("the DCC(1,1) model could not be estimated\n")
+            exit(error(430))
+        }
+        a    = ab[1]
+        b    = ab[2]
+        conv = conv & c
+    }
+    // rmgarch's final filter: presample z_0 = 1
+    ll = cn_dccll(Z, Qbar, a, b, 1, 1, Rt)
+    if (ll >= .) {
+        errprintf("conditional correlation matrix not positive definite\n")
+        exit(error(506))
+    }
+    ll = ll - 0.5*(T*k*ln(2*pi()) + 2*sum(ln(S)))
+    Ht = J(T, k*k, .)
+    for (t=1; t<=T; t++) Ht[t, .] = rowshape((S[t, .]'*S[t, .]) :* rowshape(Rt[t, .], k), 1)
+    F = cn_vfevd(Ht, Qbar, G[., 3], G[., 4], a, b, nf, stdz)
+    D = (a, b, ll, conv)
+}
+
+// =============================================================================
 // Driver called by connectedness.ado
 // =============================================================================
 
@@ -1177,7 +1549,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              real rowvector part, string scalar scen, string scalar blabels,
              real rowvector tau, string scalar csufs, string scalar r2m,
              real rowvector enalpha, real scalar nfolds, string scalar enloss,
-             string scalar foldmode)
+             string scalar foldmode, real scalar stdz, string scalar dccfix)
 {
     external real matrix   cn__M, cn__CT
     external real colvector cn__tv, cn__dv
@@ -1188,8 +1560,9 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     real colvector tv
     real rowvector ma, m, cv, sc
     string rowvector nm, bl, fn, fl, mn0, ml0, cs
-    real matrix    Z, Cc, Cl
+    real matrix    Z, Cc, Cl, Ft, G
     real scalar    wr
+    real rowvector D
 
     x  = st_data(., tokens(vars), touse)
     tv = st_data(., tvar, touse)
@@ -1213,6 +1586,12 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         Z  = (approach=="r2" ? cn_embed(x, p+1) : x)
         wr = (window==0 ? rows(Z) : window - (approach=="r2" ? 2*p : 0))
         nT = rows(Z) - wr + 1
+    }
+    else if (model=="dccgarch") {
+        cn_dccgarch(x, H, stdz, dccfix, Ft, G, D)
+        st_matrix(tabname + "_g", G)
+        st_matrix(tabname + "_d", D)
+        nT = T
     }
     else if (model=="tvpvar") {
         if (prior=="minnesota")          pr = cn_minnesotaprior(x, gamma, p)
@@ -1288,6 +1667,11 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         }
         else if (approach=="modelfree") {
             ct = 100*cn_modelfree(Z[|t, 1 \ t+wr-1, k|], r2m)
+            m  = cn_measures(ct)
+            cv = rowshape(ct, 1)
+        }
+        else if (model=="dccgarch") {
+            ct = 100*rowshape(Ft[t, .], k)
             m  = cn_measures(ct)
             cv = rowshape(ct, 1)
         }

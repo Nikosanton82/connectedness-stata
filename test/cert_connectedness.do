@@ -316,7 +316,7 @@ else di as txt "  estat group, cnnetwork, cngraph overlays and dates: pass"
 di _n as txt "{hline 78}" _n "8. Error handling" _n "{hline 78}"
 use ../data/cn_dy2012, clear
 tsset t
-cn_expect 198 connectedness SP500 R_10Y, model(dccgarch) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(garch) `opt'
 cn_expect 198 connectedness SP500 R_10Y, prior(minnesota) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(tvpvar) kappa1(1) `opt'
 cn_expect 184 connectedness SP500 R_10Y, orthogonalized generalized `opt'
@@ -585,6 +585,73 @@ cn_expect 198 connectedness SP500 R_10Y, model(ridge) loss(rmse) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(elasticnet) folds(blocked) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(lasso) nfolds(2) `opt'
 
+di _n as txt "{hline 78}" _n "13. DCC-GARCH volatility connectedness (0.7.0)" _n "{hline 78}"
+* R_<case>_par.csv holds rmgarch's estimates and log likelihood. Each case is checked
+* twice: with R's parameters fixed through dccparams() the volatility FEVD must agree
+* exactly; with Stata's own maximum likelihood estimates the parameters must agree with
+* R's to 1e-4 and the connectedness measures to 1e-3.
+capture program drop cn_dcccase
+program define cn_dcccase
+    syntax varlist, case(string) [opts(string)]
+    local f "fixtures/R_`case'_par.csv"
+    capture confirm file "`f'"
+    if _rc {
+        di as txt "  R_`case': no fixture, skipped"
+        exit
+    }
+    local k : word count `varlist'
+    tempname P E
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`f'", clear varnames(1) asdouble
+        mkmat _all, matrix(`P')
+    }
+    frame drop __fx
+    local llh = `P'[1, 4*`k'+3]
+    matrix __rpar = `P'[1, 1..4*`k'+2]
+    connectedness `varlist', model(dccgarch) dccparams(__rpar) `opts' frame(cn_test) replace notable
+    cn_check, case(`case') tol(1e-8) prefix(R_)
+    global cn_tests = $cn_tests + 1
+    local d = reldif(e(ll), `llh')
+    local ok = (`d' < 1e-10)
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-26s "R_`case'" " log likelihood " as res %9.2e `d' as txt "  " cond(`ok', "pass", "FAIL")
+    connectedness `varlist', model(dccgarch) `opts' frame(cn_test) replace notable
+    matrix `E' = e(garch)'
+    matrix `E' = vec(`E')', e(dcc)
+    global cn_tests = $cn_tests + 1
+    local d = mreldif(`E', __rpar)
+    local ok = (`d' < 1e-4) & (e(converged) == 1)
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-26s "R_`case'" " estimates " as res %9.2e `d' as txt "  " cond(`ok', "pass", "FAIL")
+    cn_check, case(`case') tol(1e-3) prefix(R_)
+    matrix drop __rpar
+end
+
+use ../data/cn_g2020, clear
+tsset t
+timer on 11
+cn_dcccase EUR GBP CHF JPY, case(g2020_dcc)
+timer off 11
+cn_dcccase EUR GBP CHF JPY, case(g2020_dcc_std_corr) opts(horizon(20) standardize corrected)
+use ../data/cn_cgp2024, clear
+tsset t
+cn_dcccase GRE SOL WIN GEO, case(cgp2024_dcc)
+
+use ../data/cn_g2020, clear
+tsset t
+local v EUR GBP CHF JPY
+cn_expect 198 connectedness `v', model(dccgarch) approach(frequency) `opt'
+cn_expect 198 connectedness `v', model(dccgarch) window(500) `opt'
+cn_expect 198 connectedness `v', model(dccgarch) orthogonalized `opt'
+cn_expect 198 connectedness `v', standardize `opt'
+cn_expect 2001 connectedness `v' in 1/80, model(dccgarch) `opt'
+matrix __bad = (1, 2, 3)
+cn_expect 503 connectedness `v', model(dccgarch) dccparams(__bad) `opt'
+matrix drop __bad
+cn_expect 111 connectedness `v', model(dccgarch) dccparams(__nosuch) `opt'
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -597,6 +664,7 @@ di as txt "Timing: QVAR, rolling, 501 windows:        " as res %6.1f r(t7) as tx
 di as txt "Timing: R2 (Kendall), rolling, 2,571 windows:" as res %6.1f r(t8) as txt " s"
 di as txt "Timing: elastic net, 11 alphas, k = 4:     " as res %6.1f r(t9) as txt " s"
 di as txt "Timing: LASSO, k = 51, static:             " as res %6.1f r(t10) as txt " s"
+di as txt "Timing: DCC-GARCH case, k = 4, T = 4,200:  " as res %6.1f r(t11) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"
