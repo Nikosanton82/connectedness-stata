@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.1  20oct2026}{...}
+{* *! version 0.7.2  20oct2026}{...}
 {title:Title}
 
 {phang}

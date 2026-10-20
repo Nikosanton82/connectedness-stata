@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.1  20oct2026}{...}
+{* *! version 0.7.2  20oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}

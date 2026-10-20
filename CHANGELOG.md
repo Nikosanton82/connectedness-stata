@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.2 (2026-10-20)
+- `cngraph` takes the look of `cnnetwork`: light background, muted axes and gridlines,
+  horizontal axis labels and a fixed palette (dark blue, mustard, teal, rust, grey,
+  plum). NET and NPDC panels are areas in dark blue above zero and mustard below zero,
+  matching net transmitters and receivers in `cnnetwork`; overlays from `compare()` or
+  `asymmetric` take the next colors as well as dashed patterns. Date axes are labeled
+  at the start of years in steps of 1, 2, 5 or 10 years, with fewer labels in panel
+  graphs. Option `nostyle` keeps the graph scheme.
+  151 of 151 certification tests pass in Stata 19 (`docs/certification-log-v0.7.2.txt`).
+
 ## 0.7.1 (2026-10-20)
 - `cnnetwork` redesigned: curved edges whose width and shade grow with strength in
   six classes, arrowheads that end at the receiving node, net transmitters in dark

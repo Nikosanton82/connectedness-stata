@@ -31,7 +31,7 @@ connectedness EUR GBP JPY CHF, model(tvpvar) horizon(100) window(200) approach(f
 cngraph tci
 ```
 
-Status: development (version 0.7.1). The Stata Journal article describes version 0.2.1:
+Status: development (version 0.7.2). The Stata Journal article describes version 0.2.1:
 static and rolling VAR, TVP-VAR, corrected TCI, PCI, influence, and the aggregated,
 conditional and decomposed group measures. Version 0.3.0 adds frequency, joint and
 extended joint connectedness, version 0.4.0 quantile and LAD VARs, and version 0.5.0

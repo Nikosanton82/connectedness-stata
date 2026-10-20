@@ -1,4 +1,4 @@
-*! version 0.7.1  20oct2026
+*! version 0.7.2  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3

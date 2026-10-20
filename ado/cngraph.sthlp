@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.1  20oct2026}{...}
+{* *! version 0.7.2  20oct2026}{...}
 {title:Title}
 
 {phang}
@@ -40,6 +40,7 @@
 {synopt:{opt sav:ing(filename[, replace])}}save the graph{p_end}
 {synopt:{opt nodraw}}do not display the graph{p_end}
 {synopt:{opt combopts(string)}}options passed to {helpb graph combine}{p_end}
+{synopt:{opt nosty:le}}use the colors and look of the current graph scheme{p_end}
 {synopt:{it:twoway_options}}options passed to each panel{p_end}
 {synoptline}
 
@@ -58,7 +59,7 @@ than 36 panels require {opt select()}.
 
 {pstd}
 Overlays: with {opt compare()}, the measures of each stored estimate are drawn as
-dashed lines over the current ones, matched on the time variable, so rolling-window and
+dashed lines, in other colors, over the current ones, matched on the time variable, so rolling-window and
 TVP-VAR results can be compared; the legend labels the current results by model
 (for example, TVP-VAR) and the overlays by the names of the stored estimates. After {cmd:connectedness, asymmetric}, the measures of
 positive and negative changes are overlaid automatically. Overlaid panels are drawn as
@@ -72,6 +73,16 @@ unless {opt band(#)} picks a band. After {cmd:approach(r2)} with lags,
 {cmd:cngraph tci} draws the overall, contemporaneous and lagged TCIs, and
 {opt component()} picks a component for the other measures. After {cmd:approach(joint)}, only {cmd:tci},
 {cmd:to}, {cmd:from} and {cmd:net} are available.
+
+{pstd}
+The graphs share the look of {helpb cnnetwork}: a light background, muted axes and
+gridlines, and a fixed palette (dark blue, mustard, teal, rust, grey and plum) for the
+series of one graph. NET and NPDC panels are drawn as areas, dark blue above zero (net
+transmitter) and mustard below zero (net receiver), the colors of net transmitters and
+receivers in {helpb cnnetwork}; TO and FROM panels are dark blue areas. Overlaid results
+are drawn in the next colors of the palette and with dashed patterns. {opt nostyle}
+keeps the colors and look of the current graph scheme instead; {it:twoway_options} are
+applied last and can change any element.
 
 {pstd}
 The horizontal axis shows the dates of the results frame (see the {opt datevar()}
