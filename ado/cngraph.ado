@@ -1,4 +1,4 @@
-*! version 0.5.0  20oct2026
+*! version 0.6.0  20oct2026
 *! cngraph: graphs of dynamic connectedness measures after -connectedness-
 program define cngraph
     version 16.1

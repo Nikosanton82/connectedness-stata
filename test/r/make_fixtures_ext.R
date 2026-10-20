@@ -255,3 +255,76 @@ for (nm in names(mfcases)) {
   time_fx(nm, r2run(cs$d, 1, cs$ws, if (is.null(cs$method)) "pearson" else cs$method,
                     decomposition = FALSE))
 }
+
+# ---------------------------------------------------------------------------
+# LASSO, ridge and elastic-net VARs (Gabauer, Gupta, Marfatia and Miller 2024), from
+# version 0.6.0. cv.glmnet() draws its folds at random, so R's ElasticNetVAR() is
+# replaced, for these fixtures only, by an identical function that passes
+# foldid = rep(seq(nfolds), length = n) to cv.glmnet(): the folds that Stata uses with
+# folds(interleaved).
+ElasticNetVAR_interleaved = function(x, configuration=list(nlag=1, nfolds=10, loss="mae", alpha=NULL, n_alpha=10)) {
+  nlag = configuration$nlag
+  alpha_ = configuration$alpha
+  nfolds = configuration$nfolds
+  n_alpha = configuration$n_alpha
+  loss = configuration$loss
+  NAMES = colnames(x)
+  k = ncol(x)
+  if (is.null(alpha_)) {
+    alpha_ = seq(0, 1, 1/n_alpha)
+  }
+  alpha = Res = B = NULL
+  for (i in 1:k) {
+    MAE = NULL
+    B_ = array(NA, c(nlag*k, length(alpha_)))
+    for (j in 1:length(alpha_)) {
+      z = embed(x, nlag+1)
+      X = z[,-c(1:k)]
+      y = z[,i]
+      fit = glmnet::cv.glmnet(X, y, alpha=alpha_[j], type.measure=loss, nfolds=nfolds,
+                              foldid=rep(seq(nfolds), length=nrow(X)))
+      B_[,j] = coef(fit)[-1]
+      y_pred = cbind(1, X) %*% coef(fit)
+      MAE[j] = mean(abs(y - y_pred[,1]))
+      if (MAE[j] <= min(MAE)) {
+        Y_pred = y_pred[,1]
+      }
+    }
+    ind = which(MAE==min(MAE))[1]
+    B = rbind(B, B_[,ind])
+    Res = cbind(Res, y-Y_pred)
+    alpha[i] = alpha_[ind]
+  }
+  Q = array(t(Res)%*%Res/nrow(Res), c(k, k, 1), dimnames=list(NAMES, NAMES, tail(as.character(zoo::index(x)),1)))
+  results = list(B=B, Q=Q, alpha=alpha)
+}
+enrun = function(d, nlag, nfore, model, ws = NULL, rows = NULL, en = list(), conn = "Time") {
+  x = get(data(list = d))
+  if (!is.null(rows)) x = x[rows, ]
+  cfg = modifyList(list(nfolds = 10, alpha = NULL, loss = "mae", n_alpha = 10), en)
+  ns = if ("ConnectednessApproach" %in% loadedNamespaces()) asNamespace("ConnectednessApproach")
+    else globalenv()
+  old = get("ElasticNetVAR", envir = ns)
+  if (identical(ns, globalenv())) assign("ElasticNetVAR", ElasticNetVAR_interleaved, envir = ns)
+  else utils::assignInNamespace("ElasticNetVAR", ElasticNetVAR_interleaved, "ConnectednessApproach")
+  on.exit(if (identical(ns, globalenv())) assign("ElasticNetVAR", old, envir = ns)
+          else utils::assignInNamespace("ElasticNetVAR", old, "ConnectednessApproach"))
+  suppressMessages(ConnectednessApproach(x, nlag = nlag, nfore = nfore, window.size = ws, model = model,
+                   connectedness = conn, VAR_config = list(ElasticNet = cfg)))
+}
+encases = list(
+  dy2012_lasso_static     = list(d = "dy2012", nlag = 2, nfore = 10, model = "LASSO"),
+  dy2012_ridge_static     = list(d = "dy2012", nlag = 2, nfore = 10, model = "Ridge"),
+  dy2012_elastic_static   = list(d = "dy2012", nlag = 2, nfore = 10, model = "Elastic"),
+  dy2012_elastic_a05_mse  = list(d = "dy2012", nlag = 1, nfore = 10, model = "Elastic",
+                                 en = list(alpha = 0.5, loss = "mse")),
+  dy2012_lasso_roll200    = list(d = "dy2012", nlag = 1, nfore = 10, model = "LASSO", ws = 200, rows = 1:400),
+  dy2012_elastic4_roll200 = list(d = "dy2012", nlag = 1, nfore = 10, model = "Elastic", ws = 200,
+                                 rows = 1:300, en = list(n_alpha = 4)),
+  gghm2022_lasso_static   = list(d = "gghm2022", nlag = 1, nfore = 10, model = "LASSO")
+)
+for (nm in names(encases)) {
+  cs = encases[[nm]]
+  time_fx(nm, enrun(cs$d, cs$nlag, cs$nfore, cs$model, cs$ws, cs$rows,
+                    if (is.null(cs$en)) list() else cs$en))
+}

@@ -3,7 +3,9 @@ Reference port (NumPy) of the ConnectednessApproach 1.0.4 extensions added in
 connectedness 0.3.0 and later: frequency connectedness (FrequencyConnectedness, FEVD
 type "frequency", frequencyConnectedness::getPartition), joint connectedness
 (JointConnectedness), extended joint connectedness (ExtendedJointConnectedness), and
-the quantile and LAD VARs (QVAR with quantreg's Frisch-Newton method; LADVAR).
+the quantile and LAD VARs (QVAR with quantreg's Frisch-Newton method; LADVAR), and
+the LASSO, ridge and elastic-net VARs (ElasticNetVAR with glmnet's coordinate descent
+and cv.glmnet's lambda.1se).
 It mirrors the Mata code in ado/cn_core.mata step by step and is used to check that
 code against the R fixtures written by test/r/make_fixtures_ext.R.
 """
@@ -231,3 +233,238 @@ def qvar(x, nlag, tau, lad=False):
         R.append(Y[:, i] - X @ b)
     R = np.array(R).T
     return np.array(B), R.T @ R / len(R)
+
+
+# ----------------------------------------------------------------------------
+# Elastic net (0.6.0): glmnet Gaussian path (Fortran standard/elnet1) and cv.glmnet
+
+BIG = 9.9e35
+SML, EPS, MNLAM, RSQMAX = 1e-5, 1e-6, 5, 0.999
+
+
+def elnet1(beta, xv, g, X, nlam, flmin, ulam, thr=1e-7, maxit=100000, ne=None, nx=None):
+    ni = X.shape[1]
+    if ne is None:
+        ne = ni + 1
+    if nx is None:
+        nx = min(ne * 2 + 20, ni)
+    vp = np.ones(ni)
+    bta = beta
+    omb = 1.0 - bta
+    alm = 0.0
+    alf = 1.0
+    if flmin < 1.0:
+        eqs = max(EPS, flmin)
+        alf = eqs ** (1.0 / (nlam - 1))
+    rsq = 0.0
+    a = np.zeros(ni)
+    mm = np.zeros(ni, dtype=int)       # position (1-based) in active set, 0 if not
+    ia = []
+    c = np.zeros((ni, nx))
+    nlp = 0
+    nin = 0
+    iz = 0
+    mnl = min(MNLAM, nlam)
+    g = g.copy()
+    out_a, out_alm, out_rsq = [], [], []
+    for m in range(1, nlam + 1):
+        if flmin >= 1.0:
+            alm = ulam[m - 1]
+        elif m > 2:
+            alm = alm * alf
+        elif m == 1:
+            alm = BIG
+        else:
+            alm = 0.0
+            for j in range(ni):
+                if vp[j] > 0:
+                    alm = max(alm, abs(g[j]) / vp[j])
+            alm = alf * alm / max(bta, 1e-3)
+        dem = alm * omb
+        ab = alm * bta
+        rsq0 = rsq
+        jz = 1
+        while True:
+            if not (iz * jz != 0):
+                nlp += 1
+                dlx = 0.0
+                for k in range(ni):
+                    ak = a[k]
+                    u = g[k] + ak * xv[k]
+                    v = abs(u) - vp[k] * ab
+                    a[k] = 0.0
+                    if v > 0:
+                        a[k] = np.copysign(v, u) / (xv[k] + vp[k] * dem)
+                    if a[k] == ak:
+                        continue
+                    if mm[k] == 0:
+                        nin += 1
+                        for j in range(ni):
+                            if mm[j] != 0:
+                                c[j, nin - 1] = c[k, mm[j] - 1]
+                            elif j == k:
+                                c[j, nin - 1] = xv[j]
+                            else:
+                                c[j, nin - 1] = X[:, j] @ X[:, k]
+                        mm[k] = nin
+                        ia.append(k)
+                    dl = a[k] - ak
+                    rsq = rsq + dl * (2.0 * g[k] - dl * xv[k])
+                    dlx = max(xv[k] * dl ** 2, dlx)
+                    g = g - c[:, mm[k] - 1] * dl
+                if dlx < thr:
+                    break
+            # inner loop on the active set
+            iz = 1
+            da = a[ia].copy()
+            while True:
+                nlp += 1
+                dlx = 0.0
+                for l in range(nin):
+                    k = ia[l]
+                    ak = a[k]
+                    u = g[k] + ak * xv[k]
+                    v = abs(u) - vp[k] * ab
+                    a[k] = 0.0
+                    if v > 0:
+                        a[k] = np.copysign(v, u) / (xv[k] + vp[k] * dem)
+                    if a[k] == ak:
+                        continue
+                    dl = a[k] - ak
+                    rsq = rsq + dl * (2.0 * g[k] - dl * xv[k])
+                    dlx = max(xv[k] * dl ** 2, dlx)
+                    for j in range(nin):
+                        g[ia[j]] = g[ia[j]] - c[ia[j], mm[k] - 1] * dl
+                if dlx < thr:
+                    break
+            da = a[ia] - da
+            for j in range(ni):
+                if mm[j] != 0:
+                    continue
+                g[j] = g[j] - da @ c[j, :nin]
+            jz = 0
+        out_a.append(a.copy())
+        out_alm.append(alm)
+        out_rsq.append(rsq)
+        if m < mnl or flmin >= 1.0:
+            continue
+        me = int(np.sum(a[ia] != 0))
+        if me > ne or rsq - rsq0 < SML * rsq or rsq > RSQMAX:
+            break
+    return np.array(out_a), np.array(out_alm)
+
+
+def glmnet_gauss(X, y, alpha, lam=None, nlambda=100, lmr=None):
+    n, p = X.shape
+    w = np.full(n, 1.0 / n)
+    v = np.sqrt(w)
+    xm = w @ X
+    Xs = v[:, None] * (X - xm)
+    xv = np.sum(Xs ** 2, 0)
+    xs = np.sqrt(xv)
+    Xs = Xs / xs
+    xv = np.ones(p)
+    ym = w @ y
+    ys_ = v * (y - ym)
+    ys = np.sqrt(ys_ @ ys_)
+    ys_ = ys_ / ys
+    g = Xs.T @ ys_
+    if lmr is None:
+        lmr = 0.01 if n < p else 1e-4
+    if lam is None:
+        A, alm = elnet1(alpha, xv, g, Xs, nlambda, lmr, None)
+    else:
+        A, alm = elnet1(alpha, xv, g, Xs, len(lam), 1.0, np.asarray(lam) / ys)
+    beta = (ys * A / xs)              # L x p
+    a0 = ym - beta @ xm
+    lamb = alm * ys
+    if lam is None and len(lamb) > 2:
+        ll = np.log(lamb)
+        lamb[0] = np.exp(2 * ll[1] - ll[2])
+    return a0, beta, lamb
+
+
+def approx1(x, y, v):
+    """R's approx(x, y, v) (linear, rule 1) for increasing x, scalar v."""
+    n = len(x)
+    i, j = 0, n - 1
+    while i < j - 1:
+        ij = (i + j) // 2
+        if v < x[ij]:
+            j = ij
+        else:
+            i = ij
+    if v == x[j]:
+        return y[j]
+    if v == x[i]:
+        return y[i]
+    return y[i] + (y[j] - y[i]) * ((v - x[i]) / (x[j] - x[i]))
+
+
+def lambda_interp(lam, s):
+    """glmnet:::lambda.interp; returns 0-based left, right and frac."""
+    k = len(lam)
+    if k == 1:
+        return np.zeros(len(s), int), np.zeros(len(s), int), np.ones(len(s))
+    sfrac = (lam[0] - s) / (lam[0] - lam[k - 1])
+    ln = (lam[0] - lam) / (lam[0] - lam[k - 1])
+    sfrac = np.minimum(np.maximum(sfrac, ln.min()), ln.max())
+    coord = np.array([approx1(ln, np.arange(1, k + 1, dtype=float), v) for v in sfrac])
+    left = np.floor(coord).astype(int) - 1
+    right = np.ceil(coord).astype(int) - 1
+    fr = (sfrac - ln[right]) / (ln[left] - ln[right])
+    fr[left == right] = 1
+    fr[np.abs(ln[left] - ln[right]) < np.finfo(float).eps] = 1
+    return left, right, fr
+
+
+def cv_glmnet_1se(X, y, alpha, foldid, loss="mae"):
+    a0, beta, lamb = glmnet_gauss(X, y, alpha)
+    nf = int(foldid.max())
+    L = len(lamb)
+    pred = np.full((len(y), L), np.nan)
+    for f in range(1, nf + 1):
+        tr = foldid != f
+        a0f, bf, lf = glmnet_gauss(X[tr], y[tr], alpha)
+        C = np.column_stack([a0f, bf])            # Lf x (p+1)
+        le, ri, fr = lambda_interp(lf, lamb)
+        Ci = C[le] * fr[:, None] + C[ri] * (1 - fr[:, None])
+        pred[~tr] = Ci[:, 0][None, :] + X[~tr] @ Ci[:, 1:].T
+    raw = np.abs(y[:, None] - pred) if loss == "mae" else (y[:, None] - pred) ** 2
+    fm = np.array([raw[foldid == f].mean(0) for f in range(1, nf + 1)])
+    wf = np.array([(foldid == f).sum() for f in range(1, nf + 1)], float)
+    cvm = (wf[:, None] * fm).sum(0) / wf.sum()
+    cvsd = np.sqrt((wf[:, None] * (fm - cvm) ** 2).sum(0) / wf.sum() / (nf - 1))
+    cvmin = cvm.min()
+    lmin = lamb[cvm <= cvmin].max()
+    idmin = np.where(lamb == lmin)[0][0]
+    semin = (cvm + cvsd)[idmin]
+    l1se = lamb[cvm <= semin].max()
+    i1 = np.where(lamb == l1se)[0][0]
+    return a0[i1], beta[i1], l1se
+
+
+def enetvar(x, nlag, alphas, nfolds=10, loss="mae"):
+    """ElasticNetVAR() with interleaved folds rep(seq(nfolds), length = n)."""
+    from ca_reference import embed
+    k = x.shape[1]
+    z = embed(x, nlag + 1)
+    Y, X = z[:, :k], z[:, k:]
+    n = len(X)
+    fid = np.tile(np.arange(1, nfolds + 1), n // nfolds + 1)[:n]
+    B, R = [], []
+    for i in range(k):
+        best, mn, Yp, Bs = None, np.inf, None, []
+        for j, a in enumerate(alphas):
+            a0, b, _ = cv_glmnet_1se(X, Y[:, i], a, fid, loss)
+            yp = a0 + X @ b
+            mae = np.mean(np.abs(Y[:, i] - yp))
+            Bs.append(b)
+            if mae <= mn:
+                if mae < mn:
+                    best = j
+                mn, Yp = mae, yp
+        B.append(Bs[best])
+        R.append(Y[:, i] - Yp)
+    R = np.array(R).T
+    return np.array(B), R.T @ R / n

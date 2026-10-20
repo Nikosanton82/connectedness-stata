@@ -2,7 +2,7 @@ v 3
 d connectedness. VAR, quantile VAR and TVP-VAR connectedness measures
 d
 d Estimates the connectedness measures of Diebold and Yilmaz (2009, 2012) from static
-d and rolling-window VARs, quantile and LAD VARs and the TVP-VAR connectedness measures of Antonakakis,
+d and rolling-window VARs, quantile and LAD VARs, LASSO, ridge and elastic-net VARs and the TVP-VAR connectedness measures of Antonakakis,
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
 d indices, frequency connectedness (Barunik and Krehlik 2018), joint and extended
 d joint connectedness, R2 decomposed and model-free connectedness, asymmetric

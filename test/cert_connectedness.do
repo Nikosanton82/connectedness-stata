@@ -316,7 +316,7 @@ else di as txt "  estat group, cnnetwork, cngraph overlays and dates: pass"
 di _n as txt "{hline 78}" _n "8. Error handling" _n "{hline 78}"
 use ../data/cn_dy2012, clear
 tsset t
-cn_expect 198 connectedness SP500 R_10Y, model(lasso) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(dccgarch) `opt'
 cn_expect 198 connectedness SP500 R_10Y, prior(minnesota) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(tvpvar) kappa1(1) `opt'
 cn_expect 184 connectedness SP500 R_10Y, orthogonalized generalized `opt'
@@ -533,6 +533,58 @@ cn_expect 2001 connectedness SP500 R_10Y DJUBSCOM USDX, approach(r2) lags(2) win
 quietly connectedness SP500 R_10Y DJUBSCOM USDX, approach(r2) lags(0) `opt'
 cn_expect 198 connectedness, component(lagged)
 
+di _n as txt "{hline 78}" _n "12. LASSO, ridge and elastic-net VARs (0.6.0)" _n "{hline 78}"
+* folds(interleaved): the folds used by test/r/make_fixtures_ext.R
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+local f folds(interleaved)
+connectedness `v', model(lasso) lags(2) `f' `opt'
+cn_check, case(dy2012_lasso_static) tol(1e-8) prefix(R_)
+connectedness `v', model(ridge) lags(2) `f' `opt'
+cn_check, case(dy2012_ridge_static) tol(1e-8) prefix(R_)
+timer on 9
+connectedness `v', model(elasticnet) lags(2) `f' `opt'
+timer off 9
+cn_check, case(dy2012_elastic_static) tol(1e-8) prefix(R_)
+connectedness `v', model(elasticnet) alpha(0.5) loss(mse) lags(1) `f' `opt'
+cn_check, case(dy2012_elastic_a05_mse) tol(1e-8) prefix(R_)
+connectedness `v' in 1/400, model(lasso) lags(1) window(200) `f' `opt'
+cn_check, case(dy2012_lasso_roll200) tol(1e-8) prefix(R_)
+connectedness `v' in 1/300, model(elasticnet) nalpha(4) lags(1) window(200) `f' `opt'
+cn_check, case(dy2012_elastic4_roll200) tol(1e-8) prefix(R_)
+
+use ../data/cn_gghm2022, clear
+tsset t
+quietly ds t date month, not
+timer on 10
+connectedness `r(varlist)', model(lasso) lags(1) `f' `opt' nofevd
+timer off 10
+cn_check, case(gghm2022_lasso_static) tol(1e-8) prefix(R_)
+
+global cn_tests = $cn_tests + 1
+capture noisily {
+    use ../data/cn_dy2012, clear
+    tsset t
+    connectedness SP500 R_10Y DJUBSCOM USDX, model(lasso) seed(12345) `opt'
+    * a scalar keeps full precision (a local holds a rounded copy in Stata 19)
+    tempname t1
+    scalar `t1' = e(TCI)
+    connectedness SP500 R_10Y DJUBSCOM USDX, model(lasso) seed(12345) `opt'
+    assert e(TCI) == scalar(`t1') & "`e(seed)'" == "12345" & "`e(folds)'" == "random"
+    assert "`e(alphas)'" == "1" & e(nfolds) == 10 & "`e(loss)'" == "mae"
+}
+if _rc {
+    global cn_fails = $cn_fails + 1
+    di as err "  FAIL: elastic net with random folds (r(" _rc "))"
+}
+else di as txt "  random folds reproducible with seed(): pass"
+cn_expect 198 connectedness SP500 R_10Y, model(lasso) alpha(0.5) `opt'
+cn_expect 198 connectedness SP500 R_10Y, nfolds(5) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(ridge) loss(rmse) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(elasticnet) folds(blocked) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(lasso) nfolds(2) `opt'
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -543,6 +595,8 @@ di as txt "Timing: frequency, TVP-VAR, H = 100:       " as res %6.1f r(t5) as tx
 di as txt "Timing: extended joint, TVP-VAR, k = 12:   " as res %6.1f r(t6) as txt " s"
 di as txt "Timing: QVAR, rolling, 501 windows:        " as res %6.1f r(t7) as txt " s"
 di as txt "Timing: R2 (Kendall), rolling, 2,571 windows:" as res %6.1f r(t8) as txt " s"
+di as txt "Timing: elastic net, 11 alphas, k = 4:     " as res %6.1f r(t9) as txt " s"
+di as txt "Timing: LASSO, k = 51, static:             " as res %6.1f r(t10) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

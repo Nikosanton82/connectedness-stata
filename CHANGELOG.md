@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0 (2026-10-20)
+- `model(lasso)`, `model(ridge)` and `model(elasticnet)`: penalized VARs as in R's
+  `ElasticNetVAR()` (Gabauer, Gupta, Marfatia and Miller 2024). Each equation is
+  fitted by a Mata port of glmnet's Gaussian coordinate descent (covariance updates),
+  with the penalty chosen by 10-fold cross-validation at lambda.1se exactly as
+  `cv.glmnet()` does, including its per-fold lambda paths and interpolation.
+  `elasticnet` searches a grid of alphas (`nalpha()`, default 10 steps) or uses
+  `alpha()`, and keeps the alpha with the smallest in-sample mean absolute error.
+- Options `nfolds()`, `loss(mae|mse)`, `folds(random|interleaved)` and `seed()`.
+- Validation: 7 new R cases with the folds that `folds(interleaved)` uses (LASSO,
+  ridge, elastic net with a grid and with a fixed alpha, MSE loss, rolling windows,
+  and a 51-variable LASSO VAR); largest difference from R 1.3e-11 (the 51-variable
+  case) and below 1e-13 otherwise.
+  132 of 132 certification tests pass (`docs/certification-log-v0.6.0.txt`).
+- Certification script: the `seed()` reproducibility test keeps the first TCI in a
+  scalar; Stata 19 rounds the local macro it used before, which made the exact
+  comparison fail although the results are identical.
+
 ## 0.5.0 (2026-10-20)
 - `approach(r2)`: R2 decomposed connectedness (Naeem et al. 2024), with contemporaneous
   and lagged components when `lags()` > 0 (Balli et al. 2023). The overall measures

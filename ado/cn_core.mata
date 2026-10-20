@@ -1,4 +1,4 @@
-*! version 0.5.0  20oct2026
+*! version 0.6.0  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -285,6 +285,305 @@ void cn_qvar(real matrix x, real scalar p, real rowvector tau, real scalar lad,
         }
         B[i, .]    = b[|2 \ rows(b)|]'
         Res[., i]  = Y[., i] - X*b
+    }
+    Q = cross(Res, Res) / n
+}
+
+// Elastic net, LASSO and ridge VARs (R ElasticNetVAR(); Gabauer, Gupta, Marfatia and
+// Miller 2024). The Gaussian elastic net is a port of glmnet's coordinate descent with
+// covariance updates (Fortran routines standard and elnet1, which glmnetpp reproduces),
+// and cn_cvglmnet() reproduces cv.glmnet() with lambda.1se.
+
+// Coordinate descent along a lambda path on standardized data. G: Gram matrix of
+// the standardized regressors; g: their inner products with the standardized
+// response; flmin < 1: automatic path of nlam values ending at flmin times the
+// largest; flmin >= 1: the values in ulam. Returns the coefficients (rows = lambdas)
+// and, in alm, the lambdas on the standardized scale.
+real matrix cn_elnet1(real scalar bta, real matrix G, real colvector g0,
+                      real scalar nlam, real scalar flmin, real colvector ulam,
+                      real colvector alm)
+{
+    real scalar    ni, ne, omb, al, alf, rsq, rsq0, nlp, nin, iz, jz, mnl, m, k, l
+    real scalar    ak, u, v, dlx, dl, dem, ab, me, thr
+    real colvector a, mm, ia, g, da, na, ac
+    real matrix    A
+
+    thr = 1e-7
+    ni  = rows(G)
+    ne  = ni + 1
+    omb = 1 - bta
+    al  = 0
+    alf = 1
+    if (flmin < 1) alf = max((1e-6, flmin))^(1/(nlam-1))
+    rsq = 0
+    a   = J(ni, 1, 0)
+    mm  = J(ni, 1, 0)
+    ia  = J(0, 1, .)
+    g   = g0
+    nlp = 0
+    nin = 0
+    iz  = 0
+    mnl = min((5, nlam))
+    A   = J(nlam, ni, .)
+    alm = J(nlam, 1, .)
+    for (m=1; m<=nlam; m++) {
+        if (flmin >= 1)  al = ulam[m]
+        else if (m > 2)  al = al*alf
+        else if (m == 1) al = 9.9e35
+        else             al = alf*max(abs(g))/max((bta, 1e-3))
+        dem  = al*omb
+        ab   = al*bta
+        rsq0 = rsq
+        jz   = 1
+        while (1) {
+            if (iz*jz == 0) {
+                // full pass over all coefficients
+                nlp++
+                dlx = 0
+                for (k=1; k<=ni; k++) {
+                    ak   = a[k]
+                    u    = g[k] + ak
+                    v    = abs(u) - ab
+                    a[k] = 0
+                    if (v > 0) a[k] = sign(u)*v/(1 + dem)
+                    if (a[k] == ak) continue
+                    if (mm[k] == 0) {
+                        nin++
+                        mm[k] = nin
+                        ia    = ia \ k
+                    }
+                    dl  = a[k] - ak
+                    rsq = rsq + dl*(2*g[k] - dl)
+                    dlx = max((dl^2, dlx))
+                    g   = g - G[., k]*dl
+                }
+                if (dlx < thr) break
+                if (nlp > 100000) {
+                    errprintf("elastic net did not converge\n")
+                    exit(error(430))
+                }
+            }
+            // iterate on the active set
+            iz = 1
+            da = a[ia]
+            while (1) {
+                nlp++
+                dlx = 0
+                for (l=1; l<=nin; l++) {
+                    k    = ia[l]
+                    ak   = a[k]
+                    u    = g[k] + ak
+                    v    = abs(u) - ab
+                    a[k] = 0
+                    if (v > 0) a[k] = sign(u)*v/(1 + dem)
+                    if (a[k] == ak) continue
+                    dl    = a[k] - ak
+                    rsq   = rsq + dl*(2*g[k] - dl)
+                    dlx   = max((dl^2, dlx))
+                    g[ia] = g[ia] - G[ia, k]*dl
+                }
+                if (dlx < thr) break
+                if (nlp > 100000) {
+                    errprintf("elastic net did not converge\n")
+                    exit(error(430))
+                }
+            }
+            da = a[ia] - da
+            na = selectindex(mm :== 0)
+            if (rows(na) > 0) g[na] = g[na] - G[na, ia]*da
+            jz = 0
+        }
+        A[m, .] = a'
+        alm[m]  = al
+        if (m < mnl | flmin >= 1) continue
+        ac = a[ia]
+        me = sum(ac :!= 0)
+        if (me > ne | rsq - rsq0 < 1e-5*rsq | rsq > 0.999) {
+            A   = A[|1, 1 \ m, ni|]
+            alm = alm[|1 \ m|]
+            break
+        }
+    }
+    return(A)
+}
+
+// glmnet(x, y, alpha) for the Gaussian family with standardize = TRUE and an
+// intercept. lam: lambdas to use (empty for glmnet's own path). Returns the
+// coefficients, intercept first, one row per lambda; lamb receives the lambdas.
+real matrix cn_glmnet(real matrix X, real colvector y, real scalar alpha,
+                      real colvector lam, real colvector lamb)
+{
+    real scalar    n, p, ym, ys, flmin
+    real rowvector xm, xs
+    real matrix    Xs, A, Bt, G
+    real colvector yy, g, alm, ll
+
+    n  = rows(X)
+    p  = cols(X)
+    xm = mean(X)
+    Xs = (X :- xm) / sqrt(n)
+    xs = sqrt(colsum(Xs:^2))
+    Xs = Xs :/ xs
+    ym = mean(y)
+    yy = (y :- ym) / sqrt(n)
+    ys = sqrt(yy'yy)
+    yy = yy / ys
+    g  = Xs'yy
+    G  = cross(Xs, Xs)
+    _diag(G, 1)                     // glmnet sets xv = 1 after standardizing
+    if (rows(lam) == 0) {
+        flmin = (n < p ? 0.01 : 1e-4)
+        A = cn_elnet1(alpha, G, g, 100, flmin, J(0, 1, .), alm)
+    }
+    else {
+        A = cn_elnet1(alpha, G, g, rows(lam), 1, lam/ys, alm)
+    }
+    Bt   = ys * A :/ xs
+    lamb = alm * ys
+    if (rows(lam) == 0 & rows(lamb) > 2) {
+        ll = ln(lamb)
+        lamb[1] = exp(2*ll[2] - ll[3])
+    }
+    return((ym :- Bt*xm'), Bt)
+}
+
+// R's approx(x, y, v) (linear interpolation, rule 1) for increasing x, scalar v
+real scalar cn_approx(real colvector x, real colvector y, real scalar v)
+{
+    real scalar i, j, ij
+
+    i = 1
+    j = rows(x)
+    while (i < j - 1) {
+        ij = floor((i + j)/2)
+        if (v < x[ij]) j = ij
+        else           i = ij
+    }
+    if (v == x[j]) return(y[j])
+    if (v == x[i]) return(y[i])
+    return(y[i] + (y[j] - y[i])*((v - x[i])/(x[j] - x[i])))
+}
+
+// predict.glmnet(fit, s = s, type = "coefficients"): coefficients (rows) of a fit
+// with lambdas lam, interpolated linearly at the lambdas s (glmnet's lambda.interp)
+real matrix cn_lambdainterp(real matrix C, real colvector lam, real colvector s)
+{
+    real scalar    k, i, l, r, c
+    real colvector ln, sf, idx
+    real matrix    out
+
+    k   = rows(lam)
+    out = J(rows(s), cols(C), .)
+    if (k == 1) return(J(rows(s), 1, 1)*C[1, .])
+    sf  = (lam[1] :- s) / (lam[1] - lam[k])
+    ln  = (lam[1] :- lam) / (lam[1] - lam[k])
+    idx = (1::k)
+    for (i=1; i<=rows(s); i++) {
+        if (sf[i] < min(ln)) sf[i] = min(ln)
+        if (sf[i] > max(ln)) sf[i] = max(ln)
+        c = cn_approx(ln, idx, sf[i])
+        l = floor(c)
+        r = ceil(c)
+        if (l == r | abs(ln[l] - ln[r]) < epsilon(1)) out[i, .] = C[l, .]
+        else {
+            c = (sf[i] - ln[r])/(ln[l] - ln[r])
+            out[i, .] = C[l, .]*c + C[r, .]*(1 - c)
+        }
+    }
+    return(out)
+}
+
+// cv.glmnet(x, y, alpha, foldid, type.measure = loss) and its coefficients at
+// lambda.1se (intercept first)
+real colvector cn_cvglmnet(real matrix X, real colvector y, real scalar alpha,
+                           real colvector foldid, string scalar loss)
+{
+    real scalar    nf, f, L, cvmin, lmin, idmin, semin, l1se, i1
+    real matrix    C, Cf, pred, raw, fm
+    real colvector lamb, lf, tr, te, wf, ix
+    real rowvector cvm, cvsd
+
+    C    = cn_glmnet(X, y, alpha, J(0, 1, .), lamb)
+    L    = rows(lamb)
+    nf   = max(foldid)
+    pred = J(rows(y), L, .)
+    for (f=1; f<=nf; f++) {
+        // as cv.glmnet(): each fold has its own lambda path, and its coefficients
+        // are interpolated at the lambdas of the full fit (predict(fit, s = lambda))
+        tr = selectindex(foldid :!= f)
+        te = selectindex(foldid :== f)
+        lf = J(0, 1, .)
+        Cf = cn_lambdainterp(cn_glmnet(X[tr, .], y[tr], alpha, J(0, 1, .), lf), lf, lamb)
+        pred[te, .] = J(rows(te), 1, 1)*Cf[., 1]' + X[te, .]*Cf[|1, 2 \ L, cols(Cf)|]'
+    }
+    raw = (loss == "mse" ? (y :- pred):^2 : abs(y :- pred))
+    fm  = J(nf, L, .)
+    wf  = J(nf, 1, .)
+    for (f=1; f<=nf; f++) {
+        te       = selectindex(foldid :== f)
+        fm[f, .] = mean(raw[te, .])
+        wf[f]    = rows(te)
+    }
+    cvm   = colsum(wf :* fm) / sum(wf)
+    cvsd  = sqrt(colsum(wf :* (fm :- cvm):^2) / sum(wf) / (nf - 1))
+    cvmin = min(cvm)
+    ix    = selectindex(cvm' :<= cvmin)
+    lmin  = max(lamb[ix])
+    idmin = selectindex(lamb :== lmin)[1]
+    semin = cvm[idmin] + cvsd[idmin]
+    ix    = selectindex(cvm' :<= semin)
+    l1se  = max(lamb[ix])
+    i1    = selectindex(lamb :== l1se)[1]
+    return(C[i1, .]')
+}
+
+// Folds for cross-validation: "random" permutes rep(1:nfolds, length = n) like R's
+// cv.glmnet() (with Stata's random-number generator); "interleaved" keeps it in order
+real colvector cn_folds(real scalar n, real scalar nfolds, string scalar mode)
+{
+    real colvector f
+
+    f = mod((1::n) :- 1, nfolds) :+ 1
+    if (mode == "random") f = f[order(runiform(n, 1), 1)]
+    return(f)
+}
+
+// ElasticNetVAR(): for each equation, cross-validated elastic nets for every alpha
+// in alphas; the alpha with the smallest in-sample mean absolute error is kept.
+void cn_enetvar(real matrix x, real scalar p, real rowvector alphas, real scalar nfolds,
+                string scalar loss, string scalar foldmode, real matrix B, real matrix Q)
+{
+    real scalar    k, n, i, j, best, mae, minmae
+    real matrix    z, Y, X, Res, Bj
+    real colvector b, yp, Yp, fid
+
+    k   = cols(x)
+    z   = cn_embed(x, p+1)
+    Y   = z[|1, 1 \ rows(z), k|]
+    X   = z[|1, k+1 \ rows(z), cols(z)|]
+    n   = rows(X)
+    B   = J(k, k*p, .)
+    Res = J(n, k, .)
+    for (i=1; i<=k; i++) {
+        Bj     = J(cols(alphas), k*p, .)
+        best   = 0
+        minmae = .
+        for (j=1; j<=cols(alphas); j++) {
+            fid = cn_folds(n, nfolds, foldmode)
+            b   = cn_cvglmnet(X, Y[., i], alphas[j], fid, loss)
+            Bj[j, .] = b[|2 \ rows(b)|]'
+            yp  = b[1] :+ X*b[|2 \ rows(b)|]
+            mae = mean(abs(Y[., i] - yp))
+            if (mae <= minmae | minmae == .) {
+                // R keeps the predictions of the last alpha that ties the minimum
+                // and the coefficients of the first one
+                if (mae < minmae | minmae == .) best = j
+                minmae = mae
+                Yp     = yp
+            }
+        }
+        B[i, .]   = Bj[best, .]
+        Res[., i] = Y[., i] - Yp
     }
     Q = cross(Res, Res) / n
 }
@@ -876,7 +1175,9 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              string scalar tabname, string scalar fevdname, string scalar scalname,
              string scalar names, string scalar dvar, string scalar approach,
              real rowvector part, string scalar scen, string scalar blabels,
-             real rowvector tau, string scalar csufs, string scalar r2m)
+             real rowvector tau, string scalar csufs, string scalar r2m,
+             real rowvector enalpha, real scalar nfolds, string scalar enloss,
+             string scalar foldmode)
 {
     external real matrix   cn__M, cn__CT
     external real colvector cn__tv, cn__dv
@@ -925,7 +1226,10 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         Qt = J(t0, k*k, .)
         for (t=1; t<=t0; t++) {
             if (model=="var") cn_var(x[|t, 1 \ t+ws-1, k|], p, B, Q)
-            else cn_qvar(x[|t, 1 \ t+ws-1, k|], p, tau, (model=="lad"), B, Q)
+            else if (model=="qvar" | model=="lad") {
+                cn_qvar(x[|t, 1 \ t+ws-1, k|], p, tau, (model=="lad"), B, Q)
+            }
+            else cn_enetvar(x[|t, 1 \ t+ws-1, k|], p, enalpha, nfolds, enloss, foldmode, B, Q)
             Bt[t, .] = rowshape(B, 1)
             Qt[t, .] = rowshape(Q, 1)
         }

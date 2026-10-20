@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.5.0  20oct2026}{...}
+{* *! version 0.6.0  20oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -25,10 +25,18 @@
 {synopthdr}
 {synoptline}
 {syntab:Model}
-{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad} or {cmd:tvpvar}{p_end}
+{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet} or {cmd:tvpvar}{p_end}
 {synopt:{opt l:ags(#)}}VAR lag order; default is {cmd:lags(1)}{p_end}
 {synopt:{opt w:indow(#)}}rolling-window size ({cmd:var}, {cmd:qvar}, {cmd:lad}) or prior training sample ({cmd:tvpvar}); default 0{p_end}
 {synopt:{opt quant:ile(numlist)}}quantile tau for {cmd:qvar}, one value or one per variable; default {cmd:0.5}{p_end}
+
+{syntab:LASSO, ridge and elastic net}
+{synopt:{opt alp:ha(#)}}elastic-net mixing parameter for {cmd:elasticnet}; default is to choose from a grid{p_end}
+{synopt:{opt nalp:ha(#)}}grid of {it:#}+1 values from 0 to 1 for {cmd:elasticnet}; default {cmd:10}{p_end}
+{synopt:{opt nfold:s(#)}}cross-validation folds; default {cmd:10}{p_end}
+{synopt:{opt loss(loss)}}cross-validation loss, {cmd:mae} (default) or {cmd:mse}{p_end}
+{synopt:{opt fold:s(folds)}}{cmd:random} (default) or {cmd:interleaved} fold assignment{p_end}
+{synopt:{opt seed(#)}}random-number seed for the folds{p_end}
 
 {syntab:TVP-VAR}
 {synopt:{opt kappa1(#)}}forgetting factor for the coefficients; default {cmd:0.99}{p_end}
@@ -106,6 +114,30 @@ interior-point method. {cmd:lad} fits a least absolute deviation (median) VAR, t
 exact median-regression solution as in R's {cmd:L1pack::lad()}. For {cmd:qvar} and
 {cmd:lad} the error covariance is the uncentered residual cross-product divided by
 the number of observations, as in the R package.
+
+{pstd}
+{cmd:lasso}, {cmd:ridge} and {cmd:elasticnet} fit penalized VARs as in Gabauer,
+Gupta, Marfatia and Miller (2024) and R's {cmd:ElasticNetVAR()}: each equation is an
+elastic net (Zou and Hastie 2005) of the variable on the lags of all variables,
+with the penalty chosen by cross-validation as the largest lambda within one
+standard error of the minimum (lambda.1se), using the algorithm of R's
+{cmd:glmnet} (Friedman, Hastie and Tibshirani 2010): coordinate descent with
+standardized regressors on glmnet's lambda path. {cmd:lasso} sets alpha = 1 and
+{cmd:ridge} alpha = 0; {cmd:elasticnet} fits the grid of alphas and keeps, for each
+equation, the one with the smallest in-sample mean absolute error. The error
+covariance is the uncentered residual cross-product divided by the number of
+observations. These models can be slow with rolling windows: each window
+requires (folds + 1) elastic-net paths per alpha and equation.
+
+{phang}
+{opt alpha(#)}, {opt nalpha(#)}, {opt nfolds(#)} and {opt loss()} correspond to
+the {cmd:ElasticNet} settings of the R package. {opt folds(random)} assigns the
+observations at random to folds of nearly equal size, as {cmd:cv.glmnet()} does,
+drawing new folds for each cross-validation, so results depend on the
+random-number seed; use {opt seed(#)} for reproducible results. Because R and Stata
+have different random-number generators, the two programs give the same results
+only with the same folds; {opt folds(interleaved)} assigns observation {it:i} to
+fold 1 + mod({it:i}-1, {it:nfolds}) and is used by the certification script.
 
 {phang}
 {opt quantile(numlist)} sets the quantile tau, strictly between 0 and 1, for
@@ -296,6 +328,12 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. connectedness USD1Y EUR1Y GBP1Y JPY1Y, model(qvar) quantile(0.05) horizon(20) window(200) corrected datevar(date) replace}{p_end}
 {phang2}{cmd:. cngraph tci}{p_end}
 
+{pstd}Gabauer, Gupta, Marfatia and Miller (2024): LASSO, ridge and elastic-net VAR connectedness{p_end}
+{phang2}{cmd:. use cn_gghm2022, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness AK-WY, model(lasso) lags(1) seed(2024) nofevd notable replace}{p_end}
+{phang2}{cmd:. cnnetwork, threshold(0.5)}{p_end}
+
 {pstd}Chatziantoniou, Gabauer and Gupta (2023): TVP-VAR frequency connectedness{p_end}
 {phang2}{cmd:. use cn_cgg2022, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -355,6 +393,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(kappa1)}, {cmd:e(kappa2)}}forgetting and decay factors ({cmd:tvpvar}){p_end}
 {synopt:{cmd:e(gamma)}}Minnesota prior tightness ({cmd:prior(minnesota)}){p_end}
 {synopt:{cmd:e(quantile)}}quantile tau, when one value is used ({cmd:qvar}){p_end}
+{synopt:{cmd:e(nfolds)}}cross-validation folds ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(TCI_pos)}, {cmd:e(cTCI_pos)}}TCI of positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
@@ -365,6 +404,8 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
 {synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad} or {cmd:tvpvar}{p_end}
 {synopt:{cmd:e(quantiles)}}quantile of each equation ({cmd:qvar}){p_end}
+{synopt:{cmd:e(alphas)}}alpha values considered ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
+{synopt:{cmd:e(loss)}, {cmd:e(folds)}, {cmd:e(seed)}}cross-validation settings{p_end}
 {synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
 {synopt:{cmd:e(cormethod)}}correlation used ({cmd:r2}, {cmd:modelfree}){p_end}
 {synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
@@ -527,12 +568,23 @@ directional measurement of volatility spillovers.
 {it:International Journal of Forecasting} 28: 57-66.
 
 {phang}
+Friedman, J., T. Hastie, and R. Tibshirani. 2010. Regularization paths for
+generalized linear models via coordinate descent. {it:Journal of Statistical Software}
+33(1): 1-22.
+
+{phang}
 Gabauer, D. 2025. ConnectednessApproach: Connectedness approach. R package version 1.0.4.
 {browse "https://CRAN.R-project.org/package=ConnectednessApproach"}.
 
 {phang}
 Gabauer, D., I. Chatziantoniou, and A. Stenfors. 2023. Model-free connectedness
 measures. {it:Finance Research Letters} 54: 103804.
+
+{phang}
+Gabauer, D., R. Gupta, H. A. Marfatia, and S. M. Miller. 2024. Estimating U.S.
+housing price network connectedness: Evidence from dynamic elastic net, lasso, and
+ridge vector autoregressive models. {it:International Review of Economics and Finance}
+89: 349-362.
 
 {phang}
 Gabauer, D., and A. Stenfors. 2024. Quantile-on-quantile connectedness measures:
@@ -559,13 +611,17 @@ stock market return transmission mechanism: Evidence from the R2 connectedness
 approach. {it:International Review of Financial Analysis} 91: 102986.
 
 {phang}
+Pesaran, M. H., and Y. Shin. 1998. Generalized impulse response analysis in linear
+multivariate models. {it:Economics Letters} 58: 17-29.
+
+{phang}
 Portnoy, S., and R. Koenker. 1997. The Gaussian hare and the Laplacian tortoise:
 Computability of squared-error versus absolute-error estimators.
 {it:Statistical Science} 12: 279-300.
 
 {phang}
-Pesaran, M. H., and Y. Shin. 1998. Generalized impulse response analysis in linear
-multivariate models. {it:Economics Letters} 58: 17-29.
+Zou, H., and T. Hastie. 2005. Regularization and variable selection via the elastic
+net. {it:Journal of the Royal Statistical Society, Series B} 67: 301-320.
 
 
 {marker author}{...}

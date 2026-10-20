@@ -1,4 +1,4 @@
-*! version 0.5.0  20oct2026
+*! version 0.6.0  20oct2026
 *! connectedness: VAR, QVAR, LAD-VAR and TVP-VAR connectedness measures (time, frequency, joint)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -20,7 +20,9 @@ program define Estimate, eclass
         GAMma(real 0.01) FRame(string) REPLACE SAVEFevd noFEVD    ///
         ASYMmetric DATEvar(varname numeric) noTABle DIGits(integer 2) ///
         APProach(string) BANDs(numlist >1 sort) PARTition(numlist) SCENario(string) ///
-        QUANTile(numlist >0 <1) CORMethod(string) ]
+        QUANTile(numlist >0 <1) CORMethod(string)                 ///
+        ALPha(numlist max=1 >=0 <=1) NALPha(integer 10) NFOLDs(integer 10) ///
+        LOSS(string) FOLDs(string) SEED(string) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -62,12 +64,19 @@ program define Estimate, eclass
     else if inlist("`model'", "lad", "ladvar") {
         local model lad
     }
-    else if inlist("`model'", "lasso", "ridge", "elastic", "elasticnet", "dccgarch", "dcc-garch") {
+    else if inlist("`model'", "lasso", "ridge") {
+        local model `model'
+    }
+    else if inlist("`model'", "elastic", "elasticnet", "enet") {
+        local model elasticnet
+    }
+    else if inlist("`model'", "dccgarch", "dcc-garch") {
         di as err "model(`model') is planned for a later release of {cmd:connectedness}"
         exit 198
     }
     else {
-        di as err "model(`model') not allowed; specify {cmd:var}, {cmd:tvpvar}, {cmd:qvar} or {cmd:lad}"
+        di as err "model(`model') not allowed; specify {cmd:var}, {cmd:tvpvar}, {cmd:qvar}, " ///
+            "{cmd:lad}, {cmd:lasso}, {cmd:ridge} or {cmd:elasticnet}"
         exit 198
     }
 
@@ -209,6 +218,51 @@ program define Estimate, eclass
             local q : word `=cond(`nq' == 1, 1, `i')' of `quantile'
             local taus `taus' `q'
         }
+    }
+    // elastic net, LASSO and ridge VARs (R ElasticNetVAR)
+    local enet = inlist("`model'", "lasso", "ridge", "elasticnet")
+    local loss = lower(strtrim("`loss'"))
+    local folds = lower(strtrim("`folds'"))
+    if !`enet' & ("`alpha'`loss'`folds'`seed'" != "" | `nalpha' != 10 | `nfolds' != 10) {
+        di as err "options alpha(), nalpha(), nfolds(), loss(), folds() and seed() are allowed " ///
+            "only with model(lasso), model(ridge) or model(elasticnet)"
+        exit 198
+    }
+    local alphas
+    if `enet' {
+        if "`loss'" == "" local loss mae
+        if !inlist("`loss'", "mae", "mse") {
+            di as err "loss() must be mae or mse"
+            exit 198
+        }
+        if "`folds'" == "" local folds random
+        if !inlist("`folds'", "random", "interleaved") {
+            di as err "folds() must be random or interleaved"
+            exit 198
+        }
+        if `nfolds' < 3 {
+            di as err "nfolds() must be at least 3"
+            exit 198
+        }
+        if "`alpha'" != "" & "`model'" != "elasticnet" {
+            di as err "option alpha() is allowed only with model(elasticnet)"
+            exit 198
+        }
+        if `nalpha' < 1 {
+            di as err "nalpha() must be a positive integer"
+            exit 198
+        }
+        if "`model'" == "lasso" local alphas 1
+        else if "`model'" == "ridge" local alphas 0
+        else if "`alpha'" != "" local alphas `alpha'
+        else {
+            // R: seq(0, 1, 1/n_alpha), that is j*(1/n_alpha), at full precision
+            forvalues j = 0/`nalpha' {
+                local a : display %21.17g `j'*(1/`nalpha')
+                local alphas `alphas' `=strtrim("`a'")'
+            }
+        }
+        if "`seed'" != "" set seed `seed'
     }
     if "`model'" != "tvpvar" & (`kappa1' != 0.99 | `kappa2' != 0.99 | `gamma' != 0.01) {
         di as err "options kappa1(), kappa2() and gamma() are allowed only with model(tvpvar)"
@@ -387,7 +441,8 @@ program define Estimate, eclass
             `window', `gen', `corr', "`prior'", `kappa1', `kappa2', `gamma',         ///
             "`tab`i''", "`fev`i''", "`sc`i''", "`names'", "`datevar'",               ///
             "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'", ///
-            strtoreal(tokens("`taus'")), "`csufs'", "`cormethod'")
+            strtoreal(tokens("`taus'")), "`csufs'", "`cormethod'",                ///
+            strtoreal(tokens("`alphas'")), `nfolds', "`loss'", "`folds'")
         capture frame drop `f'
         frame create `f'
         frame `f' {
@@ -467,6 +522,13 @@ program define Estimate, eclass
         }
     }
     if inlist("`approach'", "r2", "modelfree") ereturn local cormethod "`cormethod'"
+    if `enet' {
+        ereturn scalar nfolds = `nfolds'
+        ereturn local alphas "`alphas'"
+        ereturn local loss   "`loss'"
+        ereturn local folds  "`folds'"
+        ereturn local seed   "`seed'"
+    }
     ereturn matrix table = `tab1'
     ereturn matrix fevd  = `fev1'
     if "`asymmetric'" != "" {
@@ -560,6 +622,9 @@ program define Display
     local mname "VAR"
     if "`e(model)'" == "qvar" local mname "QVAR"
     if "`e(model)'" == "lad"  local mname "LAD-VAR"
+    if "`e(model)'" == "lasso" local mname "LASSO-VAR"
+    if "`e(model)'" == "ridge" local mname "ridge VAR"
+    if "`e(model)'" == "elasticnet" local mname "elastic-net VAR"
     local wdesc = cond(e(window) > 0, "rolling window", "static")
     if "`approach'" == "r2" local mdesc "R2, `e(lags)' lag(s), `wdesc'"
     else if "`approach'" == "modelfree" local mdesc "model-free, `wdesc'"
@@ -588,6 +653,11 @@ program define Display
     if "`e(model)'" == "qvar" {
         local qtxt = cond("`e(quantile)'" != "", strofreal(e(quantile)), "`e(quantiles)'")
         di _col(49) as txt "Quantile (tau)      = " as res %8s "`qtxt'"
+    }
+    else if inlist("`e(model)'", "lasso", "ridge", "elasticnet") {
+        local na : word count `e(alphas)'
+        local atxt = cond(`na' == 1, "`e(alphas)'", "`na' values")
+        di _col(49) as txt "CV: " as res "`e(nfolds)'" as txt " `e(folds)' folds, alpha " as res "`atxt'"
     }
     else if "`e(model)'" != "tvpvar" & e(window) > 0 di
     if "`approach'" == "frequency" {

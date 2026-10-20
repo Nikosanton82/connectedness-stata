@@ -1,0 +1,29 @@
+R fixtures for connectedness v0.6.0: test/r/make_fixtures_ext.R (LASSO, ridge and elastic net)
+==============================================================================================
+The fixtures in test/fixtures (R_<case>_*.csv) for the LASSO, ridge and elastic-net
+cases below were written by test/r/make_fixtures_ext.R with the ConnectednessApproach
+1.0.4 sources (CRAN release) and glmnet 4.1-8 under R 4.3.3 on Linux. The same script
+was then run with the CRAN package installed in R 4.5.2 on Windows. The full output of
+that run is in r-fixtures-log-v0.7.0.txt; the lines for these cases are:
+
+dy2012_lasso_static        periods=    1 mean TCI=10.331284
+dy2012_ridge_static        periods=    1 mean TCI=13.172299
+dy2012_elastic_static      periods=    1 mean TCI=11.458269
+dy2012_elastic_a05_mse     periods=    1 mean TCI=12.692317
+dy2012_lasso_roll200       periods=  202 mean TCI=11.831761
+dy2012_elastic4_roll200    periods=  102 mean TCI=9.565719
+gghm2022_lasso_static      periods=    1 mean TCI=86.768478
+
+Largest relative difference, Windows R 4.5.2 versus Linux R 4.3.3 fixtures
+---------------------------------------------------------------------------
+dy2012_elastic4_roll200          0.00e+00
+dy2012_elastic_a05_mse           0.00e+00
+dy2012_elastic_static            0.00e+00
+dy2012_lasso_roll200             3.16e-14
+dy2012_lasso_static              0.00e+00
+dy2012_ridge_static              0.00e+00
+gghm2022_lasso_static            0.00e+00
+
+Both runs replace ElasticNetVAR() with the same version that uses interleaved folds
+(see make_fixtures_ext.R), so the cross-validation is deterministic; the two R
+installations agree to 3.2e-14 or better.
