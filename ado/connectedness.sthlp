@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.0  20oct2026}{...}
+{* *! version 0.7.1  20oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -303,8 +303,12 @@ is still accepted and has no effect.)
 
 {phang}
 {opt datevar(varname)} copies a date variable into the results frame; {helpb cngraph}
-then uses it as the horizontal axis. This is useful when the data are
-{cmd:tsset} by an observation index, as with daily trading data.
+then uses it as the horizontal axis, and the header and {helpb cnnetwork} report dates.
+This is useful when the data are {cmd:tsset} by an observation index, as with daily
+trading data. Without {opt datevar()}, a numeric variable named {cmd:date} with a date
+format is used automatically when the time variable has no date format, as in the
+datasets installed with the package; {cmd:datevar(}{it:timevar}{cmd:)}, naming the
+time variable itself, turns this off.
 
 
 {marker remarks}{...}
@@ -344,7 +348,7 @@ Data from 18 published applications are installed with the package as
 {cmd:cn_}{it:name}{cmd:.dta}, for example {cmd:cn_dy2012.dta} and
 {cmd:cn_acg2020.dta}. They are ancillary files: type {cmd:net get connectedness} to copy
 them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset}-ready through the observation index
-{cmd:t} (monthly data also carry {cmd:month}) and has a {cmd:date} variable.
+{cmd:t} (monthly data also carry {cmd:month}, formatted {cmd:%tm}) and has a {cmd:date} variable.
 
 
 {marker examples}{...}

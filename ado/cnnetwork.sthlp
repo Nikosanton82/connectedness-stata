@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.0  20oct2026}{...}
+{* *! version 0.7.1  20oct2026}{...}
 {title:Title}
 
 {phang}
@@ -21,6 +21,11 @@ pairwise connectedness index{p_end}
 {synopt:{opt fr:ame(name)}}use the measures in frame {it:name}; default is the results frame of the last estimates{p_end}
 {synopt:{opt ban:d(#)}}draw frequency band {it:#} after {cmd:approach(frequency)}; default is the total{p_end}
 {synopt:{opt comp:onent(name)}}draw the {cmd:contemporaneous} or {cmd:lagged} component after {cmd:approach(r2)}{p_end}
+{synopt:{opt str:aight}}straight edges instead of curved ones{p_end}
+{synopt:{opt curv:ature(#)}}bend of the edges, from -1 to 1; default 0.2{p_end}
+{synopt:{opt col:ors(color1 color2)}}colors of net transmitters and net receivers{p_end}
+{synopt:{opt lab:els(where)}}{cmd:auto} (default), {cmd:inside} or {cmd:outside} the nodes{p_end}
+{synopt:{opt nonote}}omit the note on edge widths{p_end}
 {synopt:{opt ti:tle(string)}}title{p_end}
 {synopt:{opt name(name[, replace])}}name of the graph{p_end}
 {synopt:{opt sav:ing(filename[, replace])}}save the graph{p_end}
@@ -33,13 +38,22 @@ pairwise connectedness index{p_end}
 
 {pstd}
 {cmd:cnnetwork} draws the network of pairwise connectedness, following the R function
-{cmd:PlotNetwork()} (Gabauer 2022). Variables sit on a circle. With {cmd:method(npdc)},
-an arrow runs from the net transmitter to the net receiver of each pair, its width
-proportional to the net pairwise directional connectedness normalized by the largest
-value; net transmitters are drawn as filled circles and net receivers as hollow circles,
-sized by the absolute value of NET. Colors follow the current graph scheme.
-With {cmd:method(pci)}, undirected edges have widths proportional to the pairwise
-connectedness index. Edge widths are drawn in five classes.
+{cmd:PlotNetwork()} (Gabauer 2022). Variables sit on a circle, starting at the top and
+running clockwise in {it:varlist} order. With {cmd:method(npdc)}, a curved arrow runs
+from the net transmitter to the net receiver of each pair; its width and shade grow
+with the net pairwise directional connectedness, normalized by the largest value and
+drawn in six classes. Net transmitters are dark blue and net receivers mustard, and
+nodes are slightly larger for larger absolute NET; a legend below the circle explains
+the colors. With {cmd:method(pci)}, undirected edges have widths and shades that grow
+with the pairwise connectedness index. The subtitle gives the period: the average
+over the first to the last date of the results frame, or the date in {opt at()}.
+
+{pstd}
+The graph has its own light background and does not depend on the graph scheme.
+Nodes, edges and labels shrink as the number of variables grows. With up to 12
+variables whose names have at most five characters, the names are written inside the
+nodes; otherwise they are placed outside the circle. {it:twoway_options} are applied
+last and can change, for example, the title or the graph size.
 
 {pstd}
 {cmd:method(npdc)} also works on frames written by {cmd:estat group}, for example to
@@ -51,6 +65,26 @@ one frequency band. {cmd:cnnetwork} is not available after {cmd:approach(joint)}
 which has no pairwise measures; {cmd:approach(extjoint)} has them.
 
 
+{title:Options}
+
+{phang}
+{opt straight} draws straight edges. {opt curvature(#)} sets how far the middle of
+each edge bends away from the straight line, as a share of its length; negative
+values bend the other way.
+
+{phang}
+{opt colors(color1 color2)} sets the colors of net transmitters and net receivers,
+for example {cmd:colors(navy maroon)} or {cmd:colors("44 95 125" "201 154 46")} (the
+default). With {cmd:method(pci)} all nodes take {it:color1}.
+
+{phang}
+{opt labels(inside|outside)} overrides the automatic placement of the variable names;
+long names written inside small nodes may overflow them.
+
+{phang}
+{opt nonote} omits the note on edge widths and the threshold.
+
+
 {title:Examples}
 
 {phang2}{cmd:. use cn_dy2012, clear}{p_end}
@@ -59,6 +93,7 @@ which has no pairwise measures; {cmd:approach(extjoint)} has them.
 {phang2}{cmd:. cnnetwork}{p_end}
 {phang2}{cmd:. cnnetwork, method(pci) threshold(0.2)}{p_end}
 {phang2}{cmd:. cnnetwork, at(td(15sep2008))}{p_end}
+{phang2}{cmd:. cnnetwork, straight colors(navy maroon)}{p_end}
 
 
 {marker author}{...}

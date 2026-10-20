@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.0  20oct2026}{...}
+{* *! version 0.7.1  20oct2026}{...}
 {title:Title}
 
 {phang}
@@ -74,7 +74,9 @@ unless {opt band(#)} picks a band. After {cmd:approach(r2)} with lags,
 {cmd:to}, {cmd:from} and {cmd:net} are available.
 
 {pstd}
-When the horizontal axis is a daily date, it is labeled by year.
+The horizontal axis shows the dates of the results frame (see the {opt datevar()}
+option of {helpb connectedness}); daily, monthly and quarterly dates are labeled by
+year.
 
 
 {title:Examples}

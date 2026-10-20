@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.7.0, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.7.1, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 

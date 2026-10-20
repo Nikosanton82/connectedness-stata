@@ -1,4 +1,4 @@
-*! version 0.7.0  20oct2026
+*! version 0.7.1  20oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -431,7 +431,19 @@ program define Estimate, eclass
             exit 110
         }
     }
+    // without datevar(), a numeric variable named date with a date format is used
+    // when the time variable has no date format (for example an observation index
+    // t); datevar() set to the time variable itself turns this off
+    local dvauto = ("`datevar'" == "")
     if "`datevar'" != "" & "`datevar'" == "`timevar'" local datevar
+    local tfmt0 : format `timevar'
+    if `dvauto' & substr("`tfmt0'", 1, 2) != "%t" {
+        capture confirm numeric variable date, exact
+        if !_rc {
+            local dfmt0 : format date
+            if substr("`dfmt0'", 1, 2) == "%t" local datevar date
+        }
+    }
 
     // ---------------------------------------------------------- estimation
     capture mata: mata describe cn_main()

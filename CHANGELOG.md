@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.1 (2026-10-20)
+- `cnnetwork` redesigned: curved edges whose width and shade grow with strength in
+  six classes, arrowheads that end at the receiving node, net transmitters in dark
+  blue and net receivers in mustard (drawn as true circles, slightly larger for larger
+  NET), names inside the nodes for up to 12 short names and outside the circle
+  otherwise, a legend below the circle, a subtitle with the period ("average over
+  <first> - <last>") and a light background that does not depend on the graph scheme.
+  Nodes, edges and labels shrink with the number of variables, so that large networks
+  (for example 51 variables) stay readable. New options `straight`, `curvature()`,
+  `colors()`, `labels()` and `nonote`.
+- Dates: without `datevar()`, `connectedness` uses a numeric variable named `date` with
+  a date format when the time variable has no date format, so that the results frame,
+  the header, `cngraph` and `cnnetwork` show dates rather than observation numbers;
+  `datevar()` naming the time variable turns this off.
+- `cngraph` labels monthly and quarterly date axes by year, as it already did for daily
+  dates.
+- Data: `month` in `cn_acg2020`, `cn_gg2018` and `cn_gghm2022` now has the `%tm` format
+  (values unchanged).
+  151 of 151 certification tests pass in Stata 19 (`docs/certification-log-v0.7.1.txt`);
+  all help-file examples and replication do-files run.
+
 ## 0.7.0 (2026-10-20)
 - `model(dccgarch)`: DCC-GARCH(1,1) volatility connectedness (Gabauer 2020), as R's
   `ConnectednessApproach(..., model = "DCC-GARCH")`. GARCH(1,1) margins with a

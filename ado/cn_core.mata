@@ -1,4 +1,4 @@
-*! version 0.7.0  20oct2026
+*! version 0.7.1  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -1953,14 +1953,31 @@ void cn_postgroup(string scalar type, string scalar labnames, real colvector tv,
 // =============================================================================
 
 // Reads npdc_i_j or pci_i_j and net_i from the current frame (all rows, or row r)
-// and returns node and edge matrices for drawing.
-void cn_netdata(string scalar method, real scalar k, real scalar r,
-                real scalar threshold, string scalar nodename, string scalar edgename,
-                string scalar suf)
+// and returns the geometry of the network plot in four Stata matrices:
+//   nodename  k x 7: x, y, radius, transmitter (1) or receiver (0), label x, label y,
+//             label clock position
+//   curvename curve points x, y, class (1-6), with a row of missing x and y between
+//             curves so that each class is drawn as one line plot
+//   arrowname arrowheads x1, y1, x2, y2, class (npdc only; missing row if none)
+//   circname  node discs as x, upper y, lower y, node type, again separated by rows of
+//             missing values
+// Variables sit on the unit circle, starting at the top and running clockwise.
+// Edge strengths are normalized by the largest; edges at or below threshold are
+// omitted. curv sets the bend of the edges (0 = straight); lout != 0 puts the
+// labels outside the circle. With npdc, each curve stops where its arrowhead
+// begins: the arrowhead of strength class q is sw*(1.0 + 0.35q) marker units long
+// (at least 0.9), which is 0.01*gh data units each, gh being the graph height in
+// data units.
+void cn_netplot(string scalar method, real scalar k, real scalar r,
+                real scalar threshold, string scalar suf, real scalar curv,
+                real scalar lout, real scalar sw, real scalar gh,
+                string scalar nodename, string scalar curvename,
+                string scalar arrowname, string scalar circname)
 {
-    real scalar    i, j, c, np, wmax, v, th
-    real matrix    P, W, N, E
-    real rowvector pv, net
+    real scalar    i, j, c, np, wmax, v, th, r0, d, m, n, q, h, gap, nmax, ah, a, b
+    real matrix    P, W, N, C, A, D, B
+    real rowvector pv, net, p0, p1, p2, nrm, keep
+    real colvector tt, ph
     string rowvector pn, nn
 
     np = k*(k-1)/2
@@ -2000,32 +2017,85 @@ void cn_netdata(string scalar method, real scalar k, real scalar r,
     }
     wmax = max(W)
     if (wmax > 0) W = W / wmax
-    // nodes: x, y, label clock position, (unused), size weight, transmitter (1) or receiver (0)
-    N = J(k, 6, .)
+
+    // nodes: radius shrinks with k; with npdc it grows mildly with |NET|
+    r0   = min((0.15, 0.42*sin(pi()/k)))
+    nmax = max((max(abs(net)), 1e-12))
+    N = J(k, 7, .)
     for (i=1; i<=k; i++) {
-        th = 2*pi()*(i-1)/k
+        th = pi()/2 - 2*pi()*(i-1)/k
         N[i, 1] = cos(th)
         N[i, 2] = sin(th)
-        // label position (clock) outside the circle
-        N[i, 3] = (cos(th) > 0.38 ? 3 : (cos(th) < -0.38 ? 9 : (sin(th) > 0 ? 12 : 6)))
-        N[i, 4] = .
-        N[i, 5] = (method=="pci" ? 1 : 1 + abs(net[i])/max((max(abs(net)), 1e-12)))
-        N[i, 6] = (method=="pci" ? 1 : (net[i] >= 0))
+        N[i, 3] = (method=="pci" ? r0 : r0*(0.8 + 0.4*abs(net[i])/nmax))
+        N[i, 4] = (method=="pci" ? 1 : (net[i] >= 0))
+        if (lout) {
+            N[i, 5] = (1 + N[i, 3] + 0.03)*cos(th)
+            N[i, 6] = (1 + N[i, 3] + 0.03)*sin(th)
+            h = mod(3 - round(th/(pi()/6)), 12)
+            N[i, 7] = (h == 0 ? 12 : h)
+        }
+        else {
+            N[i, 5] = N[i, 1]
+            N[i, 6] = N[i, 2]
+            N[i, 7] = 0
+        }
     }
-    // edges: x1, y1, x2, y2, weight, width class 1-5 (shortened to stop at nodes)
-    E = J(0, 6, .)
+
+    // discs, drawn as the area between the upper and lower half circles
+    ph = rangen(0, pi(), 41)
+    D  = J(0, 4, .)
+    for (i=1; i<=k; i++) {
+        D = D \ (N[i, 1] :- N[i, 3]*cos(ph), N[i, 2] :+ N[i, 3]*sin(ph),
+                 N[i, 2] :- N[i, 3]*sin(ph), J(41, 1, N[i, 4])) \ (., ., ., N[i, 4])
+    }
+
+    // edges: quadratic Bezier curves between the node borders
+    tt  = rangen(0, 1, 81)
+    gap = 0.012
+    C = J(0, 3, .)
+    A = J(0, 5, .)
     for (i=1; i<=k; i++) {
         for (j=1; j<=k; j++) {
             if (i==j | W[i, j] <= threshold | W[i, j] == 0) continue
             if (method=="pci" & j < i) continue
-            E = E \ (N[i, 1] + 0.12*(N[j, 1]-N[i, 1]), N[i, 2] + 0.12*(N[j, 2]-N[i, 2]),
-                     N[j, 1] - 0.12*(N[j, 1]-N[i, 1]), N[j, 2] - 0.12*(N[j, 2]-N[i, 2]),
-                     W[i, j], ceil(5*W[i, j]))
+            q  = max((1, ceil(6*W[i, j])))
+            p0 = N[i, 1..2]
+            p2 = N[j, 1..2]
+            d  = sqrt(sum((p2 - p0):^2))
+            nrm = (p0[2] - p2[2], p2[1] - p0[1]) / d
+            p1 = (p0 + p2)/2 + curv*d*nrm
+            B  = ((1 :- tt):^2)*p0 + (2*(1 :- tt):*tt)*p1 + (tt:^2)*p2
+            keep = J(1, 0, .)
+            for (m=1; m<=rows(B); m++) {
+                if (sqrt(sum((B[m, .] - p0):^2)) > N[i, 3] + gap &
+                    sqrt(sum((B[m, .] - p2):^2)) > N[j, 3] + gap) keep = keep, m
+            }
+            n = cols(keep)
+            if (n < 2) continue
+            B = B[keep, .]
+            if (method=="npdc") {
+                // arrow from the point one head length before the tip; the curve ends
+                // under the base of the head
+                ah = max((0.9, sw*(1.0 + 0.35*q)))*0.01*gh
+                a = n - 1
+                b = n - 1
+                for (m=n-1; m>=1; m--) {
+                    if (sqrt(sum((B[m, .] - B[n, .]):^2)) < ah) a = m - 1
+                    if (sqrt(sum((B[m, .] - B[n, .]):^2)) < 0.5*ah) b = m - 1
+                }
+                a = max((a, 1))
+                A = A \ (B[a, .], B[n, .], q)
+                if (b >= 2) C = C \ (B[1..b, .], J(b, 1, q)) \ (., ., q)
+            }
+            else C = C \ (B, J(n, 1, q)) \ (., ., q)
         }
     }
-    if (rows(E) == 0) E = J(1, 6, .)
+    if (rows(C) == 0) C = J(1, 3, .)
+    if (rows(A) == 0) A = J(1, 5, .)
     st_matrix(nodename, N)
-    st_matrix(edgename, E)
+    st_matrix(curvename, C)
+    st_matrix(arrowname, A)
+    st_matrix(circname, D)
 }
 
 end

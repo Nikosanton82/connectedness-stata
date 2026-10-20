@@ -1,4 +1,4 @@
-*! version 0.7.0  20oct2026
+*! version 0.7.1  20oct2026
 *! cngraph: graphs of dynamic connectedness measures after -connectedness-
 program define cngraph
     version 16.1
@@ -78,10 +78,13 @@ program define cngraph
         exit 198
     }
     local x = cond("`dvar'" != "", "`dvar'", "`tvar'")
-    // daily dates: label the axis by year so long labels are not clipped
+    // daily, monthly and quarterly dates: label the axis by year so long labels are
+    // not clipped
     local xlab
     frame `frame': local xfmt : format `x'
     if substr("`xfmt'", 1, 3) == "%td" local xlab xlabel(#6, format(%tdCCYY))
+    if substr("`xfmt'", 1, 3) == "%tm" local xlab xlabel(#6, format(%tmCCYY))
+    if substr("`xfmt'", 1, 3) == "%tq" local xlab xlabel(#6, format(%tqCCYY))
     local usec = ("`corr'" != "" & "`raw'" == "")
     if `"`name'"' != ""   local nameopt name(`name')
     if `"`saving'"' != "" local saveopt saving(`saving')
