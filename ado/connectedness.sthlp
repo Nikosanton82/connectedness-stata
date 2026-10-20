@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.3.0  20oct2026}{...}
+{* *! version 0.4.0  20oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -12,7 +12,7 @@
 {title:Title}
 
 {phang}
-{bf:connectedness} {hline 2} VAR and TVP-VAR connectedness measures in the time and frequency domains
+{bf:connectedness} {hline 2} VAR, quantile VAR and TVP-VAR connectedness measures in the time and frequency domains
 
 
 {marker syntax}{...}
@@ -25,9 +25,10 @@
 {synopthdr}
 {synoptline}
 {syntab:Model}
-{synopt:{opt m:odel(model)}}{cmd:var} (default) or {cmd:tvpvar}{p_end}
+{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad} or {cmd:tvpvar}{p_end}
 {synopt:{opt l:ags(#)}}VAR lag order; default is {cmd:lags(1)}{p_end}
-{synopt:{opt w:indow(#)}}rolling-window size ({cmd:var}) or prior training sample ({cmd:tvpvar}); default 0{p_end}
+{synopt:{opt w:indow(#)}}rolling-window size ({cmd:var}, {cmd:qvar}, {cmd:lad}) or prior training sample ({cmd:tvpvar}); default 0{p_end}
+{synopt:{opt quant:ile(numlist)}}quantile tau for {cmd:qvar}, one value or one per variable; default {cmd:0.5}{p_end}
 
 {syntab:TVP-VAR}
 {synopt:{opt kappa1(#)}}forgetting factor for the coefficients; default {cmd:0.99}{p_end}
@@ -95,7 +96,19 @@ and reproduces its results; see {it:Remarks}.
 ordinary least squares with an intercept, over the whole sample when
 {cmd:window(0)} and over rolling windows otherwise. {cmd:tvpvar} fits the TVP-VAR of
 Antonakakis, Chatziantoniou and Gabauer (2020), producing measures for every period
-of the sample.
+of the sample. {cmd:qvar} fits the quantile VAR of Chatziantoniou, Gabauer and
+Stenfors (2021): each equation is a linear quantile regression at quantile tau,
+estimated like R's {cmd:quantreg::rq()} with its default Frisch-Newton
+interior-point method. {cmd:lad} fits a least absolute deviation (median) VAR, the
+exact median-regression solution as in R's {cmd:L1pack::lad()}. For {cmd:qvar} and
+{cmd:lad} the error covariance is the uncentered residual cross-product divided by
+the number of observations, as in the R package.
+
+{phang}
+{opt quantile(numlist)} sets the quantile tau, strictly between 0 and 1, for
+{cmd:model(qvar)}. With one value per variable, equation {it:i} is estimated at the
+{it:i}th quantile, which gives the quantile-on-quantile connectedness of Gabauer and
+Stenfors (2024) when two variables are used.
 
 {phang}
 {opt lags(#)} sets the VAR lag order {it:p}.
@@ -259,6 +272,12 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. cngraph tci}{p_end}
 {phang2}{cmd:. cnnetwork}{p_end}
 
+{pstd}Chatziantoniou, Gabauer and Stenfors (2021): quantile connectedness{p_end}
+{phang2}{cmd:. use cn_cgs2021, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness USD1Y EUR1Y GBP1Y JPY1Y, model(qvar) quantile(0.05) horizon(20) window(200) corrected datevar(date) replace}{p_end}
+{phang2}{cmd:. cngraph tci}{p_end}
+
 {pstd}Chatziantoniou, Gabauer and Gupta (2023): TVP-VAR frequency connectedness{p_end}
 {phang2}{cmd:. use cn_cgg2022, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -270,7 +289,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {pstd}Lastrapes and Wiesen (2021): joint spillover index{p_end}
 {phang2}{cmd:. use cn_lw2021, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
-{phang2}{cmd:. connectedness energy-utilities, lags(2) horizon(30) approach(joint)}{p_end}
+{phang2}{cmd:. connectedness energy-utilities, lags(2) horizon(30) approach(joint) replace}{p_end}
 
 {pstd}Balcilar, Gabauer and Umar (2021): extended joint connectedness{p_end}
 {phang2}{cmd:. use cn_bgu2021, clear}{p_end}
@@ -307,6 +326,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(cTCI)}}corrected total connectedness index{p_end}
 {synopt:{cmd:e(kappa1)}, {cmd:e(kappa2)}}forgetting and decay factors ({cmd:tvpvar}){p_end}
 {synopt:{cmd:e(gamma)}}Minnesota prior tightness ({cmd:prior(minnesota)}){p_end}
+{synopt:{cmd:e(quantile)}}quantile tau, when one value is used ({cmd:qvar}){p_end}
 {synopt:{cmd:e(TCI_pos)}, {cmd:e(cTCI_pos)}}TCI of positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
@@ -314,7 +334,8 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 
 {p2col 5 18 22 2: Macros}{p_end}
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
-{synopt:{cmd:e(model)}}{cmd:var} or {cmd:tvpvar}{p_end}
+{synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad} or {cmd:tvpvar}{p_end}
+{synopt:{cmd:e(quantiles)}}quantile of each equation ({cmd:qvar}){p_end}
 {synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint} or {cmd:extjoint}{p_end}
 {synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(partition)}}band limits in radians ({cmd:frequency}){p_end}
@@ -442,6 +463,11 @@ transmission in the market for crude oil: New evidence from a time-varying param
 frequency connectedness approach. {it:Resources Policy} 84: 103729.
 
 {phang}
+Chatziantoniou, I., D. Gabauer, and A. Stenfors. 2021. Interest rate swaps and the
+transmission mechanism of monetary policy: A quantile connectedness approach.
+{it:Economics Letters} 204: 109891.
+
+{phang}
 Diebold, F. X., and K. Yilmaz. 2009. Measuring financial asset return and volatility
 spillovers, with application to global equity markets. {it:Economic Journal} 119: 158-171.
 
@@ -455,6 +481,13 @@ Gabauer, D. 2025. ConnectednessApproach: Connectedness approach. R package versi
 {browse "https://CRAN.R-project.org/package=ConnectednessApproach"}.
 
 {phang}
+Gabauer, D., and A. Stenfors. 2024. Quantile-on-quantile connectedness measures:
+Evidence from the US treasury yield curve. {it:Finance Research Letters} 60: 104852.
+
+{phang}
+Koenker, R. 2005. {it:Quantile Regression}. Cambridge: Cambridge University Press.
+
+{phang}
 Koop, G., and D. Korobilis. 2013. Large time-varying parameter VARs.
 {it:Journal of Econometrics} 177: 185-198.
 
@@ -465,6 +498,11 @@ nonlinear multivariate models. {it:Journal of Econometrics} 74: 119-147.
 {phang}
 Lastrapes, W. D., and T. F. P. Wiesen. 2021. The joint spillover index.
 {it:Economic Modelling} 94: 681-691.
+
+{phang}
+Portnoy, S., and R. Koenker. 1997. The Gaussian hare and the Laplacian tortoise:
+Computability of squared-error versus absolute-error estimators.
+{it:Statistical Science} 12: 279-300.
 
 {phang}
 Pesaran, M. H., and Y. Shin. 1998. Generalized impulse response analysis in linear

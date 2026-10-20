@@ -1,4 +1,4 @@
-*! version 0.3.0  20oct2026
+*! version 0.4.0  20oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -150,6 +150,143 @@ void cn_var(real matrix x, real scalar p, real matrix B, real matrix Q)
     Res  = Res :- mean(Res)
     B    = Beta'
     Q    = cross(Res, Res) / n
+}
+
+// Quantile regression by the Frisch-Newton interior-point method: a port of
+// quantreg's rq.fit.fnb() and its Fortran routine rqfnb (Portnoy and Koenker 1997),
+// the default "fn" method of R's QVAR(). X includes the intercept column.
+real colvector cn_rqfnb(real matrix X, real colvector yy, real scalar tau)
+{
+    real scalar    n, p, it, gap, deltap, deltad, mu, g, bt, eps
+    real matrix    A, L
+    real colvector b, c, x, u, d, y, s, z, w, dx, ds, dy, dz, dw, dr, rhs
+    real colvector dxdz, dsdw
+
+    bt  = 0.99995
+    eps = 1e-6
+    n   = rows(X)
+    p   = cols(X)
+    A   = X'
+    c   = -yy
+    b   = (1-tau) * colsum(X)'
+    x   = J(n, 1, 1-tau)
+    u   = J(n, 1, 1)
+    d   = J(n, 1, 1)
+    L   = cholesky(A * (d :* X))
+    if (hasmissing(L)) return(J(p, 1, .))
+    y   = solveupper(L', solvelower(L, A*c))
+    s   = c - X*y
+    z   = (s :> 0) :* s + (abs(s) :< eps) :* eps
+    w   = (s :< 0) :* (-s) + (abs(s) :< eps) :* eps
+    s   = u - x
+    gap = z'x + w's
+    it  = 0
+    while (gap > eps & it < 500) {
+        it++
+        d   = 1 :/ (z:/x + w:/s)
+        ds  = z - w
+        dz  = d :* ds
+        dy  = b - A*x + A*dz
+        rhs = dy
+        L   = cholesky(A * (d :* X))
+        if (hasmissing(L)) return(J(p, 1, .))
+        dy  = solveupper(L', solvelower(L, dy))
+        ds  = X*dy - ds
+        dx  = d :* ds
+        ds  = -dx
+        dz  = -z :* (dx:/x :+ 1)
+        dw  = -w :* (ds:/s :+ 1)
+        deltap = min((cn_rqstep(x, dx), cn_rqstep(s, ds)))
+        deltad = min((cn_rqstep(z, dz), cn_rqstep(w, dw)))
+        deltap = min((bt*deltap, 1))
+        deltad = min((bt*deltad, 1))
+        if (min((deltap, deltad)) < 1) {
+            mu = x'z + s'w
+            g  = mu + deltap*(dx'z) + deltad*(dz'x) + deltap*deltad*(dz'dx) +
+                 deltap*(ds'w) + deltad*(dw's) + deltap*deltad*(ds'dw)
+            mu = mu * ((g/mu)^3) / (2*n)
+            dr = d :* (mu*(1:/s - 1:/x) + dx:*dz:/x - ds:*dw:/s)
+            dy = rhs + A*dr
+            dy = solveupper(L', solvelower(L, dy))
+            u  = X*dy
+            dxdz = dx :* dz
+            dsdw = ds :* dw
+            dx = d :* (u - z + w) - dr
+            ds = -dx
+            dz = -z + ((mu :- z:*dx) - dxdz) :/ x
+            dw = -w + ((mu :- w:*ds) - dsdw) :/ s
+            deltap = min((cn_rqstep(x, dx), cn_rqstep(s, ds)))
+            deltad = min((cn_rqstep(z, dz), cn_rqstep(w, dw)))
+            deltap = min((bt*deltap, 1))
+            deltad = min((bt*deltad, 1))
+        }
+        x = x + deltap*dx
+        s = s + deltap*ds
+        y = y + deltad*dy
+        z = z + deltad*dz
+        w = w + deltad*dw
+        gap = z'x + w's
+    }
+    return(-y)
+}
+
+// Largest step keeping v + step*dv nonnegative (1e20 if dv has no negative element)
+real scalar cn_rqstep(real colvector v, real colvector dv)
+{
+    real colvector ix
+
+    ix = selectindex(dv :< 0)
+    if (rows(ix) == 0) return(1e20)
+    return(min(-v[ix] :/ dv[ix]))
+}
+
+// Exact least absolute deviation fit: the interior-point solution at tau = 0.5,
+// moved to the vertex defined by the p observations with the smallest residuals.
+// This reproduces the simplex (Barrodale-Roberts) solution of L1pack::lad() when
+// the LAD solution is unique.
+real colvector cn_lad(real matrix X, real colvector yy)
+{
+    real scalar    p
+    real colvector b, bv, r, ix
+
+    p  = cols(X)
+    b  = cn_rqfnb(X, yy, 0.5)
+    if (hasmissing(b)) return(b)
+    r  = abs(yy - X*b)
+    ix = order(r, 1)[|1 \ p|]
+    bv = lusolve(X[ix, .], yy[ix])
+    if (hasmissing(bv)) return(b)
+    return(bv)
+}
+
+// Quantile VAR (R QVAR(), Chatziantoniou, Gabauer and Stenfors 2021) and LAD VAR
+// (R LADVAR()): equation-by-equation regressions with an intercept; the residual
+// covariance is divided by n without centering. tau: one quantile per equation.
+void cn_qvar(real matrix x, real scalar p, real rowvector tau, real scalar lad,
+             real matrix B, real matrix Q)
+{
+    real scalar    k, n, i
+    real matrix    z, Y, X, Res
+    real colvector b
+
+    k   = cols(x)
+    z   = cn_embed(x, p+1)
+    Y   = z[|1, 1 \ rows(z), k|]
+    X   = J(rows(z), 1, 1), z[|1, k+1 \ rows(z), cols(z)|]
+    n   = rows(X)
+    B   = J(k, k*p, .)
+    Res = J(n, k, .)
+    for (i=1; i<=k; i++) {
+        if (lad) b = cn_lad(X, Y[., i])
+        else     b = cn_rqfnb(X, Y[., i], tau[i])
+        if (hasmissing(b)) {
+            errprintf("quantile regression failed for equation %g (singular design)\n", i)
+            exit(error(506))
+        }
+        B[i, .]    = b[|2 \ rows(b)|]'
+        Res[., i]  = Y[., i] - X*b
+    }
+    Q = cross(Res, Res) / n
 }
 
 // TVP-VAR with forgetting factors (R function TVPVAR(); Koop and Korobilis 2013).
@@ -643,7 +780,8 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              real scalar kappa1, real scalar kappa2, real scalar gamma,
              string scalar tabname, string scalar fevdname, string scalar scalname,
              string scalar names, string scalar dvar, string scalar approach,
-             real rowvector part, string scalar scen, string scalar blabels)
+             real rowvector part, string scalar scen, string scalar blabels,
+             real rowvector tau)
 {
     external real matrix   cn__M, cn__CT
     external real colvector cn__tv, cn__dv
@@ -683,7 +821,8 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         Bt = J(t0, k*k*p, .)
         Qt = J(t0, k*k, .)
         for (t=1; t<=t0; t++) {
-            cn_var(x[|t, 1 \ t+ws-1, k|], p, B, Q)
+            if (model=="var") cn_var(x[|t, 1 \ t+ws-1, k|], p, B, Q)
+            else cn_qvar(x[|t, 1 \ t+ws-1, k|], p, tau, (model=="lad"), B, Q)
             Bt[t, .] = rowshape(B, 1)
             Qt[t, .] = rowshape(Q, 1)
         }

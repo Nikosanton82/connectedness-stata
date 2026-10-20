@@ -51,9 +51,11 @@ writefx = function(nm, ts, avg, extra = list()) {
 }
 
 run = function(d, nlag, nfore, ws = NULL, model = "VAR", conn = "Time", corr = FALSE,
-               tvp = NULL, freq = NULL) {
+               tvp = NULL, freq = NULL, tau = 0.5, rows = NULL) {
   x = get(data(list = d))
-  vc = list(TVPVAR = list(kappa1 = 0.99, kappa2 = 0.99, prior = "BayesPrior", gamma = 0.01))
+  if (!is.null(rows)) x = x[rows, ]
+  vc = list(TVPVAR = list(kappa1 = 0.99, kappa2 = 0.99, prior = "BayesPrior", gamma = 0.01),
+            QVAR = list(tau = tau, method = "fn"))
   if (!is.null(tvp)) vc$TVPVAR = modifyList(vc$TVPVAR, tvp)
   cc = list(TimeConnectedness = list(generalized = TRUE),
             FrequencyConnectedness = list(partition = c(pi, pi/2, 0), generalized = TRUE, scenario = "ABS"))
@@ -157,3 +159,36 @@ for (nm in names(ecases)) {
   ejoint_fx(nm, run(cs$d, cs$nlag, cs$nfore, cs$ws, if (is.null(cs$model)) "VAR" else cs$model,
                     "Extended Joint", FALSE, cs$tvp))
 }
+
+# ---------------------------------------------------------------------------
+# Quantile VAR (Chatziantoniou, Gabauer and Stenfors 2021) and LAD VAR, from
+# version 0.4.0. Rolling cases use the first rows of the data to keep R's run time
+# short (each window is estimated independently).
+time_fx = function(nm, dca) {
+  CT = 100 * dca$CT
+  k = dim(CT)[1]
+  nt = dim(CT)[3]
+  ts = cbind(dca$TCI, dca$TO, dca$FROM, dca$NET, dca$NPT,
+             pairser(dca$NPDC, TRUE), pairser(dca$PCI, FALSE), pairser(dca$INFLUENCE, FALSE))
+  colnames(ts) = c(if (isTRUE(dca$config$corrected)) "ctci" else "tci", paste0("to_", 1:k),
+                   paste0("from_", 1:k), paste0("net_", 1:k), paste0("npt_", 1:k),
+                   paste0("npdc_", pairs(k)), paste0("pci_", pairs(k)), paste0("inf_", pairs(k)))
+  writefx(nm, ts, apply(CT, 1:2, mean))
+}
+qcases = list(
+  cgs2021_qvar_roll200  = list(d = "cgs2021", nlag = 1, nfore = 20, ws = 200, corr = TRUE, rows = 1:700),
+  cgs2021_qvar_q05      = list(d = "cgs2021", nlag = 1, nfore = 20, corr = TRUE, tau = 0.05),
+  cgs2021_qvar_qoq      = list(d = "cgs2021", nlag = 2, nfore = 20, tau = c(0.2, 0.8, 0.5, 0.95)),
+  dy2012_lad_static     = list(d = "dy2012", nlag = 4, nfore = 10, model = "LAD"),
+  dy2012_lad_roll200    = list(d = "dy2012", nlag = 4, nfore = 10, ws = 200, model = "LAD", rows = 1:600)
+)
+for (nm in names(qcases)) {
+  cs = qcases[[nm]]
+  tau = if (is.null(cs$tau)) 0.5 else cs$tau
+  time_fx(nm, run(cs$d, cs$nlag, cs$nfore, cs$ws, if (is.null(cs$model)) "QVAR" else cs$model,
+                  "Time", isTRUE(cs$corr), tau = tau, rows = cs$rows))
+}
+gcat = run("gcat2022", 1, 100, 200, "QVAR", "Frequency", freq = list(partition = c(pi + 0.00001, pi/5, 0)),
+           rows = 1:600)
+freq_fx("gcat2022_qvar_freq_roll200", gcat)
+ejoint_fx("jcggh2022_qvar_extjoint_q90", run("jcggh2022", 1, 10, NULL, "QVAR", "Extended Joint", tau = 0.9))

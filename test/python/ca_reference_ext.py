@@ -1,8 +1,9 @@
 """
 Reference port (NumPy) of the ConnectednessApproach 1.0.4 extensions added in
-connectedness 0.3.0: frequency connectedness (FrequencyConnectedness, FEVD type
-"frequency", frequencyConnectedness::getPartition), joint connectedness
-(JointConnectedness) and extended joint connectedness (ExtendedJointConnectedness).
+connectedness 0.3.0 and later: frequency connectedness (FrequencyConnectedness, FEVD
+type "frequency", frequencyConnectedness::getPartition), joint connectedness
+(JointConnectedness), extended joint connectedness (ExtendedJointConnectedness), and
+the quantile and LAD VARs (QVAR with quantreg's Frisch-Newton method; LADVAR).
 It mirrors the Mata code in ado/cn_core.mata step by step and is used to check that
 code against the R fixtures written by test/r/make_fixtures_ext.R.
 """
@@ -152,3 +153,81 @@ def extjoint(Phi, Sigma, H):
     j = off * lam[:, None]
     np.fill_diagonal(j, 100 - j.sum(1))
     return j
+
+
+# ----------------------------------------------------------------------------
+# Quantile VAR and LAD VAR (0.4.0)
+def rqfnb(X, yy, tau, beta=0.99995, eps=1e-6, maxit=500):
+    n, p = X.shape
+    A = X.T
+    c = -yy
+    b = (1 - tau) * X.sum(0)
+    x = np.full(n, 1 - tau); u = np.ones(n); d = np.ones(n)
+    def stepy(d, rhs):
+        ada = (A * d) @ A.T
+        L = np.linalg.cholesky(ada)
+        return np.linalg.solve(L.T, np.linalg.solve(L, rhs)), L
+    y, L = stepy(d, A @ c)
+    s = c - A.T @ y
+    small = np.abs(s) < eps
+    z = np.maximum(s, 0) + small * eps
+    w = np.maximum(-s, 0) + small * eps
+    s = u - x
+    gap = z @ x + w @ s
+    nit = 0
+    while gap > eps and nit < maxit:
+        nit += 1
+        d = 1 / (z / x + w / s)
+        ds = z - w
+        dz = d * ds
+        dy = b - A @ x + A @ dz
+        rhs = dy.copy()
+        dy, L = stepy(d, dy)
+        ds = A.T @ dy - ds
+        dx = d * ds; ds = -dx
+        dz = -z * (dx / x + 1); dw = -w * (ds / s + 1)
+        def lim(v, dv):
+            m = dv < 0
+            return np.min(-v[m] / dv[m]) if m.any() else 1e20
+        deltap = min(lim(x, dx), lim(s, ds)); deltad = min(lim(z, dz), lim(w, dw))
+        deltap = min(beta * deltap, 1); deltad = min(beta * deltad, 1)
+        if min(deltap, deltad) < 1:
+            mu = x @ z + s @ w
+            g = (mu + deltap * dx @ z + deltad * dz @ x + deltap * deltad * dz @ dx
+                 + deltap * ds @ w + deltad * dw @ s + deltap * deltad * ds @ dw)
+            mu = mu * (g / mu) ** 3 / (2 * n)
+            dr = d * (mu * (1 / s - 1 / x) + dx * dz / x - ds * dw / s)
+            dy = rhs + A @ dr
+            dy = np.linalg.solve(L.T, np.linalg.solve(L, dy))
+            u = A.T @ dy
+            dxdz = dx * dz; dsdw = ds * dw
+            dx = d * (u - z + w) - dr
+            ds = -dx
+            dz = -z + (mu - z * dx - dxdz) / x
+            dw = -w + (mu - w * ds - dsdw) / s
+            deltap = min(lim(x, dx), lim(s, ds)); deltad = min(lim(z, dz), lim(w, dw))
+            deltap = min(beta * deltap, 1); deltad = min(beta * deltad, 1)
+        x = x + deltap * dx; s = s + deltap * ds
+        y = y + deltad * dy; z = z + deltad * dz; w = w + deltad * dw
+        gap = z @ x + w @ s
+    return -y
+
+
+def qvar(x, nlag, tau, lad=False):
+    """QVAR()/LADVAR(): B (k x k*nlag) and the uncentered residual covariance."""
+    from ca_reference import embed
+    k = x.shape[1]
+    z = embed(x, nlag + 1)
+    Y = z[:, :k]
+    X = np.column_stack([np.ones(len(z)), z[:, k:]])
+    B, R = [], []
+    for i in range(k):
+        b = rqfnb(X, Y[:, i], 0.5 if lad else tau[i])
+        if lad:
+            r = np.abs(Y[:, i] - X @ b)
+            ix = np.argsort(r, kind="stable")[:X.shape[1]]
+            b = np.linalg.solve(X[ix], Y[ix, i])
+        B.append(b[1:])
+        R.append(Y[:, i] - X @ b)
+    R = np.array(R).T
+    return np.array(B), R.T @ R / len(R)

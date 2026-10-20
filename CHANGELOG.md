@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0 (2026-10-20)
+- `model(qvar)`: quantile VAR connectedness (Chatziantoniou, Gabauer and Stenfors
+  2021), with `quantile()` set to one value or one value per variable
+  (quantile-on-quantile connectedness, Gabauer and Stenfors 2024). Each equation is a
+  linear quantile regression solved by a Mata port of the Frisch-Newton interior-point
+  method of R's `quantreg::rq()` (the "fn" method used by the R package).
+- `model(lad)`: least absolute deviation VAR, matching `L1pack::lad()`.
+- Both models work with rolling windows and with the time, frequency, joint and
+  extended joint approaches.
+- Header shows the model (QVAR or LAD-VAR) and the quantile; `e(quantile)` and
+  `e(quantiles)` store it.
+- Options `kappa1()`, `kappa2()`, `gamma()` and `prior()` are now rejected with
+  models other than `tvpvar` instead of being ignored.
+- Validation: 7 new R cases (static, rolling, quantile-on-quantile, LAD, QVAR
+  frequency and QVAR extended joint); largest relative difference from R 6.0e-12;
+  102 of 102 certification tests pass (`docs/certification-log-v0.4.0.txt`).
+- Fixed: `cngraph` and `cnnetwork` printed a spurious "invalid syntax" message
+  (without failing) whenever `band()` was not specified. Found when testing the
+  installed package in Stata 19.
+- Help: the joint-connectedness example of `connectedness` now specifies `replace`,
+  so that the examples run in sequence.
+- `cngraph`: the legend of single-panel graphs (the TCI with bands, comparisons or
+  asymmetric parts) is placed below the graph, so that the plot keeps its width
+  under the default scheme of Stata 18 and 19.
+
 ## 0.3.0 (2026-10-20)
 - `approach()` option: `frequency` (Baruník and Křehlík 2018; with `model(tvpvar)`,
   Chatziantoniou, Gabauer and Gupta 2023), `joint` (Lastrapes and Wiesen 2021) and

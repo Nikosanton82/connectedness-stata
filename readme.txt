@@ -1,6 +1,6 @@
 connectedness: VAR and TVP-VAR connectedness measures for Stata
 ================================================================
-Version 0.3.0, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.4.0, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -22,7 +22,7 @@ Contents
                   Python and R scripts that generate them
 
 Commands
-  connectedness   estimation (static VAR, rolling VAR, TVP-VAR; time, frequency, joint
+  connectedness   estimation (static and rolling VAR, QVAR and LAD-VAR, TVP-VAR; time, frequency, joint
                   and extended joint connectedness; asymmetric option)
   estat table     redisplay the connectedness table
   estat group     aggregated, conditional, inclusive, exclusive, internal and

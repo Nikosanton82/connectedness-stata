@@ -312,7 +312,7 @@ else di as txt "  estat group, cnnetwork, cngraph overlays and dates: pass"
 di _n as txt "{hline 78}" _n "8. Error handling" _n "{hline 78}"
 use ../data/cn_dy2012, clear
 tsset t
-cn_expect 198 connectedness SP500 R_10Y, model(qvar) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(lasso) `opt'
 cn_expect 198 connectedness SP500 R_10Y, prior(minnesota) `opt'
 cn_expect 198 connectedness SP500 R_10Y, model(tvpvar) kappa1(1) `opt'
 cn_expect 184 connectedness SP500 R_10Y, orthogonalized generalized `opt'
@@ -429,6 +429,49 @@ cn_expect 198 cngraph npdc, nodraw
 cn_expect 198 cnnetwork, nodraw
 cn_expect 198 connectedness, band(1)
 
+di _n as txt "{hline 78}" _n "10. Quantile and LAD VAR connectedness (0.4.0)" _n "{hline 78}"
+use ../data/cn_cgs2021, clear
+tsset t
+local v USD1Y EUR1Y GBP1Y JPY1Y
+timer on 7
+connectedness `v' in 1/700, model(qvar) horizon(20) window(200) corrected `opt'
+timer off 7
+cn_check, case(cgs2021_qvar_roll200) tol(1e-6) prefix(R_)
+assert e(quantile) == 0.5
+connectedness `v', model(qvar) quantile(0.05) horizon(20) corrected `opt'
+cn_check, case(cgs2021_qvar_q05) tol(1e-6) prefix(R_)
+connectedness `v', model(qvar) quantile(0.2 0.8 0.5 0.95) lags(2) horizon(20) `opt'
+cn_check, case(cgs2021_qvar_qoq) tol(1e-6) prefix(R_)
+
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+connectedness `v', model(lad) lags(4) `opt'
+cn_check, case(dy2012_lad_static) tol(1e-6) prefix(R_)
+connectedness `v' in 1/600, model(lad) lags(4) window(200) `opt'
+cn_check, case(dy2012_lad_roll200) tol(1e-6) prefix(R_)
+
+use ../data/cn_gcat2022, clear
+tsset t
+quietly ds t date, not
+connectedness `r(varlist)' in 1/600, model(qvar) horizon(100) window(200) approach(frequency) ///
+    bands(5) `opt'
+cn_check, case(gcat2022_qvar_freq_roll200) tol(1e-6) prefix(R_) bands(2)
+
+use ../data/cn_jcggh2022, clear
+tsset t
+quietly ds t date, not
+connectedness `r(varlist)', model(qvar) quantile(0.9) approach(extjoint) `opt'
+cn_check, case(jcggh2022_qvar_extjoint_q90) tol(1e-6) prefix(R_)
+
+use ../data/cn_dy2012, clear
+tsset t
+cn_expect 198 connectedness SP500 R_10Y, model(qvar) quantile(0.2 0.5 0.8) `opt'
+cn_expect 125 connectedness SP500 R_10Y, model(qvar) quantile(1) `opt'
+cn_expect 198 connectedness SP500 R_10Y, quantile(0.5) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(lad) prior(minnesota) `opt'
+cn_expect 198 connectedness SP500 R_10Y, model(qvar) kappa2(0.96) `opt'
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -437,6 +480,7 @@ di as txt "Timing: TVP-VAR, k = 18, T = 5,558:        " as res %6.1f r(t3) as tx
 di as txt "Timing: frequency, rolling VAR, H = 50:    " as res %6.1f r(t4) as txt " s"
 di as txt "Timing: frequency, TVP-VAR, H = 100:       " as res %6.1f r(t5) as txt " s"
 di as txt "Timing: extended joint, TVP-VAR, k = 12:   " as res %6.1f r(t6) as txt " s"
+di as txt "Timing: QVAR, rolling, 501 windows:        " as res %6.1f r(t7) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

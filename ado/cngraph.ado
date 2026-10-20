@@ -1,4 +1,4 @@
-*! version 0.3.0  20oct2026
+*! version 0.4.0  20oct2026
 *! cngraph: graphs of dynamic connectedness measures after -connectedness-
 program define cngraph
     version 16.1
@@ -87,9 +87,13 @@ program define cngraph
         _estimates unhold `hold'
         local lab0 "current"
         if "`frame'" == "`e(frame)'" {
+            local mn "VAR"
+            if "`e(model)'" == "qvar" local mn "QVAR, tau `e(quantiles)'"
+            if "`e(model)'" == "qvar" & "`e(quantile)'" != "" local mn "QVAR, tau `=e(quantile)'"
+            if "`e(model)'" == "lad" local mn "LAD-VAR"
             if "`e(model)'" == "tvpvar" local lab0 "TVP-VAR"
-            else if e(window) > 0 local lab0 "VAR, window `e(window)'"
-            else local lab0 "VAR"
+            else if e(window) > 0 local lab0 "`mn', window `e(window)'"
+            else local lab0 "`mn'"
         }
     }
     else if "`frame'" == "`e(frame)'" & "`e(asymmetric)'" != "" {
@@ -187,7 +191,11 @@ program define cngraph
             if "`what'" == "inf"  local title "Pairwise influence index"
         }
     }
-    if `band' & `"`utitle'"' == "" local title `"`title', band `: word `band' of `blabs'' periods"'
+    // in a block, so that the word of the band list is not looked up when band is 0
+    if `band' & `"`utitle'"' == "" {
+        local bl : word `band' of `blabs'
+        local title `"`title', band `bl' periods"'
+    }
     local np : word count `panels'
     if `np' > 36 {
         di as err "`np' panels requested; use select() to focus on one variable"
@@ -243,7 +251,7 @@ program define cngraph
                 local leg `leg' `=`o'+1' "`ol`o''"
             }
         }
-        if `"`leg'"' != "" local legopt legend(order(`leg') rows(1))
+        if `"`leg'"' != "" local legopt legend(order(`leg') rows(1) position(6))
         else local legopt legend(off)
         frame `work': twoway `plots', ytitle("") xtitle("") title(`"`title'"') ///
             `xlab' `legopt' `nameopt' `saveopt' `draw' `options'

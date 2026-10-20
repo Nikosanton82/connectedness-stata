@@ -1,4 +1,4 @@
-*! version 0.3.0  20oct2026
+*! version 0.4.0  20oct2026
 *! cnnetwork: network plot of pairwise connectedness after -connectedness-
 program define cnnetwork
     version 16.1
@@ -133,7 +133,10 @@ program define cnnetwork
             local title = cond("`method'" == "npdc", "Net pairwise directional connectedness", ///
                 "Pairwise connectedness")
         }
-        if `band' local when "`when'; band `: word `band' of `blabs'' periods"
+        if `band' {
+            local bl : word `band' of `blabs'
+            local when "`when'; band `bl' periods"
+        }
         if `"`name'"' != ""   local nameopt name(`name')
         if `"`saving'"' != "" local saveopt saving(`saving')
         twoway `plots', aspectratio(1) xscale(off range(-1.7 1.7)) yscale(off range(-1.4 1.4)) ///

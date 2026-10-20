@@ -1,5 +1,5 @@
-*! version 0.3.0  20oct2026
-*! connectedness: VAR and TVP-VAR connectedness measures (time, frequency, joint)
+*! version 0.4.0  20oct2026
+*! connectedness: VAR, QVAR, LAD-VAR and TVP-VAR connectedness measures (time, frequency, joint)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
 program define connectedness, eclass
@@ -19,7 +19,8 @@ program define Estimate, eclass
         KAPPA1(real 0.99) KAPPA2(real 0.99) PRior(string)         ///
         GAMma(real 0.01) FRame(string) REPLACE SAVEFevd noFEVD    ///
         ASYMmetric DATEvar(varname numeric) noTABle DIGits(integer 2) ///
-        APProach(string) BANDs(numlist >1 sort) PARTition(numlist) SCENario(string) ]
+        APProach(string) BANDs(numlist >1 sort) PARTition(numlist) SCENario(string) ///
+        QUANTile(numlist >0 <1) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -55,12 +56,18 @@ program define Estimate, eclass
     else if inlist("`model'", "tvpvar", "tvp-var", "tvp") {
         local model tvpvar
     }
-    else if inlist("`model'", "qvar", "lad", "lasso", "ridge", "elastic", "elasticnet", "dccgarch", "dcc-garch") {
+    else if inlist("`model'", "qvar", "quantile") {
+        local model qvar
+    }
+    else if inlist("`model'", "lad", "ladvar") {
+        local model lad
+    }
+    else if inlist("`model'", "lasso", "ridge", "elastic", "elasticnet", "dccgarch", "dcc-garch") {
         di as err "model(`model') is planned for a later release of {cmd:connectedness}"
         exit 198
     }
     else {
-        di as err "model(`model') not allowed; specify {cmd:var} or {cmd:tvpvar}"
+        di as err "model(`model') not allowed; specify {cmd:var}, {cmd:tvpvar}, {cmd:qvar} or {cmd:lad}"
         exit 198
     }
 
@@ -161,8 +168,31 @@ program define Estimate, eclass
         }
     }
 
+    // quantiles for model(qvar): one value, or one per variable
+    local taus
+    if "`quantile'" != "" & "`model'" != "qvar" {
+        di as err "option quantile() is allowed only with model(qvar)"
+        exit 198
+    }
+    if "`model'" == "qvar" {
+        if "`quantile'" == "" local quantile 0.5
+        local nq : word count `quantile'
+        if `nq' != 1 & `nq' != `k' {
+            di as err "quantile() must contain one value or one value per variable (`k')"
+            exit 198
+        }
+        forvalues i = 1/`k' {
+            local q : word `=cond(`nq' == 1, 1, `i')' of `quantile'
+            local taus `taus' `q'
+        }
+    }
+    if "`model'" != "tvpvar" & (`kappa1' != 0.99 | `kappa2' != 0.99 | `gamma' != 0.01) {
+        di as err "options kappa1(), kappa2() and gamma() are allowed only with model(tvpvar)"
+        exit 198
+    }
+
     local prior = lower(strtrim(`"`prior'"'))
-    if "`model'" == "var" & "`prior'" != "" {
+    if "`model'" != "tvpvar" & "`prior'" != "" {
         di as err "option prior() is allowed only with model(tvpvar)"
         exit 198
     }
@@ -223,7 +253,7 @@ program define Estimate, eclass
         local nreg = `T' - `lags'
     }
     if `nreg' <= `k'*`lags' + 1 {
-        if "`model'" == "var" {
+        if "`model'" != "tvpvar" {
             di as err "too few observations per VAR estimation: `nreg' observations for " ///
                 `k'*`lags' + 1 " coefficients per equation"
         }
@@ -307,7 +337,8 @@ program define Estimate, eclass
         mata: cn_main("`vars'", "`touse'", "`timevar'", "`model'", `lags', `horizon', ///
             `window', `gen', `corr', "`prior'", `kappa1', `kappa2', `gamma',         ///
             "`tab`i''", "`fev`i''", "`sc`i''", "`names'", "`datevar'",               ///
-            "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'")
+            "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'", ///
+            strtoreal(tokens("`taus'")))
         capture frame drop `f'
         frame create `f'
         frame `f' {
@@ -352,6 +383,11 @@ program define Estimate, eclass
     ereturn scalar TCI     = `sc'[1,1]
     ereturn scalar cTCI    = `sc'[1,2]
     if "`approach'" == "joint" ereturn scalar cTCI = .
+    if "`model'" == "qvar" {
+        local tl : list uniq taus
+        if `: word count `tl'' == 1 ereturn scalar quantile = `tl'
+        ereturn local quantiles "`taus'"
+    }
     if "`model'" == "tvpvar" {
         ereturn scalar kappa1 = `kappa1'
         ereturn scalar kappa2 = `kappa2'
@@ -440,9 +476,12 @@ program define Display
         local suf _f`band'
     }
     local w = `digits' + 6
+    local mname "VAR"
+    if "`e(model)'" == "qvar" local mname "QVAR"
+    if "`e(model)'" == "lad"  local mname "LAD-VAR"
     if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
-    else if e(window) > 0      local mdesc "VAR(`e(lags)'), rolling window"
-    else                       local mdesc "VAR(`e(lags)'), static"
+    else if e(window) > 0      local mdesc "`mname'(`e(lags)'), rolling window"
+    else                       local mdesc "`mname'(`e(lags)'), static"
 
     di _n as txt "`e(title)'" _col(49) "Number of variables = " as res %8.0g e(k)
     di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Forecast horizon    = " as res %8.0g e(horizon)
@@ -455,8 +494,13 @@ program define Display
         di _col(49) as txt "kappa1, kappa2      = " as res %4.2f e(kappa1) as txt ", " as res %4.2f e(kappa2)
     }
     else if e(window) > 0 {
-        di as txt "Window: " as res e(window) as txt " observations"
+        di as txt "Window: " as res e(window) as txt " observations" _c
     }
+    if "`e(model)'" == "qvar" {
+        local qtxt = cond("`e(quantile)'" != "", strofreal(e(quantile)), "`e(quantiles)'")
+        di _col(49) as txt "Quantile (tau)      = " as res %8s "`qtxt'"
+    }
+    else if "`e(model)'" != "tvpvar" & e(window) > 0 di
     if "`approach'" == "frequency" {
         local bl "`e(bands)'"
         local bl : subinstr local bl " " ", ", all

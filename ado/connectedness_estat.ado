@@ -1,4 +1,4 @@
-*! version 0.3.0  20oct2026
+*! version 0.4.0  20oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
