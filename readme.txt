@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.7.2, 20 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.8.0, 23 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -31,6 +31,9 @@ Commands
                   external connectedness
   cngraph         graphs of TCI, TO, FROM, NET, NPT, NPDC, PCI, influence, group TCIs
   cnnetwork       network plots of pairwise connectedness
+  cnportfolio     portfolio weights, hedge ratios and hedging effectiveness (minimum
+                  connectedness, multivariate hedging, risk-parity, equally weighted
+                  and bivariate portfolios; hedge ratios)
 
 Data
   The datasets are those distributed with the ConnectednessApproach R package
@@ -49,4 +52,7 @@ Reproducing the checks
   the certification script then also compares with the R_* fixtures. The fixtures of
   the extensions (version 0.3.0 onwards) come from test/r/make_fixtures_ext.R; its
   DCC-GARCH cases (version 0.7.0) use the rugarch and rmgarch packages, which are
-  installed with ConnectednessApproach.
+  installed with ConnectednessApproach. The fixtures of cnportfolio (version 0.8.0)
+  come from test/r/make_fixtures_portfolio.R (test/r/run_r_portfolio.bat), which uses
+  the PerformanceAnalytics and riskParityPortfolio packages, also installed with
+  ConnectednessApproach.

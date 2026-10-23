@@ -652,6 +652,149 @@ cn_expect 503 connectedness `v', model(dccgarch) dccparams(__bad) `opt'
 matrix drop __bad
 cn_expect 111 connectedness `v', model(dccgarch) dccparams(__nosuch) `opt'
 
+di _n as txt "{hline 78}" _n "14. Portfolios and hedging: cnportfolio (0.8.0)" _n "{hline 78}"
+* R_pf_<case>.csv holds, per asset or ordered pair, the summary of the weights, hedge
+* weights or hedge ratios, the hedging effectiveness, the p-values of five variance
+* tests and the annualized return, risk and Sharpe ratio; _ret.csv and _w.csv hold the
+* portfolio returns and the weights per period (see test/r/make_fixtures_portfolio.R).
+capture mata: mata drop cn_pfdiff()
+mata:
+real scalar cn_pfdiff(string scalar resframe, string scalar fxframe, string scalar vars)
+{
+    string scalar  cur
+    real colvector per
+    real matrix    A, B
+
+    cur = st_framecurrent()
+    st_framecurrent(fxframe)
+    per = st_data(., "period")
+    A   = st_data(., (2..st_nvar()))
+    st_framecurrent(resframe)
+    B   = st_data(per, tokens(vars))
+    st_framecurrent(cur)
+    if (cols(A) != cols(B)) return(.)
+    return(mreldif(B, A))
+}
+end
+capture program drop cn_pfcase
+program define cn_pfcase
+    gettoken case 0 : 0
+    gettoken tol 0 : 0
+    local f "fixtures/R_pf_`case'"
+    capture confirm file "`f'.csv"
+    if _rc {
+        di as txt "  R_pf_`case': no fixture, skipped"
+        exit
+    }
+    quietly cnportfolio `0' saving(cn_pftest, replace) notable
+    tempname F T P
+    matrix `T' = r(table)
+    matrix `P' = r(pvalues)
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`f'.csv", clear varnames(1) asdouble
+        mkmat _all, matrix(`F')
+    }
+    tempname A B
+    matrix `A' = `T'[1..., 1..5]
+    matrix `B' = `F'[1..., 1..5]
+    local d1 = mreldif(`A', `B')
+    matrix `A' = `T'[1..., 7..9]
+    matrix `B' = `F'[1..., 11..13]
+    local d1 = max(`d1', mreldif(`A', `B'))
+    matrix `B' = `F'[1..., 6..10]
+    local d2 = mreldif(`P', `B')
+    local rets
+    local ws
+    frame cn_pftest {
+        foreach v of varlist _all {
+            if substr("`v'", 1, 3) == "ret" local rets `rets' `v'
+            if inlist(substr("`v'", 1, 2), "w_") | inlist(substr("`v'", 1, 3), "hr_") | substr("`v'", 1, 5) == "beta_" local ws `ws' `v'
+        }
+    }
+    frame __fx: quietly import delimited using "`f'_ret.csv", clear varnames(1) asdouble
+    mata: st_local("d3", strofreal(cn_pfdiff("cn_pftest", "__fx", "`rets'"), "%12.0g"))
+    frame __fx: quietly import delimited using "`f'_w.csv", clear varnames(1) asdouble
+    mata: st_local("d4", strofreal(cn_pfdiff("cn_pftest", "__fx", "`ws'"), "%12.0g"))
+    frame drop __fx
+    local d3 = max(`d3', `d4')
+    local ok = (`d1' < `tol') & (`d2' < `tol') & (`d3' < `tol')
+    global cn_tests = $cn_tests + 1
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-22s "R_pf_`case'" " table " as res %8.2e `d1' as txt " p " as res %8.2e `d2' ///
+        as txt " series " as res %8.2e `d3' as txt "  " cond(`ok', "pass", "FAIL")
+end
+
+* A. static VAR(1), g2020 (decimal returns, as in the R examples)
+use ../data/cn_g2020, clear
+tsset t
+foreach v in EUR GBP CHF JPY {
+    quietly generate double r_`v' = `v'/100
+}
+local r r_EUR r_GBP r_CHF r_JPY
+connectedness EUR GBP CHF JPY, lags(1) horizon(10) frame(cn_test) replace notable
+timer on 12
+cn_pfcase var_mcp_pci        1e-7 `r', method(mcp)
+timer off 12
+cn_pfcase var_mcp_cov_short  1e-7 `r', method(mcp) matrix(cov) nolong
+cn_pfcase var_mcp_cor        1e-7 `r', method(mcp) matrix(cor)
+cn_pfcase var_rpp_cov        1e-6 `r', method(rpp)
+cn_pfcase var_ewp            1e-7 `r', method(ewp)
+cn_pfcase var_bivariate_cov  1e-7 `r', method(bivariate)
+cn_pfcase var_hedge_cov      1e-7 `r', method(hedge) cumulative(prod)
+cn_pfcase var_mhp_cov        1e-7 `r', method(mhp)
+cn_expect 198 cnportfolio r_EUR r_GBP, method(mcp)
+cn_expect 198 cnportfolio `r', method(markowitz)
+cn_expect 198 cnportfolio `r', method(mcp) test(kruskal)
+cn_expect 498 cnportfolio `r', method(mcp) saving(cn_test)
+cn_expect 111 cnportfolio `r', method(mcp) frame(cn_nosuch)
+connectedness EUR GBP CHF JPY, lags(1) horizon(10) nocovariance frame(cn_test) replace notable
+cn_expect 498 cnportfolio `r', method(mhp)
+connectedness EUR GBP CHF JPY, approach(r2) lags(1) frame(cn_test) replace notable
+cn_expect 498 cnportfolio `r', method(rpp)
+
+* B. TVP-VAR(1), acg2020 (monthly): time-varying covariances and PCI
+use ../data/cn_acg2020, clear
+tsset month
+foreach v in EUR GBP JPY CHF {
+    quietly generate double r_`v' = `v'/100
+}
+local r r_EUR r_GBP r_JPY r_CHF
+connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) ///
+    frame(cn_test) replace notable
+cn_pfcase tvp_mcp_pci        1e-6 `r', method(mcp)
+cn_pfcase tvp_rpp_cov        1e-6 `r', method(rpp)
+cn_pfcase tvp_bivariate_cov  1e-6 `r', method(bivariate) cumulative(prod)
+cn_pfcase tvp_hedge_cov      1e-6 `r', method(hedge)
+cn_pfcase tvp_mhp_cov        1e-6 `r', method(mhp)
+
+* C. DCC-GARCH(1,1), g2020, with rmgarch's estimates: conditional covariances
+use ../data/cn_g2020, clear
+tsset t
+foreach v in EUR GBP CHF JPY {
+    quietly generate double r_`v' = `v'/100
+}
+local r r_EUR r_GBP r_CHF r_JPY
+capture confirm file "fixtures/R_pf_dcc_par.csv"
+if !_rc {
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "fixtures/R_pf_dcc_par.csv", clear varnames(1) asdouble
+        mkmat _all, matrix(__rpar)
+    }
+    frame drop __fx
+    connectedness EUR GBP CHF JPY, model(dccgarch) dccparams(__rpar) frame(cn_test) replace notable
+    matrix drop __rpar
+    cn_pfcase dcc_mhp_cov        1e-7 `r', method(mhp)
+    cn_pfcase dcc_bivariate_cov  1e-7 `r', method(bivariate)
+    cn_pfcase dcc_hedge_cov      1e-7 `r', method(hedge)
+    cn_pfcase dcc_mcp_cor        1e-7 `r', method(mcp) matrix(cor)
+}
+else di as txt "  R_pf_dcc: no fixture, skipped"
+capture frame drop cn_pftest
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -665,6 +808,7 @@ di as txt "Timing: R2 (Kendall), rolling, 2,571 windows:" as res %6.1f r(t8) as 
 di as txt "Timing: elastic net, 11 alphas, k = 4:     " as res %6.1f r(t9) as txt " s"
 di as txt "Timing: LASSO, k = 51, static:             " as res %6.1f r(t10) as txt " s"
 di as txt "Timing: DCC-GARCH case, k = 4, T = 4,200:  " as res %6.1f r(t11) as txt " s"
+di as txt "Timing: portfolio (MCP), T = 4,200:         " as res %6.1f r(t12) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

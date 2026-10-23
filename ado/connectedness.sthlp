@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.2  20oct2026}{...}
+{* *! version 0.8.0  23oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -68,6 +68,7 @@
 {synopt:{opt fr:ame(name)}}frame for the time-varying measures; default {cmd:cn_results}{p_end}
 {synopt:{opt replace}}replace an existing results frame{p_end}
 {synopt:{opt nofevd}}do not store the full FEVD for every period{p_end}
+{synopt:{opt nocov:ariance}}do not store the covariance matrix of every period{p_end}
 {synopt:{opt date:var(varname)}}copy a date variable into the results frame for graphs{p_end}
 
 {syntab:Reporting}
@@ -80,7 +81,8 @@ sample must be contiguous in time. {it:varlist} may contain time-series operator
 {p 4 6 2}
 See {helpb connectedness postestimation} for {cmd:estat table} and {cmd:estat group}
 (aggregated, conditional, inclusive, exclusive, internal and external connectedness),
-and {helpb cngraph} and {helpb cnnetwork} for graphs.{p_end}
+{helpb cngraph} and {helpb cnnetwork} for graphs, and {helpb cnportfolio} for
+portfolio weights, hedge ratios and hedging effectiveness.{p_end}
 
 
 {marker description}{...}
@@ -302,6 +304,15 @@ number of variables would exceed {help maxvar}. ({cmd:savefevd}, from version 0.
 is still accepted and has no effect.)
 
 {phang}
+{opt nocovariance} stops {cmd:connectedness} from storing the covariance matrix of
+every period, {cmd:cov_}{it:i}{cmd:_}{it:j} for {it:i} <= {it:j}, in the results
+frame: the residual covariance of the VAR, of each rolling window or of each TVP-VAR
+period, or the conditional covariance of the DCC-GARCH model. {helpb cnportfolio}
+uses these matrices. They are not stored with {cmd:approach(r2)} or
+{cmd:approach(modelfree)}, which estimate no covariance matrix, and they are left out
+with a note when they would exceed {help maxvar}.
+
+{phang}
 {opt datevar(varname)} copies a date variable into the results frame; {helpb cngraph}
 then uses it as the horizontal axis, and the header and {helpb cnnetwork} report dates.
 This is useful when the data are {cmd:tsset} by an observation index, as with daily
@@ -461,6 +472,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(TCI_f}{it:b}{cmd:)}, {cmd:e(cTCI_f}{it:b}{cmd:)}}TCI and corrected TCI of band {it:b} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(ll)}}log likelihood of the DCC-GARCH model ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(converged)}}1 if the optimizations converged, 0 otherwise ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(covariance)}}1 if the covariances are stored in the results frame, 0 otherwise{p_end}
 
 {p2col 5 18 22 2: Macros}{p_end}
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
@@ -509,7 +521,9 @@ and the variables {cmd:tci}, {cmd:ctci}, {cmd:to_}{it:i}, {cmd:from_}{it:i},
 variable {it:j}. {cmd:inf_}{it:i}{cmd:_}{it:j} is missing in periods where both
 pairwise shares are zero. Unless {opt nofevd} is specified, the frame also holds
 {cmd:fevd_}{it:i}{cmd:_}{it:j}, the share (percent) of variable {it:i}'s forecast
-error variance due to variable {it:j}. The frame's characteristics ({cmd:char list})
+error variance due to variable {it:j}. Unless {opt nocovariance} is specified, it
+holds {cmd:cov_}{it:i}{cmd:_}{it:j} ({it:i} <= {it:j}), the covariance matrix of the
+period (see {opt nocovariance}). The frame's characteristics ({cmd:char list})
 record the variable names and settings that {helpb cngraph}, {helpb cnnetwork} and
 {cmd:estat group} read.
 
@@ -750,4 +764,4 @@ is distributed under the same license.
 Article:  {it:Stata Journal}, volume ??, number ??: {browse "https://doi.org/":st0001}{p_end}
 
 {p 7 14 2}
-Help:  {helpb connectedness postestimation}, {helpb cngraph}, {helpb cnnetwork}, {manhelp var TS}{p_end}
+Help:  {helpb connectedness postestimation}, {helpb cngraph}, {helpb cnnetwork}, {helpb cnportfolio}, {manhelp var TS}{p_end}

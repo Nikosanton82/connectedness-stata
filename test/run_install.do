@@ -18,12 +18,13 @@ net set ado PLUS
 adopath ++ "`tmp'"
 which connectedness
 which cnnetwork
+which cnportfolio
 quietly cd "`tmp'/data"
 net get connectedness, from("`root'") replace
 dir cn_*.dta
 set graphics off
 local rc 0
-foreach f in 2009dy 2012dy 2018gg 2020acg 2021cg 2022adekoya 2022scg 2023cegg {
+foreach f in 2009dy 2012dy 2018gg 2020acg 2021cg 2022adekoya 2022scg 2023cegg 2024cgp {
     display as text _n "{hline 78}" _n "Replication `f'" _n "{hline 78}"
     capture noisily do "`root'/replication/cn_rep_`f'.do"
     if _rc {

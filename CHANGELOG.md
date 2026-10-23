@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.0 (2026-10-23)
+- New command `cnportfolio`: portfolio and hedging strategies from the matrices of
+  each period, as the portfolio functions of the R package. `method(mcp)` gives the
+  minimum connectedness portfolio (Broadstock, Chatziantoniou and Gabauer 2022),
+  `method(mhp)` the multivariate hedging portfolio (Cocca, Gabauer and Pomberger 2024),
+  `method(rpp)` the risk-parity portfolio, `method(ewp)` equal weights,
+  `method(bivariate)` the bivariate portfolio weights of Kroner and Ng (1998) and
+  `method(hedge)` the hedge ratios of Kroner and Sultan (1993). It reports the mean,
+  standard deviation and 5% and 95% quantiles of the weights or ratios, hedging
+  effectiveness, a test of equal variances (`test()`: F, Bartlett, Fligner-Killeen,
+  Levene or Brown-Forsythe; all five p-values in `r(pvalues)`) and the annualized
+  return, risk and Sharpe ratio, and saves the series in a frame. Options `matrix(pci|cov|cor)`,
+  `cumulative(sum|prod)`, `nolong`, `scale()` and `saving()`.
+- `connectedness` stores the covariance matrix of every period in the results frame,
+  `cov_i_j` (i <= j): the residual covariance of the VAR, of each rolling window or of
+  each TVP-VAR period, or the DCC-GARCH conditional covariance. New option
+  `nocovariance`; the covariances are left out, with a note, when they would exceed
+  maxvar, and are not stored with `approach(r2)` or `approach(modelfree)`.
+  `e(covariance)` records whether they were stored.
+- Differences from the R package, documented in `help cnportfolio`: each row's p-value
+  compares that row's asset and portfolio (R's `HedgeRatio()` keeps only the last
+  pair of each row); `test(bf)` is the Brown-Forsythe test of variances (R's
+  `VarianceTest()` uses that name for a test of means and calls the variance test
+  "Levene"), and `test(levene)` centers on the means; a pair whose mean bivariate
+  weight is exactly 0.5 stays in the table.
+- Validation: 17 R cases from `test/r/make_fixtures_portfolio.R` (ConnectednessApproach
+  1.0.4, PerformanceAnalytics 2.0.8, riskParityPortfolio 0.2.2): all six methods with
+  static VAR, TVP-VAR and DCC-GARCH matrices (PCI, covariance and correlation). The
+  tables, p-values and series agree with R to 3e-14, and the risk-parity weights to
+  6e-9, the precision of R's solver (`docs/r-fixtures-log-v0.8.0.txt`).
+  175 of 175 certification tests pass in Stata 19 (`docs/certification-log-v0.8.0.txt`).
+- Replication do-file `cn_rep_2024cgp.do` (Cocca, Gabauer and Pomberger 2024: multivariate
+  hedging, minimum connectedness, risk-parity and bivariate portfolios from a DCC-GARCH
+  model of clean energy markets).
+
 ## 0.7.2 (2026-10-20)
 - `cngraph` takes the look of `cnnetwork`: light background, muted axes and gridlines,
   horizontal axis labels and a fixed palette (dark blue, mustard, teal, rust, grey,

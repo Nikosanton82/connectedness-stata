@@ -1,0 +1,23 @@
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+PerformanceAnalytics version: 2.0.8  riskParityPortfolio version: 0.2.2 
+var_mcp_pci            rows=  4 periods= 4200  mean HE=0.452563  SR[1]=0.071430
+var_mcp_cov_short      rows=  4 periods= 4200  mean HE=0.470860  SR[1]=0.012381
+var_mcp_cor            rows=  4 periods= 4200  mean HE=0.458328  SR[1]=0.055321
+var_rpp_cov            rows=  4 periods= 4200  mean HE=0.421891  SR[1]=0.111988
+var_ewp                rows=  4 periods= 4200  mean HE=0.396490  SR[1]=0.128022
+var_bivariate_cov      rows= 12 periods= 4200  mean HE=0.274560  SR[1]=0.013192
+var_hedge_cov          rows= 12 periods= 4200  mean HE=0.256240  SR[1]=0.238970
+var_mhp_cov            rows= 12 periods= 4200  mean HE=0.477508  SR[1]=0.003051
+acg2020 TVP-VAR periods: 521  returns: 521 
+tvp_mcp_pci            rows=  4 periods=  521  mean HE=0.351985  SR[1]=-0.152503
+tvp_rpp_cov            rows=  4 periods=  521  mean HE=0.343049  SR[1]=-0.124726
+tvp_bivariate_cov      rows= 12 periods=  521  mean HE=0.269607  SR[1]=0.089371
+tvp_hedge_cov          rows= 12 periods=  521  mean HE=0.434386  SR[1]=-0.170921
+tvp_mhp_cov            rows= 12 periods=  521  mean HE=0.673857  SR[1]=0.473039
+dcc_mhp_cov            rows= 12 periods= 4200  mean HE=0.512240  SR[1]=-0.093985
+dcc_bivariate_cov      rows= 12 periods= 4200  mean HE=0.305049  SR[1]=0.058312
+dcc_hedge_cov          rows= 12 periods= 4200  mean HE=0.293385  SR[1]=0.178861
+dcc_mcp_cor            rows=  4 periods= 4200  mean HE=0.444593  SR[1]=0.053254
+rugarch version: 1.5.3  rmgarch version: 1.3.9 

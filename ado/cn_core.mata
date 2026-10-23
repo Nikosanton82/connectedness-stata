@@ -1,4 +1,4 @@
-*! version 0.7.2  20oct2026
+*! version 0.8.0  23oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -1467,11 +1467,11 @@ real matrix cn_vfevd(real matrix Ht, real matrix Qbar, real colvector al,
 // Returns the FEVD shares in F (T x k*k), the GARCH parameters in G (k x 4) and
 // D = (a, b, log likelihood, converged).
 void cn_dccgarch(real matrix x, real scalar nf, real scalar stdz, string scalar fixname,
-                 real matrix F, real matrix G, real rowvector D)
+                 real matrix F, real matrix G, real rowvector D, real matrix Ht)
 {
     real scalar    T, k, i, t, a, b, conv, c, ll
     real rowvector pv, ab
-    real matrix    S, Z, Qbar, Rt, Ht
+    real matrix    S, Z, Qbar, Rt
     real colvector r, h
 
     T    = rows(x)
@@ -1551,7 +1551,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              real rowvector enalpha, real scalar nfolds, string scalar enloss,
              string scalar foldmode, real scalar stdz, string scalar dccfix)
 {
-    external real matrix   cn__M, cn__CT
+    external real matrix   cn__M, cn__CT, cn__Q
     external real colvector cn__tv, cn__dv
     external string rowvector cn__mn, cn__ml, cn__fn, cn__fl
     struct cn_prior scalar pr
@@ -1560,7 +1560,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     real colvector tv
     real rowvector ma, m, cv, sc
     string rowvector nm, bl, fn, fl, mn0, ml0, cs
-    real matrix    Z, Cc, Cl, Ft, G
+    real matrix    Z, Cc, Cl, Ft, G, Ht
     real scalar    wr
     real rowvector D
 
@@ -1588,7 +1588,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         nT = rows(Z) - wr + 1
     }
     else if (model=="dccgarch") {
-        cn_dccgarch(x, H, stdz, dccfix, Ft, G, D)
+        cn_dccgarch(x, H, stdz, dccfix, Ft, G, D, Ht)
         st_matrix(tabname + "_g", G)
         st_matrix(tabname + "_d", D)
         nT = T
@@ -1650,6 +1650,14 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
             cn__fl = cn__fl, fl :+ (" [" + bl[b] + "]")
         }
     }
+
+    // covariance matrices of the measured periods (upper triangle by rows): the
+    // residual covariance of each VAR window or TVP-VAR period, or the DCC-GARCH
+    // conditional covariance; none for the R2 and model-free approaches
+    if (approach=="r2" | approach=="modelfree") cn__Q = J(nT, 0, .)
+    else if (model=="dccgarch")                 cn__Q = cn_vechu(Ht, k)
+    else                                        cn__Q = cn_vechu(Qt, k)
+    if (rows(cn__Q) != nT & cols(cn__Q) > 0) cn__Q = cn__Q[|rows(cn__Q)-nT+1, 1 \ rows(cn__Q), cols(cn__Q)|]
 
     cn__CT = J(nT, kk*(nb+1), .)
     cn__M  = J(nT, cols(cn__mn), .)
@@ -1759,11 +1767,40 @@ void cn_posttable(string scalar tabname, real matrix avg, real scalar corrected,
     st_matrixcolstripe(tabname, (J(k+1, 1, ""), (nm, "FROM")'))
 }
 
+// Upper triangles (by rows, diagonal included) of the k x k matrices held as the
+// rows of Q (each row = a matrix stored by rows)
+real matrix cn_vechu(real matrix Q, real scalar k)
+{
+    real scalar    i, j, c
+    real rowvector idx
+
+    idx = J(1, k*(k+1)/2, .)
+    c   = 0
+    for (i=1; i<=k; i++) {
+        for (j=i; j<=k; j++) idx[++c] = (i-1)*k + j
+    }
+    return(Q[., idx])
+}
+
+// Names and labels of the stored covariances
+string rowvector cn_covnames(real scalar k)
+{
+    real scalar      i, j
+    string rowvector nm
+
+    nm = J(1, 0, "")
+    for (i=1; i<=k; i++) {
+        for (j=i; j<=k; j++) nm = nm, "cov_" + strofreal(i) + "_" + strofreal(j)
+    }
+    return(nm)
+}
+
 // Write the per-period results into the current (results) frame
 void cn_postframe(string scalar tvar, string scalar tfmt, real scalar savefevd,
-                  string scalar dvar, string scalar dfmt)
+                  string scalar dvar, string scalar dfmt, real scalar savecov,
+                  string scalar names, string scalar covlab)
 {
-    external real matrix    cn__M, cn__CT
+    external real matrix    cn__M, cn__CT, cn__Q
     external real colvector cn__tv, cn__dv
     external string rowvector cn__mn, cn__ml, cn__fn, cn__fl
     real scalar      i
@@ -1785,6 +1822,31 @@ void cn_postframe(string scalar tvar, string scalar tfmt, real scalar savefevd,
         idx = st_addvar("double", cn__fn)
         st_store(., idx, cn__CT)
         for (i=1; i<=cols(cn__fn); i++) st_varlabel(cn__fn[i], substr(cn__fl[i], 1, 80))
+    }
+    if (savecov & cols(cn__Q) > 0) {
+        cn_postcov(names, covlab)
+    }
+}
+
+void cn_postcov(string scalar names, string scalar covlab)
+{
+    external real matrix cn__Q
+    real scalar      k, i, j, c
+    real rowvector   idx
+    string rowvector nm, cn
+
+    nm  = tokens(names)
+    k   = cols(nm)
+    cn  = cn_covnames(k)
+    idx = st_addvar("double", cn)
+    st_store(., idx, cn__Q)
+    c = 0
+    for (i=1; i<=k; i++) {
+        for (j=i; j<=k; j++) {
+            c++
+            if (i == j) st_varlabel(cn[c], substr(covlab + " variance of " + nm[i], 1, 80))
+            else        st_varlabel(cn[c], substr(covlab + " covariance of " + nm[i] + " and " + nm[j], 1, 80))
+        }
     }
 }
 
@@ -2096,6 +2158,383 @@ void cn_netplot(string scalar method, real scalar k, real scalar r,
     st_matrix(curvename, C)
     st_matrix(arrowname, A)
     st_matrix(circname, D)
+}
+
+
+// =============================================================================
+// Portfolios and hedging (cnportfolio), as the portfolio functions of the R package:
+// MinimumConnectednessPortfolio, MultivariateHedgingPortfolio, RiskParityPortfolio,
+// EquallyWeightedPortfolio, BivariatePortfolio and HedgeRatio
+// =============================================================================
+
+// Quantile as R's quantile(type = 7)
+real scalar cn_q7(real colvector v, real scalar p)
+{
+    real colvector s
+    real scalar    n, h, lo, hi
+
+    s  = sort(v, 1)
+    n  = rows(s)
+    if (n == 1) return(s[1])
+    h  = (n - 1)*p + 1
+    lo = floor(h)
+    hi = ceil(h)
+    return(s[lo] + (h - lo)*(s[hi] - s[lo]))
+}
+
+// Mean, standard deviation, 5% and 95% quantiles of a weight series
+real rowvector cn_wsum(real colvector w)
+{
+    real scalar sd
+
+    sd = (rows(w) > 1 ? sqrt(variance(w)) : .)
+    return((mean(w), sd, cn_q7(w, 0.05), cn_q7(w, 0.95)))
+}
+
+// Annualized geometric return, annualized standard deviation and Sharpe ratio (risk-
+// free rate 0), as PerformanceAnalytics' Return.annualized(), StdDev.annualized() and
+// SharpeRatio(FUN = "StdDev", annualize = TRUE)
+real rowvector cn_sharpe(real colvector r, real scalar scale)
+{
+    real scalar n, ra, sd
+
+    n = rows(r)
+    // prod(1 + r)^(scale/n) - 1, computed in logs; missing when the product is negative
+    if (min(1 :+ r) > 0) ra = exp(scale/n * sum(ln(1 :+ r))) - 1
+    else if (min(abs(1 :+ r)) == 0) ra = -1
+    else if (mod(sum((1 :+ r) :< 0), 2)) ra = .
+    else ra = exp(scale/n * sum(ln(abs(1 :+ r)))) - 1
+    sd = sqrt(variance(r))*sqrt(scale)
+    return((ra, sd, ra/sd))
+}
+
+// p-value of a test of equal variances of a and b: "fisher" (F test, as var.test),
+// "bartlett", "fk" (Fligner-Killeen, as fligner.test), "levene" (absolute deviations
+// from the group means) or "bf" (Brown-Forsythe: deviations from the group medians, as
+// car::leveneTest)
+real scalar cn_vtest(real colvector a, real colvector b, string scalar method)
+{
+    real scalar    na, nb, N, f, sp, st, c, za, zb, z0
+    real colvector x, av, aa, ab, da, db
+
+    na = rows(a)
+    nb = rows(b)
+    N  = na + nb
+    if (method == "fisher") {
+        f = variance(a)/variance(b)
+        return(2*min((F(na-1, nb-1, f), Ftail(na-1, nb-1, f))))
+    }
+    if (method == "bartlett") {
+        sp = ((na-1)*variance(a) + (nb-1)*variance(b))/(N - 2)
+        st = (N - 2)*ln(sp) - (na-1)*ln(variance(a)) - (nb-1)*ln(variance(b))
+        c  = 1 + (1/3)*(1/(na-1) + 1/(nb-1) - 1/(N-2))
+        return(chi2tail(1, st/c))
+    }
+    if (method == "fk") {
+        x  = (a :- cn_q7(a, 0.5)) \ (b :- cn_q7(b, 0.5))
+        av = invnormal((1 :+ cn_rank(abs(x)) :/ (N + 1)) :/ 2)
+        aa = av[|1 \ na|]
+        ab = av[|na+1 \ N|]
+        st = (sum(aa)^2/na + sum(ab)^2/nb - N*mean(av)^2)/variance(av)
+        return(chi2tail(1, st))
+    }
+    if (method == "levene" | method == "bf") {
+        if (method == "levene") {
+            da = abs(a :- mean(a))
+            db = abs(b :- mean(b))
+        }
+        else {
+            da = abs(a :- cn_q7(a, 0.5))
+            db = abs(b :- cn_q7(b, 0.5))
+        }
+        za = mean(da)
+        zb = mean(db)
+        z0 = mean(da \ db)
+        st = (na*(za - z0)^2 + nb*(zb - z0)^2) / ((sum((da :- za):^2) + sum((db :- zb):^2))/(N - 2))
+        return(Ftail(1, N - 2, st))
+    }
+    return(.)
+}
+
+// p-values of all five tests (fisher, bartlett, fk, levene, bf)
+real rowvector cn_vtests(real colvector a, real colvector b)
+{
+    return((cn_vtest(a, b, "fisher"), cn_vtest(a, b, "bartlett"), cn_vtest(a, b, "fk"),
+            cn_vtest(a, b, "levene"), cn_vtest(a, b, "bf")))
+}
+
+// Long-only vanilla risk-parity weights (equal risk contributions) of a positive
+// definite matrix: Newton's method on Spinu's convex formulation, which has a unique
+// solution, as riskParityPortfolio() without further constraints
+real colvector cn_rpp(real matrix S)
+{
+    real scalar    k, it, j, c, step, fx, fn
+    real colvector b, x, g, d, xn
+    real matrix    Hs
+
+    k = rows(S)
+    b = J(k, 1, 1/k)
+    x = b :/ sqrt(diagonal(S))
+    // a few cyclical coordinate sweeps (closed form per coordinate) to get close
+    for (it=1; it<=50; it++) {
+        for (j=1; j<=k; j++) {
+            c    = S[j, .]*x - S[j, j]*x[j]
+            x[j] = (-c + sqrt(c^2 + 4*S[j, j]*b[j]))/(2*S[j, j])
+        }
+    }
+    // Newton steps with backtracking on f(x) = x'Sx/2 - b'ln(x)
+    for (it=1; it<=100; it++) {
+        g  = S*x - b:/x
+        if (max(abs(g)) < 1e-15*max((1, max(abs(S*x))))) break
+        Hs = S + diag(b:/(x:^2))
+        d  = cholsolve(Hs, g)
+        if (hasmissing(d)) d = lusolve(Hs, g)
+        fx   = 0.5*x'*S*x - b'*ln(x)
+        step = 1
+        while (step > 1e-12) {
+            xn = x - step*d
+            if (min(xn) > 0) {
+                fn = 0.5*xn'*S*xn - b'*ln(xn)
+                if (fn <= fx) break
+            }
+            step = step/2
+        }
+        if (step <= 1e-12) break
+        x = xn
+    }
+    return(x/sum(x))
+}
+
+// Cumulative returns: "sum" (cumulative sum) or "prod" (compounded, minus 1)
+real colvector cn_cumret(real colvector r, string scalar cum)
+{
+    if (cum == "prod") return(exp(runningsum(ln(1 :+ r))) :- 1)
+    return(runningsum(r))
+}
+
+// Portfolio and hedging computations.
+// X: returns (n x k); Hs: matrices (n x k*k, each row a matrix by rows); results:
+// table (rows = assets or pairs; Mean, Std.Dev., 5%, 95% of the weights or ratios, HE,
+// p-value, Return, Risk, SR) in tabname with row labels in local rowlab, and the series
+// of weights and portfolio returns in the matrices W and P (+ names in locals)
+void cn_portfolio(string scalar method, real matrix X, real matrix Hs, real scalar islong,
+                  real scalar vtest, string scalar cum, real scalar scale,
+                  string rowvector nm, string scalar tabname, real matrix W, real matrix P,
+                  string rowvector wn, string rowvector pn, string rowvector rl)
+{
+    external string rowvector cn__PWl, cn__PPl
+    real scalar    n, k, t, i, j, l, c, np
+    real matrix    H, Hc, tab, B
+    real colvector one, v, w, pr
+    real rowvector sh, pv
+    real matrix    PV
+
+    cn__PWl = J(1, 0, "")
+    cn__PPl = J(1, 0, "")
+    n   = rows(X)
+    k   = cols(X)
+    one = J(k, 1, 1)
+    rl  = J(1, 0, "")
+    wn  = J(1, 0, "")
+    pn  = J(1, 0, "")
+
+    if (method == "mcp" | method == "rpp" | method == "ewp") {
+        W = J(n, k, .)
+        for (t=1; t<=n; t++) {
+            if (method == "ewp") {
+                w = J(k, 1, 1/k)
+            }
+            else {
+                H = rowshape(Hs[t, .], k)
+                if (method == "mcp") {
+                    Hc = pinv(H)
+                    w  = (Hc*one) / (one'*Hc*one)
+                    if (islong) {
+                        w = rowmin((rowmax((w, J(k, 1, 0))), J(k, 1, 1)))
+                        w = w/sum(w)
+                    }
+                }
+                else w = cn_rpp(H)
+            }
+            W[t, .] = w'
+        }
+        pr  = rowsum(X :* W)
+        sh  = cn_sharpe(pr, scale)
+        tab = J(k, 9, .)
+        PV  = J(k, 5, .)
+        for (i=1; i<=k; i++) {
+            PV[i, .]  = cn_vtests(X[., i], pr)
+            tab[i, .] = (cn_wsum(W[., i]), 1 - variance(pr)/variance(X[., i]),
+                         PV[i, vtest], sh)
+        }
+        P  = pr, cn_cumret(pr, cum)
+        rl = nm
+        for (i=1; i<=k; i++) {
+            wn      = wn, "w_" + strofreal(i)
+            cn__PWl = cn__PWl, "Portfolio weight of " + nm[i]
+        }
+        pn      = ("ret", "cumret")
+        cn__PPl = ("Portfolio return", "Cumulative portfolio return")
+    }
+    else if (method == "mhp") {
+        // hedged portfolio of asset i: x_i - sum_j beta_ij x_j, with beta_i the
+        // regression coefficients of i on the other assets implied by H
+        B = J(n, k*k, 0)
+        for (t=1; t<=n; t++) {
+            H = rowshape(Hs[t, .], k)
+            for (j=1; j<=k; j++) {
+                v = select((1::k), (1::k) :!= j)
+                w = lusolve(H[v, v], H[v, j])
+                for (l=1; l<=k-1; l++) B[t, (j-1)*k + v[l]] = w[l]
+            }
+        }
+        tab = J(k*(k-1), 9, .)
+        PV  = J(k*(k-1), 5, .)
+        P   = J(n, 2*k, .)
+        W   = J(n, k*(k-1), .)
+        c   = 0
+        for (i=1; i<=k; i++) {
+            pr = X[., i] - rowsum(X :* B[|1, (i-1)*k+1 \ n, i*k|])
+            sh = cn_sharpe(pr, scale)
+            pv = cn_vtests(X[., i], pr)
+            for (j=1; j<=k; j++) {
+                if (j == i) continue
+                c++
+                W[., c]   = B[., (i-1)*k + j]
+                PV[c, .]  = pv
+                tab[c, .] = (cn_wsum(W[., c]), 1 - variance(pr)/variance(X[., i]),
+                             pv[vtest], sh)
+                rl = rl, nm[i] + "/" + nm[j]
+                wn = wn, "beta_" + strofreal(i) + "_" + strofreal(j)
+                cn__PWl = cn__PWl, "Hedge weight of " + nm[j] + " for " + nm[i]
+            }
+            P[., 2*i-1] = pr
+            P[., 2*i]   = cn_cumret(pr, cum)
+            pn = pn, "ret_" + strofreal(i), "cumret_" + strofreal(i)
+            cn__PPl = cn__PPl, "Return of hedged " + nm[i], "Cumulative return of hedged " + nm[i]
+        }
+    }
+    else if (method == "bivariate" | method == "hedge") {
+        np  = k*(k-1)
+        tab = J(np, 9, .)
+        PV  = J(np, 5, .)
+        W   = J(n, np, .)
+        P   = J(n, 2*np, .)
+        c   = 0
+        for (i=1; i<=k; i++) {
+            for (j=1; j<=k; j++) {
+                if (j == i) continue
+                c++
+                w = J(n, 1, .)
+                for (t=1; t<=n; t++) {
+                    H = rowshape(Hs[t, .], k)
+                    if (method == "hedge") w[t] = H[i, j]/H[j, j]
+                    else {
+                        // Kroner and Ng (1998): weight of asset i in the i-j portfolio
+                        w[t] = (H[j, j] - H[i, j])/(H[i, i] - 2*H[i, j] + H[j, j])
+                        if (w[t] >= .) w[t] = 0.5
+                        if (islong) w[t] = min((max((w[t], 0)), 1))
+                    }
+                }
+                if (method == "hedge") pr = X[., i] - w :* X[., j]
+                else                   pr = w :* X[., i] + (1 :- w) :* X[., j]
+                W[., c]   = w
+                P[., 2*c-1] = pr
+                P[., 2*c]   = cn_cumret(pr, cum)
+                PV[c, .]  = cn_vtests(X[., i], pr)
+                tab[c, .] = (cn_wsum(w), 1 - variance(pr)/variance(X[., i]),
+                             PV[c, vtest], cn_sharpe(pr, scale))
+                rl = rl, nm[i] + "/" + nm[j]
+                wn = wn, (method == "hedge" ? "hr_" : "w_") + strofreal(i) + "_" + strofreal(j)
+                pn = pn, "ret_" + strofreal(i) + "_" + strofreal(j), "cumret_" + strofreal(i) + "_" + strofreal(j)
+                if (method == "hedge") {
+                    cn__PWl = cn__PWl, "Hedge ratio: long " + nm[i] + ", short " + nm[j]
+                    cn__PPl = (cn__PPl, "Return of " + nm[i] + " hedged with " + nm[j],
+                               "Cumulative return of " + nm[i] + " hedged with " + nm[j])
+                }
+                else {
+                    cn__PWl = cn__PWl, "Weight of " + nm[i] + " in the " + nm[i] + "/" + nm[j] + " portfolio"
+                    cn__PPl = (cn__PPl, "Return of the " + nm[i] + "/" + nm[j] + " portfolio",
+                               "Cumulative return of the " + nm[i] + "/" + nm[j] + " portfolio")
+                }
+            }
+        }
+    }
+    st_matrix(tabname, tab)
+    st_matrix(tabname + "_p", PV)
+}
+
+// Driver called by cnportfolio.ado: reads the aligned returns and matrices from the
+// current frame, computes, posts the table and leaves the series in externals
+void cn_pfmain(string scalar method, string scalar retvars, string scalar hvars,
+               string scalar hkind, real scalar islong, string scalar vtest,
+               string scalar cum, real scalar scale, string scalar names,
+               string scalar tabname)
+{
+    external real matrix      cn__PW, cn__PP
+    external string rowvector cn__PWn, cn__PPn, cn__PRl
+    real matrix    X, Hs, S, D
+    real scalar    k, t, vt
+    string rowvector nm
+
+    X  = st_data(., tokens(retvars))
+    k  = cols(X)
+    nm = tokens(names)
+    if (method == "ewp") Hs = J(rows(X), k*k, 0)
+    else {
+        Hs = cn_unvechu(st_data(., tokens(hvars)), k, hkind)
+        if (hkind == "cor") {
+            for (t=1; t<=rows(Hs); t++) {
+                S = rowshape(Hs[t, .], k)
+                D = diag(1:/sqrt(diagonal(S)))
+                Hs[t, .] = rowshape(D*S*D, 1)
+            }
+        }
+    }
+    vt = selectindex(("fisher", "bartlett", "fk", "levene", "bf") :== vtest)
+    cn_portfolio(method, X, Hs, islong, vt, cum, scale, nm, tabname,
+                 cn__PW, cn__PP, cn__PWn, cn__PPn, cn__PRl)
+    st_local("rowlab", invtokens(cn__PRl))
+}
+
+// Full k x k matrices (by rows) from stored upper triangles: kind "cov"/"cor" reads
+// cov_i_j (i <= j); kind "pci" reads pci_i_j (i < j), with a diagonal of 100
+real matrix cn_unvechu(real matrix V, real scalar k, string scalar kind)
+{
+    real scalar t, i, j, c
+    real matrix Hs, H
+
+    Hs = J(rows(V), k*k, .)
+    for (t=1; t<=rows(V); t++) {
+        H = J(k, k, .)
+        c = 0
+        for (i=1; i<=k; i++) {
+            if (kind == "pci") H[i, i] = 100
+            for (j=(kind == "pci" ? i+1 : i); j<=k; j++) {
+                c++
+                H[i, j] = V[t, c]
+                H[j, i] = V[t, c]
+            }
+        }
+        Hs[t, .] = rowshape(H, 1)
+    }
+    return(Hs)
+}
+
+// Add the series to the current frame (which already holds the time variable)
+void cn_pfpost()
+{
+    external real matrix      cn__PW, cn__PP
+    external string rowvector cn__PWn, cn__PPn, cn__PWl, cn__PPl
+    real rowvector   idx
+    real scalar      i
+
+    idx = st_addvar("double", cn__PWn)
+    st_store(., idx, cn__PW)
+    idx = st_addvar("double", cn__PPn)
+    st_store(., idx, cn__PP)
+    for (i=1; i<=cols(cn__PWn); i++) st_varlabel(cn__PWn[i], substr(cn__PWl[i], 1, 80))
+    for (i=1; i<=cols(cn__PPn); i++) st_varlabel(cn__PPn[i], substr(cn__PPl[i], 1, 80))
 }
 
 end

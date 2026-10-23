@@ -8,23 +8,27 @@ d indices, frequency connectedness (Barunik and Krehlik 2018), joint and extende
 d joint connectedness, R2 decomposed and model-free connectedness, DCC-GARCH
 d volatility connectedness (Gabauer 2020), asymmetric
 d (positive and negative) connectedness, group measures
-d (aggregated, conditional, inclusive, exclusive, internal, external) and network plots. Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
+d (aggregated, conditional, inclusive, exclusive, internal, external), network plots,
+d and portfolio and hedging strategies (minimum connectedness, multivariate hedging,
+d risk-parity, bivariate portfolios, hedge ratios). Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
 d Includes 18 datasets from published applications.
 d
 d Requires: Stata 16.1 or newer
 d Author: Nikolaos Antonakakis, University of Nicosia
 d Support: antonakakis.n@unic.ac.cy
-d Distribution-Date: 20261020
+d Distribution-Date: 20261023
 d License: GPL-3
 f ado/connectedness.ado
 f ado/connectedness_estat.ado
 f ado/cngraph.ado
 f ado/cnnetwork.ado
+f ado/cnportfolio.ado
 f ado/cn_core.mata
 f ado/connectedness.sthlp
 f ado/connectedness_postestimation.sthlp
 f ado/cngraph.sthlp
 f ado/cnnetwork.sthlp
+f ado/cnportfolio.sthlp
 f data/cn_aaacgo2022.dta
 f data/cn_acg2020.dta
 f data/cn_bcg2022.dta

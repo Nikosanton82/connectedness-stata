@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.7.2  20oct2026}{...}
+{* *! version 0.8.0  23oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
@@ -189,4 +189,4 @@ is distributed under the same license.
 Article:  {it:Stata Journal}, volume ??, number ??: {browse "https://doi.org/":st0001}{p_end}
 
 {p 7 14 2}
-Help:  {helpb connectedness}, {helpb cngraph}, {helpb cnnetwork}{p_end}
+Help:  {helpb connectedness}, {helpb cngraph}, {helpb cnnetwork}, {helpb cnportfolio}{p_end}

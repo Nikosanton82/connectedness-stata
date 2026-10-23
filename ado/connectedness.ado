@@ -1,4 +1,4 @@
-*! version 0.7.2  20oct2026
+*! version 0.8.0  23oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -23,7 +23,7 @@ program define Estimate, eclass
         QUANTile(numlist >0 <1) CORMethod(string)                 ///
         ALPha(numlist max=1 >=0 <=1) NALPha(integer 10) NFOLDs(integer 10) ///
         LOSS(string) FOLDs(string) SEED(string)                   ///
-        STANDardize DCCParams(name) ]
+        STANDardize DCCParams(name) noCOVariance ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -400,10 +400,19 @@ program define Estimate, eclass
     local np = `k'*(`k'-1)/2
     local nvars = cond("`approach'" == "joint", 1 + 3*`k', 2 + 4*`k' + 3*`np')
     if "`fevd'" == "" local nvars = `nvars' + `k'*`k'
+    local savecov = ("`covariance'" == "" & !inlist("`approach'", "r2", "modelfree"))
     local nvars = (`nvars')*(`ncomp' + 1) + 2
+    if `savecov' {
+        // the covariances are left out, with a note, when they would not fit
+        if `nvars' + `k'*(`k'+1)/2 > c(maxvar) - 10 {
+            local savecov 0
+            local covnote 1
+        }
+        else local nvars = `nvars' + `k'*(`k'+1)/2
+    }
     if `nvars' > c(maxvar) - 10 {
         di as err "the results frame would need `nvars' variables, more than maxvar (" c(maxvar) ") allows;"
-        di as err "specify {cmd:nofevd}, reduce the number of variables or frequency bands, or {help set maxvar}"
+        di as err "specify {cmd:nofevd} or {cmd:nocovariance}, reduce the number of variables or frequency bands, or {help set maxvar}"
         exit 900
     }
 
@@ -488,7 +497,9 @@ program define Estimate, eclass
         capture frame drop `f'
         frame create `f'
         frame `f' {
-            mata: cn_postframe("`timevar'", "`tfmt'", `savef', "`datevar'", "`dfmt'")
+            local covlab = cond("`model'" == "dccgarch", "Conditional", "Residual")
+            mata: cn_postframe("`timevar'", "`tfmt'", `savef', "`datevar'", "`dfmt'", ///
+                `savecov', "`names'", "`covlab'")
             quietly tsset `timevar', delta(`delta')
             label data "connectedness results (`part')"
             char _dta[cn_kind]      "main"
@@ -503,6 +514,8 @@ program define Estimate, eclass
             char _dta[cn_nbands]    "`nbands'"
             char _dta[cn_bands]     "`blabels'"
             char _dta[cn_comps]     "`csufs'"
+            char _dta[cn_model]     "`model'"
+            char _dta[cn_cov]       "`savecov'"
         }
     }
     local sc `sc1'
@@ -620,6 +633,7 @@ program define Estimate, eclass
     }
     ereturn local approach "`approach'"
     ereturn local model    "`model'"
+    ereturn scalar covariance = `savecov'
     ereturn local title    "Connectedness approach"
     ereturn local estat_cmd "connectedness_estat"
     ereturn local cmd      "connectedness"
@@ -628,6 +642,10 @@ program define Estimate, eclass
     if `dcc' & e(converged) == 0 {
         di as txt "{p 0 6 2}note: the maximum likelihood optimization did not report convergence; " ///
             "check the estimates in {cmd:e(garch)} and {cmd:e(dcc)}{p_end}"
+    }
+    if "`covnote'" != "" {
+        di as txt "{p 0 6 2}note: the covariances were not stored in the results frame, " ///
+            "because they would exceed {help maxvar}; {cmd:cnportfolio} can still use the PCI{p_end}"
     }
 end
 
