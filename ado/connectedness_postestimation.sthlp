@@ -1,9 +1,10 @@
 {smcl}
-{* *! version 0.8.2  24oct2026}{...}
+{* *! version 0.9.1  24oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
 {viewerjumpto "estat correlation" "connectedness_postestimation##correlation"}{...}
+{viewerjumpto "estat bootstrap" "connectedness_postestimation##bootstrap"}{...}
 {viewerjumpto "Examples" "connectedness_postestimation##examples"}{...}
 {viewerjumpto "Stored results" "connectedness_postestimation##results"}{...}
 {viewerjumpto "References" "connectedness_postestimation##references"}{...}
@@ -26,6 +27,8 @@ The following postestimation commands are available after {helpb connectedness}:
 {synopt:{cmd:estat group}}group measures: aggregated, conditional, inclusive, exclusive,
 internal and external connectedness{p_end}
 {synopt:{cmd:estat correlation}}conditional or partial correlations of each period{p_end}
+{synopt:{cmd:estat bootstrap}}bootstrap standard errors and bands, event probabilities and
+detection of significant rises (VAR models){p_end}
 {synopt:{helpb cngraph}}graph the time-varying measures{p_end}
 {synopt:{helpb cnnetwork}}network plot of pairwise connectedness{p_end}
 {synopt:{helpb estimates}}cataloging estimation results{p_end}
@@ -137,6 +140,85 @@ covariances are available. {opt digits(#)} sets the number of decimals, default
 {cmd:digits(3)}, and {opt notable} suppresses the table.
 
 
+{marker bootstrap}{...}
+{title:Syntax for estat bootstrap}
+
+{p 8 16 2}
+{cmd:estat} {cmdab:boot:strap} [{cmd:,} {it:options}]
+
+{synoptset 22}{...}
+{p2coldent:{it:options}}Description{p_end}
+{synoptline}
+{synopt:{opt r:eps(#)}}draws per round; default {cmd:reps(1000)}{p_end}
+{synopt:{opt nobias}}one round of draws, without bias correction{p_end}
+{synopt:{opt l:evel(#)}}level of the percentile intervals; default {cmd:level(95)}{p_end}
+{synopt:{opt seed(#)}}random-number seed{p_end}
+{synopt:{opt even:t(dates)}}event dates, for example {cmd:event(17oct1997 11sep2001)}, or values of the time variable{p_end}
+{synopt:{opt lead:s(numlist)}}leads after the event window; default {cmd:leads(0 1 5 22)}{p_end}
+{synopt:{opt ref:erence(#)}}compare with the mean of the {it:#} windows before the event; default 1{p_end}
+{synopt:{opt thr:eshold(#)}}probability of a change of at least {it:#} percent{p_end}
+{synopt:{opt dec:rease}}probability of a fall instead of a rise{p_end}
+{synopt:{opt det:ect(#)}}probability, for every window, of a rise of at least {it:#} percent from the previous window{p_end}
+{synopt:{opt cut:off(#)}}probability marked as significant; default {cmd:cutoff(90)}{p_end}
+{synopt:{opt every(#)}}bootstrap every {it:#}th window for the bands; default 1{p_end}
+{synopt:{opt all}}bands for TO, FROM and NET as well as the TCI{p_end}
+{synopt:{opt fr:ame(name)}}frame for the bands; default {cmd:cn_boot}{p_end}
+{synopt:{opt replace}}replace an existing frame{p_end}
+{synopt:{opt nodots}}suppress the progress dots{p_end}
+{synopt:{opt dig:its(#)}}decimals in the static table; default {cmd:digits(2)}{p_end}
+{synoptline}
+
+{pstd}
+{cmd:estat bootstrap} gives bootstrap inference for the connectedness measures of a
+VAR, as Greenwood-Nimmo, Kočenda and Nguyen (2024) propose. It requires results of
+{cmd:connectedness} with {cmd:model(var)} and {cmd:approach(time)}, static or
+rolling, with the generalized or orthogonalized decomposition, {opt normalize()} or
+{opt clusters()}, and the estimation data in memory. Quantile, LAD, penalized,
+TVP-VAR and DCC-GARCH models are not covered.
+
+{pstd}
+For each window, the VAR is estimated by OLS with an intercept and new samples are
+generated recursively from it: the first {it:p} observations of the window are kept
+and the residuals, recentred, are drawn with replacement. Each sample is
+re-estimated and its connectedness computed; draws whose VAR has a companion root of
+modulus one or more are discarded and redrawn. A window whose own VAR is not stable
+uses the estimates of the most recent window with a stable VAR, as the authors do,
+keeping its own initial values; the estimate then reported is that window's. A first round of {opt reps()} draws
+estimates the bias of each measure, the mean draw minus the estimate, which
+Greenwood-Nimmo, Kočenda and Nguyen find to be positive in every window; a second
+round of {opt reps()} draws minus the bias gives the corrected draws, which centre on
+the estimate. The command reports the estimate, the bias, the bias-corrected
+estimate (estimate minus bias), the standard error of the corrected draws and their
+percentile interval recentred on the bias-corrected estimate. Static results give a
+table for TCI, TO, FROM and NET; rolling results give a frame with, for every
+bootstrapped window, {cmd:tci}, {cmd:tci_bias}, {cmd:tci_bc}, {cmd:tci_se},
+{cmd:tci_lo} and {cmd:tci_hi} (and the same for {cmd:to_}{it:i}, {cmd:from_}{it:i}
+and {cmd:net_}{it:i} with {opt all}), {cmd:ndiscard}, the number of unstable
+draws, and {cmd:stable}, 0 for windows that use the estimates of an earlier window. A full rolling bootstrap refits the VAR 2 x {opt reps()} times per window;
+{opt every()} bootstraps fewer windows.
+
+{pstd}
+{opt event()} computes, for each event, the probability (percent) that the TCI of
+the window ending on the event date, and of the windows {opt leads()} later, exceeds
+its level just before the event: the share of corrected draws above the mean
+corrected draw of the window before the event (Greenwood-Nimmo, Kočenda and Nguyen
+2024, eq. 5), or of the {opt reference()} windows before it. With
+{opt threshold(#)}, the probability is that of a rise of at least {it:#} percent
+(eq. 9); {opt decrease} gives the probability of a fall. Dates are read with the date
+variable of the results (or the time variable if it holds daily dates); a date
+without a window, such as a weekend, is moved to the next window (Greenwood-Nimmo,
+Kočenda and Nguyen date a weekend event by the previous trading day, which can be
+given instead). Only the windows needed are
+bootstrapped. Probabilities of at least {opt cutoff()} percent, 90 in the paper, are
+marked.
+
+{pstd}
+{opt detect(#)} bootstraps every window and stores in the frame {cmd:prob}, the
+probability of a rise of at least {it:#} percent from the previous window (of any
+rise with {cmd:detect(0)}), and {cmd:flag}, equal to 1 when it reaches
+{opt cutoff()}, to locate changes at unknown dates.
+
+
 {marker examples}{...}
 {title:Examples}
 
@@ -163,6 +245,14 @@ covariances are available. {opt digits(#)} sets the number of decimals, default
 {phang2}{cmd:. estat correlation}{p_end}
 {phang2}{cmd:. frame cn_corr: tsline cor_1_2, title("EUR and GBP, DCC-GARCH conditional correlation")}{p_end}
 {phang2}{cmd:. estat correlation, partial frame(cn_pcorr) replace}{p_end}
+
+{pstd}Greenwood-Nimmo, Kočenda and Nguyen (2024): bootstrap event probabilities{p_end}
+{phang2}{cmd:. use cn_gkn2024, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness US-TUR, lags(2) horizon(10) window(202) datevar(date) replace}{p_end}
+{phang2}{cmd:. estat bootstrap, event(17oct1997 11sep2001 09aug2007) leads(0 1 5 22) seed(1357)}{p_end}
+{phang2}{cmd:. estat bootstrap, reps(200) every(20) seed(1357)}{p_end}
+{phang2}{cmd:. frame cn_boot: twoway rarea tci_lo tci_hi date || line tci_bc date}{p_end}
 
 
 {marker results}{...}
@@ -203,6 +293,30 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 {p2col 5 16 20 2: Matrices}{p_end}
 {synopt:{cmd:r(mean)}}average correlation matrix, k x k{p_end}
 
+{pstd}
+{cmd:estat bootstrap} stores the following in {cmd:r()}:
+
+{synoptset 16 tabbed}{...}
+{p2col 5 16 20 2: Scalars}{p_end}
+{synopt:{cmd:r(reps)}}draws per round{p_end}
+{synopt:{cmd:r(level)}}level of the intervals{p_end}
+{synopt:{cmd:r(nwindows)}}number of windows bootstrapped{p_end}
+{synopt:{cmd:r(ndiscard)}}number of unstable draws discarded{p_end}
+{synopt:{cmd:r(ncarried)}}windows with an unstable VAR that use the estimates of an earlier window{p_end}
+{synopt:{cmd:r(reference)}}{opt reference()} ({opt event()}){p_end}
+{synopt:{cmd:r(threshold)}}{opt threshold()} ({opt event()}){p_end}
+{synopt:{cmd:r(nflag)}}windows flagged ({opt detect()}){p_end}
+
+{p2col 5 16 20 2: Macros}{p_end}
+{synopt:{cmd:r(bias)}}{cmd:corrected} or {cmd:none}{p_end}
+{synopt:{cmd:r(events)}}event dates ({opt event()}){p_end}
+{synopt:{cmd:r(leads)}}leads ({opt event()}){p_end}
+{synopt:{cmd:r(frame)}}frame holding the bands{p_end}
+
+{p2col 5 16 20 2: Matrices}{p_end}
+{synopt:{cmd:r(table)}}estimate, bias, bias-corrected estimate, standard error and interval of TCI, TO, FROM and NET (static results){p_end}
+{synopt:{cmd:r(prob)}}event probabilities (percent), events x leads ({opt event()}){p_end}
+
 
 {marker references}{...}
 {title:References}
@@ -220,6 +334,11 @@ of volatility transmission mechanisms. {it:Journal of Forecasting} 39: 788-796.
 Gabauer, D., and R. Gupta. 2018. On the transmission mechanism of country-specific and
 international economic uncertainty spillovers: Evidence from a TVP-VAR connectedness
 decomposition approach. {it:Economics Letters} 171: 63-71.
+
+{phang}
+Greenwood-Nimmo, M., E. Kočenda, and V. H. Nguyen. 2024. Detecting statistically
+significant changes in connectedness: A bootstrap-based technique.
+{it:Economic Modelling} 140: 106843.
 
 {phang}
 Stenfors, A., I. Chatziantoniou, and D. Gabauer. 2022. Independent policy, dependent

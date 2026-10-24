@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.9.0, 24 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.9.1, 24 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -15,7 +15,7 @@ Installation
 
 Contents
   ado/            commands, help files and the Mata engine (cn_core.mata)
-  data/           18 datasets from published applications (cn_*.dta); after installing,
+  data/           19 datasets from published applications (cn_*.dta); after installing,
                   type  net get connectedness  to copy them to the current directory
   replication/    do-files reproducing the replication pages of the R package
   test/           certification suite (run_all.do), reference fixtures and the
@@ -33,6 +33,7 @@ Commands
   estat group     aggregated, conditional, inclusive, exclusive, internal and
                   external connectedness
   estat correlation  conditional or partial correlations of each period
+  estat bootstrap    bootstrap bands, event probabilities and detection of changes
   cngraph         graphs of TCI, TO, FROM, NET, NPT, NPDC, PCI, influence, group TCIs
   cnnetwork       network plots of pairwise connectedness
   cnportfolio     portfolio weights, hedge ratios and hedging effectiveness (minimum
@@ -44,7 +45,10 @@ Data
   (D. Gabauer, version 1.0.4, CRAN, GPL-3) and are redistributed under the same
   license. Each file records its source paper in its data label. Variables whose
   R names were not valid Stata names were renamed (for example US.FPU -> US_FPU);
-  the original names are kept as variable labels.
+  the original names are kept as variable labels. cn_gkn2024.dta holds the daily
+  volatilities of Diebold and Yilmaz (2009) from the replication files of
+  Greenwood-Nimmo, Kocenda and Nguyen (2024), Mendeley Data, doi:10.17632/cvp7v9nxkf.1,
+  CC BY 4.0.
 
 Reproducing the checks
   In Stata:  cd "<this folder>/test"
@@ -64,4 +68,6 @@ Reproducing the checks
   (test/r/run_r_dccr2.bat), and those of the normalizations and adaptive elastic nets
   (version 0.8.2) from test/r/make_fixtures_082.R (test/r/run_r_082.bat). Clustered
   connectedness (version 0.9.0) is checked against an independent R implementation in
-  test/r/make_fixtures_090.R (test/r/run_r_090.bat).
+  test/r/make_fixtures_090.R (test/r/run_r_090.bat), and estat bootstrap (version 0.9.1)
+  against one in test/r/make_fixtures_091.R (test/r/run_r_091.bat), which shares its
+  resampled rows with Stata.

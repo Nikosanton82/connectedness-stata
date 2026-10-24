@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.9.1 (2026-10-24)
+- New `estat bootstrap`: bootstrap inference for VAR connectedness (Greenwood-Nimmo,
+  Kocenda and Nguyen 2024), after `connectedness` with `model(var)`, static or rolling,
+  generalized or orthogonalized, also with `normalize()` and `clusters()`. Each
+  window's VAR is resampled with the recursive design (residuals drawn with
+  replacement, unstable draws discarded and redrawn); a first round of `reps()` draws
+  estimates the bias, and a second round minus the bias gives the corrected draws.
+  Reported: estimate, bias, bias-corrected estimate, standard error and percentile
+  interval, as a table (static) or in a frame for every window (`every()`, `all`).
+- Event tests: `event(dates)` gives the probability that the TCI after each event, at
+  `leads()` (default 0 1 5 22), exceeds its level before the event (`reference()`),
+  or rises by at least `threshold()` percent, or falls (`decrease`); only the windows
+  needed are bootstrapped. `detect(#)` gives, for every window, the probability of a
+  rise of at least # percent from the previous one and flags those reaching
+  `cutoff()` (90 by default, as in the paper).
+- New dataset `cn_gkn2024.dta`: the daily volatilities of 19 equity markets used by
+  Greenwood-Nimmo, Kocenda and Nguyen (2024), from their replication files (CC BY 4.0).
+- Validation: `test/r/make_fixtures_091.R` implements the bootstrap independently in R
+  and writes the resampled rows it uses, which Stata reads through a test-only option,
+  so that the static tables, rolling bands, event probabilities and detection
+  probabilities can be compared exactly. Stata agrees with R to 7e-14 for all of them.
+  On the authors' data, the probabilities for the paper's 20 events (5 leads, both
+  identifications, seed 1357) are within 5 percentage points of Table 3 for 96 of 100
+  (mean difference 1.5 generalized, 1.3 orthogonalized), with the same 90 percent
+  verdict for 99 and 100 of 100; the certification checks four of these events (largest
+  difference 3.9, mean 0.8). A simulated break in connectedness, generated as in the
+  paper, is detected with probability 97.6 on impact, permanent or temporary. 256 of
+  256 certification tests pass in Stata 19 (`docs/certification-log-v0.9.1.txt`).
+- Replication do-file `cn_rep_2024gkn.do` (Table 3 of the paper, generalized and
+  orthogonalized FEVD, 20 events).
+
 ## 0.9.0 (2026-10-24)
 - Clustered network connectedness (Buchwalter, Diebold and Yilmaz 2025): option
   `clusters()` groups the variables, for example by region, as in `estat group`.

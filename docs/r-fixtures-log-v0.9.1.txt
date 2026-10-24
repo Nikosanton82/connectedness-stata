@@ -1,0 +1,6 @@
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+static_gen   TCI 6.707930 bias 0.992311 corrected 5.715619 [4.3052, 8.0389] discarded 0
+static_orth  TCI 4.243256 bias 0.847695 corrected 3.395560 [2.0557, 4.8620] discarded 0
+roll         windows 31, mean TCI 10.863523, mean bias 3.564611; event: 44 68 52

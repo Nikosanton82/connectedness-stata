@@ -11,10 +11,11 @@ d extended joint connectedness, R2 decomposed and model-free connectedness, DCC-
 d volatility connectedness (Gabauer 2020) and its R2 decomposition, asymmetric
 d (positive and negative) connectedness and the spillover asymmetry measure, group
 d measures (aggregated, conditional, inclusive, exclusive, internal, external),
-d network plots, and portfolio and hedging strategies (minimum connectedness,
-d multivariate hedging, risk-parity, bivariate portfolios, hedge ratios). Port of the
-d ConnectednessApproach R package by David Gabauer (GPL-3).
-d Includes 18 datasets from published applications.
+d bootstrap inference and event tests, network plots, and portfolio and hedging
+d strategies (minimum connectedness, multivariate hedging, risk-parity, bivariate
+d portfolios, hedge ratios). Port of the ConnectednessApproach R package by David
+d Gabauer (GPL-3).
+d Includes 19 datasets from published applications.
 d
 d Requires: Stata 16.1 or newer
 d Author: Nikolaos Antonakakis, University of Nicosia
@@ -48,5 +49,6 @@ f data/cn_g2020.dta
 f data/cn_gcat2022.dta
 f data/cn_gg2018.dta
 f data/cn_gghm2022.dta
+f data/cn_gkn2024.dta
 f data/cn_jcggh2022.dta
 f data/cn_lw2021.dta

@@ -19,8 +19,9 @@ connectedness (Cocca, Gabauer and Pomberger 2024) and conditional and partial
 correlations (`estat correlation`), and since version 0.8.2 scalar normalizations
 (Caloia, Cipollini and Muzzioli 2019), adaptive LASSO, ridge and elastic-net VARs and
 the spillover asymmetry measure of good and bad volatility (Baruník, Kočenda and Vácha
-2016), and since version 0.9.0 clustered network connectedness (Buchwalter, Diebold and
-Yilmaz 2025).
+2016), since version 0.9.0 clustered network connectedness (Buchwalter, Diebold and
+Yilmaz 2025), and since version 0.9.1 bootstrap inference and event tests
+(Greenwood-Nimmo, Kočenda and Nguyen 2024).
 
 The numerical routines port the [ConnectednessApproach](https://gabauerdavid.github.io/ConnectednessApproach/)
 R package by David Gabauer (GPL-3) and reproduce its results to numerical precision;
@@ -47,7 +48,7 @@ connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96
 cnportfolio r_EUR r_GBP r_JPY r_CHF, method(mcp)
 ```
 
-Status: development (version 0.9.0). The Stata Journal article describes version 0.2.1:
+Status: development (version 0.9.1). The Stata Journal article describes version 0.2.1:
 static and rolling VAR, TVP-VAR, corrected TCI, PCI, influence, and the aggregated,
 conditional and decomposed group measures. Version 0.3.0 adds frequency, joint and
 extended joint connectedness, version 0.4.0 quantile and LAD VARs, and version 0.5.0
@@ -55,7 +56,8 @@ R2 decomposed and model-free connectedness, version 0.6.0 LASSO, ridge and
 elastic-net VARs, version 0.7.0 DCC-GARCH volatility connectedness, version 0.8.0
 portfolio and hedging strategies (`cnportfolio`), version 0.8.1 DCC-GARCH R2
 decomposed connectedness and `estat correlation`, and version 0.8.2 scalar
-normalizations, adaptive elastic nets and the spillover asymmetry measure, and
-version 0.9.0 clustered network connectedness.
+normalizations, adaptive elastic nets and the spillover asymmetry measure, version
+0.9.0 clustered network connectedness, and version 0.9.1 bootstrap inference
+(`estat bootstrap`).
 
 Requires Stata 16.1 or newer. License: GPL-3.

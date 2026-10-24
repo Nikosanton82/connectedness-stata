@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.0  24oct2026}{...}
+{* *! version 0.9.1  24oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -85,8 +85,9 @@
 You must {helpb tsset} your data before using {cmd:connectedness}; the estimation
 sample must be contiguous in time. {it:varlist} may contain time-series operators.{p_end}
 {p 4 6 2}
-See {helpb connectedness postestimation} for {cmd:estat table} and {cmd:estat group}
+See {helpb connectedness postestimation} for {cmd:estat table}, {cmd:estat group}
 (aggregated, conditional, inclusive, exclusive, internal and external connectedness),
+{cmd:estat correlation} and {cmd:estat bootstrap} (bootstrap bands and event tests),
 {helpb cngraph} and {helpb cnnetwork} for graphs, and {helpb cnportfolio} for
 portfolio weights, hedge ratios and hedging effectiveness.{p_end}
 
@@ -431,7 +432,7 @@ the same parameters ({opt dccparams()}) the results agree to numerical precision
 Stata's estimates attain a likelihood at least as high as R's.
 
 {pstd}
-Data from 18 published applications are installed with the package as
+Data from 19 published applications are installed with the package as
 {cmd:cn_}{it:name}{cmd:.dta}, for example {cmd:cn_dy2012.dta} and
 {cmd:cn_acg2020.dta}. They are ancillary files: type {cmd:net get connectedness} to copy
 them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset}-ready through the observation index

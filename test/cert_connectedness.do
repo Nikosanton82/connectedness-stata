@@ -1186,6 +1186,137 @@ capture frame cn_test_neg: confirm variable cl_contag_2 cl_2_1
 cn_assert "clusters with asymmetric" `=_rc' 0.5
 cn_expect 198 connectedness EUR GBP CHF JPY, model(dccgarch) clusters("a: EUR GBP") `opt'
 
+di _n as txt "{hline 78}" _n "18. Bootstrap inference and event tests (0.9.1)" _n "{hline 78}"
+* Greenwood-Nimmo, Kocenda and Nguyen (2024). Exact checks against the independent R
+* implementation in test/r/make_fixtures_091.R, which writes the resampled rows it uses
+* (R_boot_idx_*.csv) so that Stata can use the same ones (option testindices());
+* statistical checks against the probabilities published by the authors; and their
+* simulation with a break.
+capture program drop cn_loadidx
+program define cn_loadidx
+    args file name
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`file'", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`name')
+    }
+    frame drop __fx
+end
+capture program drop cn_loadfx
+program define cn_loadfx
+    args file name
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`file'", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`name')
+    }
+    frame drop __fx
+end
+
+capture confirm file "fixtures/R_boot_idx_static.csv"
+if !_rc {
+    use ../data/cn_dy2012, clear
+    tsset t
+    local v SP500 R_10Y DJUBSCOM USDX
+    tempname IDX RT A
+    cn_loadidx "fixtures/R_boot_idx_static.csv" `IDX'
+    connectedness `v' in 1/800, lags(2) horizon(10) `opt'
+    timer on 16
+    quietly estat bootstrap, reps(40) level(90) testindices(`IDX') nodots
+    timer off 16
+    matrix `A' = r(table)
+    cn_loadfx "fixtures/R_boot_static_gen.csv" `RT'
+    cn_assert "R_boot static, generalized" `=mreldif(`A', `RT')' 1e-8
+    connectedness `v' in 1/800, lags(2) horizon(10) orthogonalized `opt'
+    quietly estat bootstrap, reps(30) testindices(`IDX') nodots
+    matrix `A' = r(table)
+    cn_loadfx "fixtures/R_boot_static_orth.csv" `RT'
+    cn_assert "R_boot static, orthogonalized" `=mreldif(`A', `RT')' 1e-8
+
+    cn_loadidx "fixtures/R_boot_idx_roll.csv" `IDX'
+    connectedness `v' in 1/230, lags(2) horizon(10) window(202) `opt'
+    quietly estat bootstrap, reps(25) testindices(`IDX') detect(0) frame(cn_btest) replace nodots
+    capture frame drop __fx
+    frame create __fx
+    frame __fx: quietly import delimited using "fixtures/R_boot_roll_ts.csv", clear varnames(1) asdouble
+    mata: st_local("d2", strofreal(cn_tsdiff("cn_btest", "__fx"), "%12.0g"))
+    frame drop __fx
+    cn_assert "R_boot rolling bands and detect" `d2' 1e-8
+    cn_loadfx "fixtures/R_boot_roll_event.csv" `RT'
+    tempname E1 E2 R1 R2
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) nodots
+    matrix `E1' = r(prob)
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) reference(3) ///
+        threshold(2) decrease nodots
+    matrix `E2' = r(prob)
+    matrix `R1' = `RT'[1, 1...]
+    matrix `R2' = `RT'[2, 1...]
+    cn_assert "R_boot event probabilities" `=max(mreldif(`E1', `R1'), mreldif(`E2', `R2'))' 1e-8
+    * a fixed seed reproduces the draws
+    quietly estat bootstrap, reps(20) seed(11) nodots frame(cn_btest) replace every(10)
+    frame cn_btest: summarize tci_lo, meanonly
+    local s1 = r(mean)
+    quietly estat bootstrap, reps(20) seed(11) nodots frame(cn_btest) replace every(10)
+    frame cn_btest: summarize tci_lo, meanonly
+    cn_assert "seed() reproduces the bootstrap" `=abs(r(mean) - `s1')' 1e-15
+    cn_expect 198 estat bootstrap, reps(1)
+    cn_expect 198 estat bootstrap, leads(0 1)
+    cn_expect 198 estat bootstrap, detect(5) every(2)
+    cn_expect 198 estat bootstrap, event(01jan2050)
+    connectedness `v' in 1/800, lags(2) `opt'
+    cn_expect 198 estat bootstrap, event(10mar1999)
+    connectedness `v' in 1/300, model(tvpvar) `opt'
+    cn_expect 198 estat bootstrap, reps(10)
+    connectedness `v' in 1/300, lags(1) approach(frequency) `opt'
+    cn_expect 198 estat bootstrap, reps(10)
+    capture frame drop cn_btest
+}
+else di as txt "  R_boot: no fixture, skipped"
+
+* the authors' daily data: probabilities published for four events (generalized
+* FEVD, VAR(2), horizon 10, 200-day windows, 1,000 draws per round); bootstrap
+* probabilities differ by Monte Carlo error only
+use ../data/cn_gkn2024, clear
+tsset t
+connectedness US-TUR, lags(2) horizon(10) window(202) datevar(date) `opt'
+timer on 17
+quietly estat bootstrap, event(17oct1997 23jan2001 11sep2001 09aug2007) leads(0 1 5 10 22) ///
+    seed(1357) nodots
+timer off 17
+tempname G P
+matrix `G' = r(prob)
+matrix `P' = (97.1, 84.9, 100, 100, 100 \ 100, 0.1, 0.1, 0.7, 0.6 \ ///
+    99.2, 100, 100, 100, 100 \ 48.3, 57.3, 47.7, 100, 100)
+local dmax 0
+local dsum 0
+forvalues i = 1/4 {
+    forvalues j = 1/5 {
+        local d = abs(`G'[`i', `j'] - `P'[`i', `j'])
+        local dmax = max(`dmax', `d')
+        local dsum = `dsum' + `d'
+    }
+}
+di as txt "  published event probabilities: largest difference " %4.1f `dmax' ///
+    ", mean " %4.2f `dsum'/20 " percentage points"
+cn_assert "published probabilities (max |diff| < 8)" `dmax' 8
+cn_assert "published probabilities (mean |diff| < 3)" `=`dsum'/20' 3
+
+* the authors' simulation (19 variables, VAR(1), break at observation 301): the
+* rise is detected on impact with the permanent and the temporary shift
+foreach s in perm temp {
+    capture frame drop __sim
+    import delimited using "fixtures/gkn_simul_`s'.csv", clear varnames(1) asdouble
+    tsset t
+    connectedness y1-y19, lags(1) horizon(10) window(201) `opt'
+    quietly estat bootstrap, event(301) leads(0) reps(500) seed(2468) nodots
+    tempname S
+    matrix `S' = r(prob)
+    di as txt "  simulation (`s' shift): probability on impact " %5.1f `S'[1, 1]
+    cn_assert "simulated break detected (`s')" `=cond(`S'[1, 1] >= 90, 0, 1)' 0.5
+}
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -1203,6 +1334,8 @@ di as txt "Timing: portfolio (MCP), T = 4,200:         " as res %6.1f r(t12) as 
 di as txt "Timing: DCC-GARCH R2, k = 4, T = 4,200:     " as res %6.1f r(t13) as txt " s"
 di as txt "Timing: adaptive LASSO, k = 4, 2 lags:      " as res %6.1f r(t14) as txt " s"
 di as txt "Timing: clusters, k = 18, 720 orderings:   " as res %6.1f r(t15) as txt " s"
+di as txt "Timing: bootstrap, static, 80 draws:        " as res %6.1f r(t16) as txt " s"
+di as txt "Timing: bootstrap, 4 events, k = 19:        " as res %6.1f r(t17) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

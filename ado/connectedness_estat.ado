@@ -1,4 +1,4 @@
-*! version 0.8.2  24oct2026
+*! version 0.9.1  24oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -13,6 +13,9 @@ program define connectedness_estat
     }
     else if `lsub' >= 4 & "`sub'" == substr("correlation", 1, `lsub') {
         Correlation `rest'
+    }
+    else if `lsub' >= 4 & "`sub'" == substr("bootstrap", 1, `lsub') {
+        Bootstrap `rest'
     }
     else {
         estat_default `0'
@@ -316,4 +319,354 @@ program define Correlation, rclass
     return local type = cond(`ispart', "partial", "conditional")
     return local frame "`frame'"
     return matrix mean = `tab'
+end
+
+// Bootstrap inference (Greenwood-Nimmo, Kocenda and Nguyen 2024): residual bootstrap
+// of the VAR of each window with bias correction; bands, event probabilities and
+// detection of significant rises
+program define Bootstrap, rclass
+    syntax [, Reps(integer 1000) noBIAS Level(cilevel) SEED(string) FRame(name) REPLACE ///
+        EVERY(integer 1) ALL EVENt(string) LEADs(numlist integer >=0) REFerence(integer 1) ///
+        THReshold(real 0) DECrease DETect(real -1) CUToff(real 90) noDOTs ///
+        DIGits(integer 2) TESTINDices(name) ]
+
+    if "`e(model)'" != "var" | !inlist("`e(approach)'", "", "time") {
+        di as err "estat bootstrap requires results of {cmd:connectedness} with model(var) and approach(time)"
+        exit 198
+    }
+    if `reps' < 2 {
+        di as err "reps() must be at least 2"
+        exit 198
+    }
+    if `every' < 1 {
+        di as err "every() must be a positive integer"
+        exit 198
+    }
+    if `reference' < 1 {
+        di as err "reference() must be a positive integer"
+        exit 198
+    }
+    if `threshold' < 0 {
+        di as err "threshold() must not be negative"
+        exit 198
+    }
+    if `cutoff' <= 0 | `cutoff' >= 100 {
+        di as err "cutoff() must be between 0 and 100"
+        exit 198
+    }
+    if `digits' < 0 | `digits' > 8 {
+        di as err "digits() must be between 0 and 8"
+        exit 198
+    }
+    local static = (e(window) == 0)
+    local isev = (`"`event'"' != "")
+    local isdet = (`detect' >= 0)
+    if `isev' & `static' {
+        di as err "event() requires rolling-window results"
+        exit 198
+    }
+    if `isdet' & (`static' | `every' != 1 | `isev') {
+        di as err "detect() requires rolling-window results, every(1) and no event()"
+        exit 198
+    }
+    if !`isev' & ("`leads'" != "" | `reference' != 1 | `threshold' != 0 | "`decrease'" != "") {
+        di as err "options leads(), reference(), threshold() and decrease require event()"
+        exit 198
+    }
+    if "`leads'" == "" local leads 0 1 5 22
+
+    // data of the estimation, as in connectedness
+    quietly count if e(sample)
+    if r(N) != e(N) {
+        di as err "the estimation sample is not in memory; restore the data used by {cmd:connectedness}"
+        exit 498
+    }
+    tsrevar `e(depvar)'
+    local vars `r(varlist)'
+    tempvar touse
+    quietly generate byte `touse' = e(sample)
+    local p   = e(lags)
+    local H   = e(horizon)
+    local w   = e(window)
+    local T0  = e(T0)
+    local k   = e(k)
+    local names `e(names)'
+
+    // decomposition: generalized (1), its scalar normalizations (2-4), clustered
+    // (5), orthogonalized (0)
+    local gen = ("`e(fevdtype)'" != "orthogonalized")
+    if "`e(normalize)'" == "maxrow" local gen 2
+    if "`e(normalize)'" == "maxcol" local gen 3
+    if "`e(normalize)'" == "spectral" local gen 4
+    if "`e(clusters)'" != "" {
+        local gen 5
+        tempname cid
+        matrix `cid' = e(cl_id)
+        mata: cn__clid = st_matrix("`cid'")'
+        if "`e(clorder)'" == "average" mata: cn__clperm = cn_perms(`=e(nclusters)')
+        else mata: cn__clperm = (1..`=e(nclusters)')
+    }
+    capture mata: mata describe cn_bootstrap()
+    if _rc {
+        quietly findfile cn_core.mata
+        quietly do `"`r(fn)'"'
+    }
+
+    // windows of the results frame and their dates
+    local fr `e(frame)'
+    local tv `e(timevar)'
+    local dv `e(datevar)'
+    mata: st_local("fexist", strofreal(st_frameexists("`fr'")))
+    if !`fexist' {
+        di as err "results frame {bf:`fr'} not found; rerun {cmd:connectedness}"
+        exit 111
+    }
+    frame `fr' {
+        local tfmt : format `tv'
+        mata: cn__btv = st_data(., "`tv'")
+        if "`dv'" != "" {
+            local dfmt : format `dv'
+            mata: cn__bdv = st_data(., "`dv'")
+        }
+        else mata: cn__bdv = cn__btv
+    }
+    if "`dv'" == "" local dfmt `tfmt'
+
+    // events: dates (read with the date variable, or the time variable if it holds
+    // daily dates) or values of the time variable
+    local evlab
+    if `isev' {
+        local nev 0
+        mata: cn__bev = J(0, 1, .)
+        foreach tok of local event {
+            local ++nev
+            local val = real("`tok'")
+            local mv cn__btv
+            if missing(`val') {
+                local val = date("`tok'", "DMY")
+                if missing(`val') {
+                    di as err "event(): `tok' is neither a number nor a date such as 17oct1997"
+                    exit 198
+                }
+                if substr("`dfmt'", 1, 3) != "%td" {
+                    di as err "event(): dates require a daily date variable; give values of `tv' instead"
+                    exit 198
+                }
+                local mv cn__bdv
+            }
+            mata: st_local("re", strofreal(min(selectindex(`mv' :>= `val'))))
+            if "`re'" == "." | "`re'" == "" {
+                di as err "event(): `tok' is after the last window"
+                exit 198
+            }
+            if `re' <= `reference' {
+                di as err "event(): `tok' leaves fewer than `reference' earlier window(s)"
+                exit 198
+            }
+            mata: cn__bev = cn__bev \ `re'
+            local evlab `evlab' `tok'
+        }
+        // windows needed: the reference windows and the leads of each event
+        mata: cn__bw = J(0, 1, .)
+        mata: cn__bl = strtoreal(tokens("`leads'"))
+        mata: for (cn__i=1; cn__i<=rows(cn__bev); cn__i++) cn__bw = cn__bw \ ((cn__bev[cn__i] - `reference')::(cn__bev[cn__i] - 1)) \ (cn__bev[cn__i] :+ cn__bl')
+        mata: cn__bw = uniqrows(select(cn__bw, cn__bw :<= `T0'))
+    }
+    else if `static' {
+        mata: cn__bw = 1
+    }
+    else {
+        mata: cn__bw = uniqrows(((1::`T0')[selectindex(mod((1::`T0') :- 1, `every') :== 0)]) \ `T0')
+    }
+    mata: st_local("nw", strofreal(rows(cn__bw)))
+
+    if "`seed'" != "" set seed `seed'
+    if "`testindices'" != "" {
+        confirm matrix `testindices'
+        mata: cn__bidx = st_matrix("`testindices'")
+    }
+    local dobias = ("`bias'" == "")
+    local doall  = ("`all'" != "" | `static')
+    di as txt _n "Bootstrap of `nw' window(s), `reps' draws" ///
+        cond(`dobias', " per round, two rounds (bias correction)", ", no bias correction") ///
+        cond("`dots'" == "", ":", "")
+    capture noisily mata: cn_bootstrap("`vars'", "`touse'", `p', `H', `w', `gen', `reps', ///
+        `dobias', `doall', cn__bw, `level', ("`dots'" == ""))
+    local rc = _rc
+    capture mata: mata drop cn__bidx
+    if `gen' == 5 capture mata: mata drop cn__clid cn__clperm
+    if `rc' exit `rc'
+    mata: st_local("ndisc", strofreal(sum(cn__BN)))
+    mata: st_local("ncarry", strofreal(sum(cn__BST :== 0)))
+    mata: st_local("nfail", strofreal(missing(cn__BST)))
+
+    // ------------------------------------------------------------ event test
+    if `isev' {
+        local nl : word count `leads'
+        tempname P
+        mata: cn__bpos = J(`T0', 1, 0); cn__bpos[cn__bw] = (1::rows(cn__bw))
+        mata: st_matrix("`P'", cn_bootprob(cn__bev, cn__bl, `reference', `threshold', ("`decrease'" != ""), cn__bpos))
+        local cn
+        foreach l of local leads {
+            local cn `cn' lead`l'
+        }
+        matrix colnames `P' = `cn'
+        local rn
+        forvalues e = 1/`nev' {
+            local rn `rn' event`e'
+        }
+        matrix rownames `P' = `rn'
+        local cmp = cond("`decrease'" != "", "below", "above")
+        local reft = cond(`reference' == 1, "the window before the event", ///
+            "the mean of the `reference' windows before the event")
+        local thrt = cond(`threshold' > 0, " by at least `threshold' percent", "")
+        di _n as txt "Probability (percent) that the bias-corrected TCI is `cmp' its level in"
+        di as txt "`reft'`thrt', by lead (windows after the event window)"
+        di as txt "{hline 26}{c TT}{hline `=10*`nl''}"
+        di as txt %-12s "Event" %14s "Window" "{c |}" _c
+        foreach l of local leads {
+            di as txt %10s "`l'" _c
+        }
+        di _n as txt "{hline 26}{c +}{hline `=10*`nl''}"
+        forvalues e = 1/`nev' {
+            local tok : word `e' of `evlab'
+            mata: st_local("re", strofreal(cn__bev[`e']))
+            mata: st_local("wd", strofreal(cn__bdv[`re']))
+            local wds : display `dfmt' `wd'
+            di as txt %-12s "`tok'" %14s "`=strtrim("`wds'")'" "{c |}" _c
+            forvalues j = 1/`nl' {
+                local v = `P'[`e', `j']
+                local star = cond(`v' >= `cutoff' & `v' < ., "*", " ")
+                if `v' < . di as res %9.1f `v' "`star'" _c
+                else di as txt %10s "." _c
+            }
+            di
+        }
+        di as txt "{hline 26}{c BT}{hline `=10*`nl''}"
+        di as txt "* at least `cutoff' percent. Windows are dated by their last observation."
+        return matrix prob = `P'
+        return local events "`evlab'"
+        return local leads "`leads'"
+        return scalar reference = `reference'
+        return scalar threshold = `threshold'
+    }
+    // ------------------------------------------------------------ static table
+    else if `static' {
+        tempname Tb
+        mata: st_matrix("`Tb'", (cn__BP', cn__BB', cn__BC', cn__BS', cn__BL', cn__BU'))
+        local rn TCI
+        foreach s in TO FROM NET {
+            forvalues i = 1/`k' {
+                local nm : word `i' of `names'
+                local nm = strtoname("`nm'")
+                local rn `rn' `s':`nm'
+            }
+        }
+        matrix rownames `Tb' = `rn'
+        matrix colnames `Tb' = estimate bias corrected se lower upper
+        local w2 = `digits' + 7
+        di _n as txt "Bootstrap of the connectedness measures (percent): estimate, bias,"
+        di as txt "bias-corrected estimate, standard error and `level'% interval"
+        matlist `Tb', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(12)
+        return matrix table = `Tb'
+    }
+    // ------------------------------------------------------------ bands frame
+    else {
+        if "`frame'" == "" local frame cn_boot
+        if "`frame'" == "`c(frame)'" | "`frame'" == "`fr'" {
+            di as err "frame(`frame') may not be the current or the results frame"
+            exit 498
+        }
+        mata: st_local("bexist", strofreal(st_frameexists("`frame'")))
+        if `bexist' & "`replace'" == "" {
+            di as err "frame {bf:`frame'} already exists; specify {cmd:replace} or another {cmd:frame()}"
+            exit 110
+        }
+        local mn tci
+        if `doall' {
+            foreach s in to from net {
+                forvalues i = 1/`k' {
+                    local mn `mn' `s'_`i'
+                }
+            }
+        }
+        if `isdet' {
+            tempname PR
+            mata: cn__bpos = (1::`T0')
+            mata: cn__P = J(`T0', 1, .); for (cn__i=2; cn__i<=`T0'; cn__i++) cn__P[cn__i] = cn_bootprob(cn__i, 0, 1, `detect', 0, cn__bpos)
+            mata: st_matrix("`PR'", cn__P)
+        }
+        capture frame drop `frame'
+        frame create `frame'
+        frame `frame' {
+            quietly set obs `nw'
+            mata: st_store(., st_addvar("double", "`tv'"), cn__btv[cn__bw])
+            format `tv' `tfmt'
+            if "`dv'" != "" {
+                mata: st_store(., st_addvar("double", "`dv'"), cn__bdv[cn__bw])
+                format `dv' `dfmt'
+            }
+            local j 0
+            foreach m of local mn {
+                local ++j
+                mata: st_store(., st_addvar("double", ("`m'", "`m'_bias", "`m'_bc", "`m'_se", "`m'_lo", "`m'_hi")), (cn__BP[., `j'], cn__BB[., `j'], cn__BC[., `j'], cn__BS[., `j'], cn__BL[., `j'], cn__BU[., `j']))
+            }
+            mata: st_store(., st_addvar("double", "ndiscard"), cn__BN)
+            mata: st_store(., st_addvar("byte", "stable"), cn__BST)
+            label variable stable "VAR of the window stable (0: estimates of the last stable window)"
+            label variable tci "TCI, estimate"
+            label variable tci_bias "TCI, bootstrap bias"
+            label variable tci_bc "TCI, bias-corrected"
+            label variable tci_se "TCI, bootstrap standard error"
+            label variable tci_lo "TCI, lower `level'% limit"
+            label variable tci_hi "TCI, upper `level'% limit"
+            label variable ndiscard "unstable draws discarded"
+            if `isdet' {
+                quietly generate double prob = .
+                quietly generate byte flag = .
+                mata: st_store(., "prob", cn__P)
+                quietly replace flag = (prob >= `cutoff') if prob < .
+                label variable prob "Probability (%) of a rise of at least `detect'% from the previous window"
+                label variable flag "prob at least `cutoff'"
+            }
+            quietly tsset `tv'
+            label data "connectedness: bootstrap (`reps' draws)"
+            char _dta[cn_kind] "bootstrap"
+            if `isdet' {
+                quietly count if flag == 1
+                local nflag = r(N)
+            }
+        }
+        quietly frame `frame': summarize tci_bias, meanonly
+        local mb = r(mean)
+        di _n as txt "Bias-corrected TCI and `level'% bands saved in frame " as res "`frame'" ///
+            as txt " (`nw' windows)"
+        di as txt "Mean bootstrap bias of the TCI: " as res %6.`digits'f `mb'
+        if `isdet' {
+            di as txt "Windows with a probability of at least `cutoff'% of a rise of at least " ///
+                "`detect'%: " as res `nflag'
+            if `nflag' > 0 & `nflag' <= 30 {
+                frame `frame': list `=cond("`dv'" != "", "`dv'", "`tv'")' prob if flag == 1, noobs clean
+            }
+            return scalar nflag = `nflag'
+        }
+        return local frame "`frame'"
+    }
+    di as txt "Unstable draws discarded: " as res `ndisc'
+    if `ncarry' > 0 {
+        di as txt "{p 0 6 2}note: `ncarry' window(s) with an unstable VAR use the estimates of the " ///
+            "most recent window with a stable VAR, as Greenwood-Nimmo, Kocenda and Nguyen do{p_end}"
+    }
+    if `nfail' > 0 {
+        di as txt "{p 0 6 2}note: `nfail' window(s) have no earlier window with a stable VAR; " ///
+            "their results are missing{p_end}"
+    }
+    return scalar ncarried = `ncarry'
+    return scalar reps = `reps'
+    return scalar level = `level'
+    return scalar nwindows = `nw'
+    return scalar ndiscard = `ndisc'
+    return local bias = cond(`dobias', "corrected", "none")
+    capture mata: mata drop cn__BP cn__BB cn__BC cn__BS cn__BL cn__BU cn__BD cn__BN cn__BST cn__btv cn__bdv cn__bw
+    capture mata: mata drop cn__bev cn__bl cn__bpos cn__P cn__i
 end

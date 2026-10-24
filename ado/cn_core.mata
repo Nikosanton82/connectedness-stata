@@ -1,4 +1,4 @@
-*! version 0.9.0  24oct2026
+*! version 0.9.1  24oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -942,6 +942,230 @@ void cn_postclust(string scalar cnames, string scalar avgname, string scalar shn
     nk = J(C, 1, .)
     for (c=1; c<=C; c++) nk[c] = sum(cn__clid :== c)
     st_matrix(ctgname + "_avg", T :/ nk')
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap inference for VAR connectedness (Greenwood-Nimmo, Kocenda and Nguyen
+// 2024): residual bootstrap of each window with the recursive design, discarding
+// unstable draws, and bias correction of the measures by a second round of draws.
+
+// OLS VAR(p) with an intercept on x (rows = observations): B (k x kp), intercept c
+// (1 x k), recentred residuals E and the covariance Q = E'E/n
+void cn_varc(real matrix x, real scalar p, real matrix B, real rowvector c,
+             real matrix E, real matrix Q)
+{
+    real scalar k, n
+    real matrix z, Y, Z, Zc, Yc, Beta
+
+    k    = cols(x)
+    z    = cn_embed(x, p+1)
+    Y    = z[|1, 1 \ rows(z), k|]
+    Z    = z[|1, k+1 \ rows(z), cols(z)|]
+    n    = rows(Z)
+    Zc   = Z :- mean(Z)
+    Yc   = Y :- mean(Y)
+    Beta = lusolve(cross(Zc, Zc), cross(Zc, Yc))
+    c    = mean(Y) - mean(Z)*Beta
+    E    = Yc - Zc*Beta
+    E    = E :- mean(E)
+    B    = Beta'
+    Q    = cross(E, E) / n
+}
+
+// largest eigenvalue modulus of the companion matrix of B (k x kp)
+real scalar cn_maxroot(real matrix B)
+{
+    real scalar k, p
+    real matrix F
+
+    k = rows(B)
+    p = cols(B)/k
+    if (p == 1) F = B
+    else        F = B \ (I(k*(p-1)), J(k*(p-1), k, 0))
+    return(max(abs(eigenvalues(F))))
+}
+
+// measures kept from a decomposition: TCI, or TCI, TO (k), FROM (k), NET (k)
+real rowvector cn_bootmeas(real matrix B, real matrix Q, real scalar H, real scalar gen,
+                           real scalar all)
+{
+    real scalar    k
+    real rowvector m
+
+    k = rows(B)
+    m = cn_measures(100*cn_fevd(B, Q, H, gen))
+    if (!all) return(m[1])
+    return((m[1], m[|3 \ 2+3*k|]))
+}
+
+// R draws of the measures from the VAR (B, c, residuals E) with initial values x0
+// (p x k); draws whose VAR is not stable are discarded and redrawn (counted in
+// ndisc). The resampled residual rows come from runiform(), or, for the
+// certification, from the columns of the external cn__bidx (column col onwards; col
+// is advanced)
+real matrix cn_bootdraws(real matrix x0, real matrix B, real rowvector c, real matrix E,
+                         real scalar p, real scalar H, real scalar gen, real scalar R,
+                         real scalar all, real scalar col, real scalar ndisc)
+{
+    external real matrix cn__bidx
+    real scalar    k, n, r, t, j, tries
+    real matrix    Xb, Bb, Eb, Qb, D
+    real rowvector cb
+    real colvector idx
+
+    k = cols(x0)
+    n = rows(E)
+    D = J(R, (all ? 1 + 3*k : 1), .)
+    r = 0
+    tries = 0
+    while (r < R) {
+        tries++
+        if (tries > 100*R + 1000) {
+            errprintf("bootstrap: too many unstable draws\n")
+            exit(error(430))
+        }
+        if (rows(cn__bidx) > 0) {
+            if (col > cols(cn__bidx)) {
+                errprintf("bootstrap: the test indices are exhausted\n")
+                exit(error(498))
+            }
+            idx = cn__bidx[., col]
+            col++
+        }
+        else idx = ceil(runiform(n, 1)*n)
+        // recursive design from the first p observations of the window
+        Xb = x0 \ J(n, k, .)
+        for (t=p+1; t<=p+n; t++) {
+            Xb[t, .] = c + E[idx[t-p], .]
+            for (j=1; j<=p; j++) {
+                Xb[t, .] = Xb[t, .] + Xb[t-j, .]*B[|1, (j-1)*k+1 \ k, j*k|]'
+            }
+        }
+        cn_varc(Xb, p, Bb, cb, Eb, Qb)
+        if (cn_maxroot(Bb) >= 1) {
+            ndisc++
+            continue
+        }
+        r++
+        D[r, .] = cn_bootmeas(Bb, Qb, H, gen, all)
+    }
+    return(D)
+}
+
+// Bootstrap of the windows in wins (indices into the T0 windows of the results).
+// Results (externals): cn__BP point measures, cn__BB bias, cn__BC bias-corrected
+// estimates, cn__BS standard errors, cn__BL and cn__BU percentile limits (one row
+// per window, one column per measure), cn__BD corrected TCI draws (R x windows),
+// cn__BN discarded draws per window.
+void cn_bootstrap(string scalar vars, string scalar touse, real scalar p, real scalar H,
+                  real scalar window, real scalar gen, real scalar R, real scalar dobias,
+                  real scalar all, real colvector wins, real scalar level, real scalar dots)
+{
+    external real matrix cn__BP, cn__BB, cn__BC, cn__BS, cn__BL, cn__BU, cn__BD, cn__bidx
+    external real colvector cn__BN, cn__BST
+    real scalar    T, k, ws, nw, w, i, col, nd, nm, m, a, v
+    real matrix    x, xw, B, E, Q, D1, D2
+    real rowvector c, pt, bias
+
+    x  = st_data(., tokens(vars), touse)
+    T  = rows(x)
+    k  = cols(x)
+    ws = (window == 0 ? T : window - p)
+    nw = rows(wins)
+    nm = (all ? 1 + 3*k : 1)
+    cn__BP = J(nw, nm, .)
+    cn__BB = J(nw, nm, .)
+    cn__BC = J(nw, nm, .)
+    cn__BS = J(nw, nm, .)
+    cn__BL = J(nw, nm, .)
+    cn__BU = J(nw, nm, .)
+    cn__BD = J(R, nw, .)
+    cn__BN = J(nw, 1, 0)
+    cn__BST = J(nw, 1, 1)
+    if (rows(cn__bidx) == 0) cn__bidx = J(0, 0, .)
+    a = (1 - level/100)/2
+    for (i=1; i<=nw; i++) {
+        w   = wins[i]
+        xw  = x[|w, 1 \ w+ws-1, k|]
+        cn_varc(xw, p, B, c, E, Q)
+        // a window whose VAR is not stable takes the estimates of the most recent
+        // window with a stable VAR, as Greenwood-Nimmo, Kocenda and Nguyen do; the
+        // initial values remain those of the window
+        v = w
+        while (cn_maxroot(B) >= 1 & v > 1) {
+            v--
+            cn_varc(x[|v, 1 \ v+ws-1, k|], p, B, c, E, Q)
+        }
+        cn__BST[i] = (v == w)
+        if (cn_maxroot(B) >= 1) {
+            cn__BST[i] = .
+            if (dots) printf("x")
+            continue
+        }
+        pt  = cn_bootmeas(B, Q, H, gen, all)
+        col = 1
+        nd  = 0
+        D1  = cn_bootdraws(xw[|1, 1 \ p, k|], B, c, E, p, H, gen, R, all, col, nd)
+        if (dobias) {
+            bias = mean(D1) - pt
+            D2   = cn_bootdraws(xw[|1, 1 \ p, k|], B, c, E, p, H, gen, R, all, col, nd) :- bias
+        }
+        else {
+            bias = J(1, nm, .)
+            D2   = D1
+        }
+        cn__BP[i, .] = pt
+        cn__BB[i, .] = bias
+        cn__BC[i, .] = (dobias ? pt - bias : mean(D2))
+        cn__BS[i, .] = sqrt(diagonal(variance(D2)))'
+        // percentile interval of the corrected draws, recentred on the bias-corrected
+        // estimate (the corrected draws D2 centre on the estimate)
+        for (m=1; m<=nm; m++) {
+            cn__BL[i, m] = cn_q7(D2[., m], a) - (dobias ? bias[m] : 0)
+            cn__BU[i, m] = cn_q7(D2[., m], 1 - a) - (dobias ? bias[m] : 0)
+        }
+        cn__BD[., i] = D2[., 1]
+        cn__BN[i]    = nd
+        if (dots) {
+            printf(".")
+            if (mod(i, 50) == 0 | i == nw) printf(" %g\n", i)
+            displayflush()
+        }
+    }
+}
+
+// Event probabilities (percent): for each event window re (rows of ev) and lead j,
+// the share of corrected draws at window re + j above the mean corrected draw of the
+// m windows before re (or, with thr > 0, at least thr percent above; with dec, below).
+// pos maps window indices to columns of cn__BD (0 when not bootstrapped).
+real matrix cn_bootprob(real colvector ev, real rowvector leads, real scalar m,
+                        real scalar thr, real scalar dec, real colvector pos)
+{
+    external real matrix cn__BD
+    real scalar    e, j, re, w, sb, i
+    real colvector d
+    real matrix    P
+
+    P = J(rows(ev), cols(leads), .)
+    for (e=1; e<=rows(ev); e++) {
+        re = ev[e]
+        sb = 0
+        for (i=1; i<=m; i++) sb = sb + mean(cn__BD[., pos[re-i]])
+        sb = sb/m
+        for (j=1; j<=cols(leads); j++) {
+            w = re + leads[j]
+            if (w > rows(pos)) continue
+            if (pos[w] == 0) continue
+            d = cn__BD[., pos[w]]
+            if (hasmissing(d) | missing(sb)) continue
+            if (thr > 0) {
+                d = 100*(d :- sb)/sb
+                P[e, j] = 100*mean(dec ? (d :<= -thr) : (d :>= thr))
+            }
+            else P[e, j] = 100*mean(dec ? (d :< sb) : (d :> sb))
+        }
+    }
+    return(P)
 }
 
 // Scalar normalization of an unnormalized decomposition W: 2 = maximum row sum,
