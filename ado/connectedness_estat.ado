@@ -1,4 +1,4 @@
-*! version 0.9.1  24oct2026
+*! version 0.9.2  24oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -328,7 +328,8 @@ program define Bootstrap, rclass
     syntax [, Reps(integer 1000) noBIAS Level(cilevel) SEED(string) FRame(name) REPLACE ///
         EVERY(integer 1) ALL EVENt(string) LEADs(numlist integer >=0) REFerence(integer 1) ///
         THReshold(real 0) DECrease DETect(real -1) CUToff(real 90) noDOTs ///
-        DIGits(integer 2) TESTINDices(name) ]
+        DIGits(integer 2) TESTINDices(name) PAIRwise NPDC STat(string) PWFRame(name) ///
+        noTABle ]
 
     if "`e(model)'" != "var" | !inlist("`e(approach)'", "", "time") {
         di as err "estat bootstrap requires results of {cmd:connectedness} with model(var) and approach(time)"
@@ -374,6 +375,16 @@ program define Bootstrap, rclass
         exit 198
     }
     if "`leads'" == "" local leads 0 1 5 22
+    local dopw = ("`pairwise'" != "")
+    local donp = ("`npdc'" != "")
+    if (`dopw' | `donp') & `isev' {
+        di as err "options pairwise and npdc may not be combined with event()"
+        exit 198
+    }
+    if "`pwframe'" != "" & ((!`dopw' & !`donp') | `static') {
+        di as err "pwframe() requires pairwise or npdc with rolling-window results"
+        exit 198
+    }
 
     // data of the estimation, as in connectedness
     quietly count if e(sample)
@@ -391,6 +402,78 @@ program define Bootstrap, rclass
     local T0  = e(T0)
     local k   = e(k)
     local names `e(names)'
+
+    // measure tested by event() and detect(): stat(tci), stat(to|from|net name) or
+    // stat(pairwise|npdc name1 name2), from name1 to name2. Indices into
+    // cn_bootfull(): TCI, TO, FROM, NET, pairwise table and NPDC matrix by rows
+    local sidx 1
+    local slab TCI
+    local stype tci
+    local snames
+    if `"`stat'"' != "" {
+        if !`isev' & !`isdet' {
+            di as err "stat() requires event() or detect()"
+            exit 198
+        }
+        gettoken stype snames : stat
+        local snames : list retokenize snames
+        local stype = lower("`stype'")
+        if "`stype'" == "pw" local stype pairwise
+        local nn : word count `snames'
+        local need = cond("`stype'" == "tci", 0, cond(inlist("`stype'", "to", "from", "net"), 1, ///
+            cond(inlist("`stype'", "pairwise", "npdc"), 2, -1)))
+        if `need' < 0 {
+            di as err "stat(): `stype' is not tci, to, from, net, pairwise or npdc"
+            exit 198
+        }
+        if `nn' != `need' {
+            di as err "stat(`stype') requires `need' variable name(s)"
+            exit 198
+        }
+        local pos
+        foreach nm of local snames {
+            local q : list posof "`nm'" in names
+            if `q' == 0 {
+                di as err "stat(): `nm' is not one of the variables (`names')"
+                exit 198
+            }
+            local pos `pos' `q'
+        }
+        local a : word 1 of `pos'
+        local b : word 2 of `pos'
+        local na : word 1 of `snames'
+        local nb : word 2 of `snames'
+        if "`stype'" == "to" {
+            local sidx = 1 + `a'
+            local slab "TO of `na'"
+        }
+        if "`stype'" == "from" {
+            local sidx = 1 + `k' + `a'
+            local slab "FROM of `na'"
+        }
+        if "`stype'" == "net" {
+            local sidx = 1 + 2*`k' + `a'
+            local slab "NET of `na'"
+        }
+        if inlist("`stype'", "pairwise", "npdc") {
+            if `a' == `b' {
+                di as err "stat(`stype') requires two different variables"
+                exit 198
+            }
+            local sidx = 1 + 3*`k' + (`b' - 1)*`k' + `a'
+            local slab "spillover from `na' to `nb'"
+            if "`stype'" == "npdc" {
+                local sidx = `sidx' + `k'*`k'
+                local slab "net spillover from `na' to `nb'"
+            }
+        }
+        if inlist("`stype'", "net", "npdc") & (`threshold' > 0 | `detect' > 0) {
+            di as err "{p 0 0 2}threshold() and detect(#) with # > 0 are rises in percent, " ///
+                "not defined for stat(`stype'), which may be zero or negative; " ///
+                "use detect(0) for the probability of any rise{p_end}"
+            exit 198
+        }
+    }
 
     // decomposition: generalized (1), its scalar normalizations (2-4), clustered
     // (5), orthogonalized (0)
@@ -487,11 +570,29 @@ program define Bootstrap, rclass
     }
     local dobias = ("`bias'" == "")
     local doall  = ("`all'" != "" | `static')
+    // measures bootstrapped: TCI, optionally TO, FROM and NET (offset 2), the pairwise
+    // table (offset opw) and the NPDC matrix (offset onp), and the tested measure
+    local k2 = `k'*`k'
+    mata: cn__bsel = 1
+    if `doall' mata: cn__bsel = cn__bsel, (2..`=1+3*`k'')
+    local opw 0
+    local onp 0
+    if `dopw' {
+        mata: st_local("opw", strofreal(cols(cn__bsel) + 1))
+        mata: cn__bsel = cn__bsel, (`=2+3*`k''..`=1+3*`k'+`k2'')
+    }
+    if `donp' {
+        mata: st_local("onp", strofreal(cols(cn__bsel) + 1))
+        mata: cn__bsel = cn__bsel, (`=2+3*`k'+`k2''..`=1+3*`k'+2*`k2'')
+    }
+    mata: st_local("has", strofreal(anyof(cn__bsel, `sidx')))
+    if !`has' mata: cn__bsel = cn__bsel, `sidx'
+    mata: st_local("scol", strofreal(selectindex(cn__bsel :== `sidx')[1]))
     di as txt _n "Bootstrap of `nw' window(s), `reps' draws" ///
         cond(`dobias', " per round, two rounds (bias correction)", ", no bias correction") ///
         cond("`dots'" == "", ":", "")
     capture noisily mata: cn_bootstrap("`vars'", "`touse'", `p', `H', `w', `gen', `reps', ///
-        `dobias', `doall', cn__bw, `level', ("`dots'" == ""))
+        `dobias', cn__bsel, `scol', cn__bw, `level', ("`dots'" == ""))
     local rc = _rc
     capture mata: mata drop cn__bidx
     if `gen' == 5 capture mata: mata drop cn__clid cn__clperm
@@ -520,8 +621,8 @@ program define Bootstrap, rclass
         local reft = cond(`reference' == 1, "the window before the event", ///
             "the mean of the `reference' windows before the event")
         local thrt = cond(`threshold' > 0, " by at least `threshold' percent", "")
-        di _n as txt "Probability (percent) that the bias-corrected TCI is `cmp' its level in"
-        di as txt "`reft'`thrt', by lead (windows after the event window)"
+        di _n as txt "{p 0 0 2}Probability (percent) that the bias-corrected `slab' is `cmp' " ///
+            "its level in `reft'`thrt', by lead (windows after the event window){p_end}"
         di as txt "{hline 26}{c TT}{hline `=10*`nl''}"
         di as txt %-12s "Event" %14s "Window" "{c |}" _c
         foreach l of local leads {
@@ -553,7 +654,10 @@ program define Bootstrap, rclass
     // ------------------------------------------------------------ static table
     else if `static' {
         tempname Tb
-        mata: st_matrix("`Tb'", (cn__BP', cn__BB', cn__BC', cn__BS', cn__BL', cn__BU'))
+        local m3 = 1 + 3*`k'
+        mata: st_matrix("`Tb'", (cn__BP[|1, 1 \ 1, `m3'|]', cn__BB[|1, 1 \ 1, `m3'|]', ///
+            cn__BC[|1, 1 \ 1, `m3'|]', cn__BS[|1, 1 \ 1, `m3'|]', cn__BL[|1, 1 \ 1, `m3'|]', ///
+            cn__BU[|1, 1 \ 1, `m3'|]'))
         local rn TCI
         foreach s in TO FROM NET {
             forvalues i = 1/`k' {
@@ -569,6 +673,41 @@ program define Bootstrap, rclass
         di as txt "bias-corrected estimate, standard error and `level'% interval"
         matlist `Tb', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(12)
         return matrix table = `Tb'
+        // pairwise table and NPDC matrix: k x k, row i and column j for the
+        // (net) spillover from j to i
+        local rnm
+        foreach nm of local names {
+            local rnm `rnm' `=strtoname("`nm'")'
+        }
+        foreach blk in pw npdc {
+            local off = cond("`blk'" == "pw", `opw', `onp')
+            if `off' == 0 continue
+            foreach s in b bias bc se lo hi {
+                local M = cond("`s'" == "b", "P", cond("`s'" == "bias", "B", cond("`s'" == "bc", ///
+                    "C", cond("`s'" == "se", "S", cond("`s'" == "lo", "L", "U")))))
+                tempname `blk'_`s'
+                mata: st_matrix("``blk'_`s''", rowshape(cn__B`M'[1, (`off'..`off'+`k2'-1)], `k'))
+                matrix rownames ``blk'_`s'' = `rnm'
+                matrix colnames ``blk'_`s'' = `rnm'
+            }
+        }
+        if `opw' & "`table'" == "" {
+            di _n as txt "{p 0 0 2}Pairwise connectedness (percent), bias-corrected: row i, column j " ///
+                "is the spillover from j to i{p_end}"
+            matlist `pw_bc', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(12)
+        }
+        if `onp' & "`table'" == "" {
+            di _n as txt "{p 0 0 2}Net pairwise directional connectedness (percent), bias-corrected: " ///
+                "row i, column j is the net spillover from j to i{p_end}"
+            CnStarMat `npdc_bc' `npdc_lo' `npdc_hi' `digits'
+            di as txt "* `level'% interval excludes zero"
+        }
+        foreach blk in pw npdc {
+            if `=cond("`blk'" == "pw", `opw', `onp')' == 0 continue
+            foreach s in hi lo se bc bias b {
+                return matrix `blk'_`s' = ``blk'_`s''
+            }
+        }
     }
     // ------------------------------------------------------------ bands frame
     else {
@@ -626,7 +765,8 @@ program define Bootstrap, rclass
                 quietly generate byte flag = .
                 mata: st_store(., "prob", cn__P)
                 quietly replace flag = (prob >= `cutoff') if prob < .
-                label variable prob "Probability (%) of a rise of at least `detect'% from the previous window"
+                if "`stype'" == "tci" label variable prob "Probability (%) of a rise of at least `detect'% from the previous window"
+                else label variable prob "Probability (%) that `slab' rose at least `detect'% from the previous window"
                 label variable flag "prob at least `cutoff'"
             }
             quietly tsset `tv'
@@ -643,14 +783,54 @@ program define Bootstrap, rclass
             as txt " (`nw' windows)"
         di as txt "Mean bootstrap bias of the TCI: " as res %6.`digits'f `mb'
         if `isdet' {
-            di as txt "Windows with a probability of at least `cutoff'% of a rise of at least " ///
-                "`detect'%: " as res `nflag'
+            local ofs = cond("`stype'" == "tci", "", " of the `slab'")
+            di as txt "{p 0 0 2}Windows with a probability of at least `cutoff'% of a rise" ///
+                "`ofs' of at least `detect'%: " as res `nflag' "{p_end}"
             if `nflag' > 0 & `nflag' <= 30 {
                 frame `frame': list `=cond("`dv'" != "", "`dv'", "`tv'")' prob if flag == 1, noobs clean
             }
             return scalar nflag = `nflag'
         }
         return local frame "`frame'"
+        // pairwise and NPDC bands: long frame, one row per window and ordered pair
+        if `dopw' | `donp' {
+            if "`pwframe'" == "" local pwframe `frame'_pw
+            if inlist("`pwframe'", "`c(frame)'", "`fr'", "`frame'") {
+                di as err "pwframe(`pwframe') may not be the current, results or bands frame"
+                exit 498
+            }
+            mata: st_local("bexist", strofreal(st_frameexists("`pwframe'")))
+            if `bexist' & "`replace'" == "" {
+                di as err "frame {bf:`pwframe'} already exists; specify {cmd:replace} or another {cmd:pwframe()}"
+                exit 110
+            }
+            capture frame drop `pwframe'
+            frame create `pwframe'
+            frame `pwframe' {
+                mata: cn_bootpw(tokens("`names'"), `opw', `onp', "`tv'", cn__btv[cn__bw], ///
+                    "`dv'", cn__bdv[cn__bw])
+                format `tv' `tfmt'
+                if "`dv'" != "" format `dv' `dfmt'
+                label variable from "transmitting variable"
+                label variable to "receiving variable"
+                foreach blk in pw npdc {
+                    capture confirm variable `blk'
+                    if _rc continue
+                    local bl = cond("`blk'" == "pw", "Spillover", "Net spillover")
+                    label variable `blk' "`bl' from -from- to -to-, estimate"
+                    label variable `blk'_bias "`bl', bootstrap bias"
+                    label variable `blk'_bc "`bl', bias-corrected"
+                    label variable `blk'_se "`bl', bootstrap standard error"
+                    label variable `blk'_lo "`bl', lower `level'% limit"
+                    label variable `blk'_hi "`bl', upper `level'% limit"
+                }
+                label data "connectedness: pairwise bootstrap bands (`reps' draws)"
+                char _dta[cn_kind] "bootstrap_pairwise"
+            }
+            di as txt "Pairwise bands saved in frame " as res "`pwframe'" ///
+                as txt " (`=`k'*(`k'-1)' ordered pairs per window)"
+            return local pwframe "`pwframe'"
+        }
     }
     di as txt "Unstable draws discarded: " as res `ndisc'
     if `ncarry' > 0 {
@@ -667,6 +847,45 @@ program define Bootstrap, rclass
     return scalar nwindows = `nw'
     return scalar ndiscard = `ndisc'
     return local bias = cond(`dobias', "corrected", "none")
+    if `isev' | `isdet' return local stat = strtrim("`stype' `snames'")
+    capture mata: mata drop cn__bsel
     capture mata: mata drop cn__BP cn__BB cn__BC cn__BS cn__BL cn__BU cn__BD cn__BN cn__BST cn__btv cn__bdv cn__bw
     capture mata: mata drop cn__bev cn__bl cn__bpos cn__P cn__i
+end
+
+// k x k matrix bc with a star where the interval (lo, hi) excludes zero; diagonal
+// shown as "."; columns in blocks that fit the line size
+program define CnStarMat
+    args bc lo hi digits
+    local k = rowsof(`bc')
+    local names : rownames `bc'
+    local w = `digits' + 7
+    local nb = max(1, floor((c(linesize) - 14)/`w'))
+    forvalues c0 = 1(`nb')`k' {
+        local c1 = min(`k', `c0' + `nb' - 1)
+        local nc = `c1' - `c0' + 1
+        di as txt "{hline 13}{c TT}{hline `=`w'*`nc''}"
+        di as txt _col(14) "{c |}" _c
+        forvalues j = `c0'/`c1' {
+            local nm : word `j' of `names'
+            di as txt %`=`w'-1's abbrev("`nm'", `w'-2) " " _c
+        }
+        di
+        di as txt "{hline 13}{c +}{hline `=`w'*`nc''}"
+        forvalues i = 1/`k' {
+            local nm : word `i' of `names'
+            di as txt %12s abbrev("`nm'", 12) " {c |}" _c
+            forvalues j = `c0'/`c1' {
+                if `i' == `j' {
+                    di as txt %`=`w'-1's "." " " _c
+                }
+                else {
+                    local s = cond(`lo'[`i', `j'] > 0 | `hi'[`i', `j'] < 0, "*", " ")
+                    di as res %`=`w'-1'.`digits'f `bc'[`i', `j'] "`s'" _c
+                }
+            }
+            di
+        }
+        di as txt "{hline 13}{c BT}{hline `=`w'*`nc''}"
+    }
 end

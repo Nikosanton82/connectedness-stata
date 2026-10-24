@@ -1,0 +1,6 @@
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+static       pairwise SP500 <- USDX 4.028815 (corrected 3.503741); NPDC USDX -> SP500 -1.694394 [-3.5062, 0.1594]
+roll         31 windows x 12 pairs; events: 48 64 84 | 20 64 44 | 20 68 32 | 52 60 40
+detect       npdc flagged (>= 90): 1; from USDX flagged: 0

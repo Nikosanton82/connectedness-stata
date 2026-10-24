@@ -1,4 +1,4 @@
-*! version 0.9.1  24oct2026
+*! version 0.9.2  24oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -985,17 +985,30 @@ real scalar cn_maxroot(real matrix B)
     return(max(abs(eigenvalues(F))))
 }
 
-// measures kept from a decomposition: TCI, or TCI, TO (k), FROM (k), NET (k)
-real rowvector cn_bootmeas(real matrix B, real matrix Q, real scalar H, real scalar gen,
-                           real scalar all)
+// all measures kept from a decomposition (percent): TCI, TO (k), FROM (k), NET (k),
+// the pairwise table (k x k, by rows: element (i, j) is the spillover from j to i)
+// and the NPDC matrix (k x k, by rows: element (i, j) is the net spillover from j to
+// i, as NPDC in ConnectednessApproach)
+real rowvector cn_bootfull(real matrix B, real matrix Q, real scalar H, real scalar gen)
 {
     real scalar    k
     real rowvector m
+    real matrix    ct
 
-    k = rows(B)
-    m = cn_measures(100*cn_fevd(B, Q, H, gen))
-    if (!all) return(m[1])
-    return((m[1], m[|3 \ 2+3*k|]))
+    k  = rows(B)
+    ct = 100*cn_fevd(B, Q, H, gen)
+    m  = cn_measures(ct)
+    return((m[1], m[|3 \ 2+3*k|], vec(ct')', vec((ct - ct')')'))
+}
+
+// the measures sel (indices into cn_bootfull()) of a decomposition
+real rowvector cn_bootmeas(real matrix B, real matrix Q, real scalar H, real scalar gen,
+                           real rowvector sel)
+{
+    real rowvector m
+
+    m = cn_bootfull(B, Q, H, gen)
+    return(m[sel])
 }
 
 // R draws of the measures from the VAR (B, c, residuals E) with initial values x0
@@ -1005,7 +1018,7 @@ real rowvector cn_bootmeas(real matrix B, real matrix Q, real scalar H, real sca
 // is advanced)
 real matrix cn_bootdraws(real matrix x0, real matrix B, real rowvector c, real matrix E,
                          real scalar p, real scalar H, real scalar gen, real scalar R,
-                         real scalar all, real scalar col, real scalar ndisc)
+                         real rowvector sel, real scalar col, real scalar ndisc)
 {
     external real matrix cn__bidx
     real scalar    k, n, r, t, j, tries
@@ -1015,7 +1028,7 @@ real matrix cn_bootdraws(real matrix x0, real matrix B, real rowvector c, real m
 
     k = cols(x0)
     n = rows(E)
-    D = J(R, (all ? 1 + 3*k : 1), .)
+    D = J(R, cols(sel), .)
     r = 0
     tries = 0
     while (r < R) {
@@ -1047,19 +1060,21 @@ real matrix cn_bootdraws(real matrix x0, real matrix B, real rowvector c, real m
             continue
         }
         r++
-        D[r, .] = cn_bootmeas(Bb, Qb, H, gen, all)
+        D[r, .] = cn_bootmeas(Bb, Qb, H, gen, sel)
     }
     return(D)
 }
 
-// Bootstrap of the windows in wins (indices into the T0 windows of the results).
-// Results (externals): cn__BP point measures, cn__BB bias, cn__BC bias-corrected
-// estimates, cn__BS standard errors, cn__BL and cn__BU percentile limits (one row
-// per window, one column per measure), cn__BD corrected TCI draws (R x windows),
-// cn__BN discarded draws per window.
+// Bootstrap of the windows in wins (indices into the T0 windows of the results), for
+// the measures sel (indices into cn_bootfull()). Results (externals): cn__BP point
+// measures, cn__BB bias, cn__BC bias-corrected estimates, cn__BS standard errors,
+// cn__BL and cn__BU percentile limits (one row per window, one column per measure),
+// cn__BD corrected draws of measure scol of sel, the one tested (R x windows), cn__BN
+// discarded draws per window.
 void cn_bootstrap(string scalar vars, string scalar touse, real scalar p, real scalar H,
                   real scalar window, real scalar gen, real scalar R, real scalar dobias,
-                  real scalar all, real colvector wins, real scalar level, real scalar dots)
+                  real rowvector sel, real scalar scol, real colvector wins,
+                  real scalar level, real scalar dots)
 {
     external real matrix cn__BP, cn__BB, cn__BC, cn__BS, cn__BL, cn__BU, cn__BD, cn__bidx
     external real colvector cn__BN, cn__BST
@@ -1072,7 +1087,7 @@ void cn_bootstrap(string scalar vars, string scalar touse, real scalar p, real s
     k  = cols(x)
     ws = (window == 0 ? T : window - p)
     nw = rows(wins)
-    nm = (all ? 1 + 3*k : 1)
+    nm = cols(sel)
     cn__BP = J(nw, nm, .)
     cn__BB = J(nw, nm, .)
     cn__BC = J(nw, nm, .)
@@ -1102,13 +1117,13 @@ void cn_bootstrap(string scalar vars, string scalar touse, real scalar p, real s
             if (dots) printf("x")
             continue
         }
-        pt  = cn_bootmeas(B, Q, H, gen, all)
+        pt  = cn_bootmeas(B, Q, H, gen, sel)
         col = 1
         nd  = 0
-        D1  = cn_bootdraws(xw[|1, 1 \ p, k|], B, c, E, p, H, gen, R, all, col, nd)
+        D1  = cn_bootdraws(xw[|1, 1 \ p, k|], B, c, E, p, H, gen, R, sel, col, nd)
         if (dobias) {
             bias = mean(D1) - pt
-            D2   = cn_bootdraws(xw[|1, 1 \ p, k|], B, c, E, p, H, gen, R, all, col, nd) :- bias
+            D2   = cn_bootdraws(xw[|1, 1 \ p, k|], B, c, E, p, H, gen, R, sel, col, nd) :- bias
         }
         else {
             bias = J(1, nm, .)
@@ -1117,14 +1132,14 @@ void cn_bootstrap(string scalar vars, string scalar touse, real scalar p, real s
         cn__BP[i, .] = pt
         cn__BB[i, .] = bias
         cn__BC[i, .] = (dobias ? pt - bias : mean(D2))
-        cn__BS[i, .] = sqrt(diagonal(variance(D2)))'
+        cn__BS[i, .] = sqrt(colsum((D2 :- mean(D2)):^2) / (R - 1))
         // percentile interval of the corrected draws, recentred on the bias-corrected
         // estimate (the corrected draws D2 centre on the estimate)
         for (m=1; m<=nm; m++) {
             cn__BL[i, m] = cn_q7(D2[., m], a) - (dobias ? bias[m] : 0)
             cn__BU[i, m] = cn_q7(D2[., m], 1 - a) - (dobias ? bias[m] : 0)
         }
-        cn__BD[., i] = D2[., 1]
+        cn__BD[., i] = D2[., scol]
         cn__BN[i]    = nd
         if (dots) {
             printf(".")
@@ -1166,6 +1181,56 @@ real matrix cn_bootprob(real colvector ev, real rowvector leads, real scalar m,
         }
     }
     return(P)
+}
+
+// Long frame of pairwise and NPDC bands (current frame, empty): one row per window
+// and ordered pair, from variable a to variable b (a != b): the pairwise spillover
+// is element (b, a) of the pairwise table, the NPDC element (b, a) of the NPDC matrix.
+// offpw, offnp: first column of each block in the cn__B* results (0 if absent).
+void cn_bootpw(string rowvector names, real scalar offpw, real scalar offnp,
+               string scalar tv, real colvector tval, string scalar dv,
+               real colvector dval)
+{
+    external real matrix cn__BP, cn__BB, cn__BC, cn__BS, cn__BL, cn__BU
+    real scalar    k, nw, np, a, b, c, o, j
+    real colvector fr, to, cidx, win, pr
+    string colvector nm
+    string rowvector vn, suf
+
+    k  = cols(names)
+    nw = rows(cn__BP)
+    np = k*(k - 1)
+    fr = J(np, 1, .)
+    to = J(np, 1, .)
+    c  = 0
+    for (a=1; a<=k; a++) {
+        for (b=1; b<=k; b++) {
+            if (a == b) continue
+            c++
+            fr[c] = a
+            to[c] = b
+        }
+    }
+    cidx = (to :- 1)*k + fr
+    win  = (1::nw) # J(np, 1, 1)
+    pr   = J(nw, 1, 1) # (1::np)
+    st_addobs(nw*np)
+    st_store(., st_addvar("double", tv), tval[win])
+    if (dv != "") st_store(., st_addvar("double", dv), dval[win])
+    nm = names'
+    (void) st_addvar(max(strlen(names)), ("from", "to"))
+    st_sstore(., "from", nm[fr[pr]])
+    st_sstore(., "to", nm[to[pr]])
+    suf = ("", "_bias", "_bc", "_se", "_lo", "_hi")
+    for (j=1; j<=2; j++) {
+        o = (j == 1 ? offpw : offnp)
+        if (o == 0) continue
+        vn = (j == 1 ? "pw" : "npdc") :+ suf
+        st_store(., st_addvar("double", vn),
+            (vec(cn__BP[., (o - 1 :+ cidx)']'), vec(cn__BB[., (o - 1 :+ cidx)']'),
+             vec(cn__BC[., (o - 1 :+ cidx)']'), vec(cn__BS[., (o - 1 :+ cidx)']'),
+             vec(cn__BL[., (o - 1 :+ cidx)']'), vec(cn__BU[., (o - 1 :+ cidx)']')))
+    }
 }
 
 // Scalar normalization of an unnormalized decomposition W: 2 = maximum row sum,

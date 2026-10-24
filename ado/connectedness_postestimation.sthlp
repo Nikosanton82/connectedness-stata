@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.1  24oct2026}{...}
+{* *! version 0.9.2  24oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
@@ -159,9 +159,14 @@ covariances are available. {opt digits(#)} sets the number of decimals, default
 {synopt:{opt thr:eshold(#)}}probability of a change of at least {it:#} percent{p_end}
 {synopt:{opt dec:rease}}probability of a fall instead of a rise{p_end}
 {synopt:{opt det:ect(#)}}probability, for every window, of a rise of at least {it:#} percent from the previous window{p_end}
+{synopt:{opt st:at(measure)}}measure tested by {opt event()} and {opt detect()}: {cmd:tci} (default), {cmd:to} {it:name}, {cmd:from} {it:name}, {cmd:net} {it:name}, {cmd:pairwise} {it:name1 name2} or {cmd:npdc} {it:name1 name2}{p_end}
 {synopt:{opt cut:off(#)}}probability marked as significant; default {cmd:cutoff(90)}{p_end}
 {synopt:{opt every(#)}}bootstrap every {it:#}th window for the bands; default 1{p_end}
 {synopt:{opt all}}bands for TO, FROM and NET as well as the TCI{p_end}
+{synopt:{opt pair:wise}}bands for the pairwise connectedness table{p_end}
+{synopt:{opt npdc}}bands for net pairwise directional connectedness{p_end}
+{synopt:{opt pwfr:ame(name)}}frame for the pairwise bands; default {it:frame}{cmd:_pw}{p_end}
+{synopt:{opt notab:le}}do not display the pairwise and NPDC tables (static results){p_end}
 {synopt:{opt fr:ame(name)}}frame for the bands; default {cmd:cn_boot}{p_end}
 {synopt:{opt replace}}replace an existing frame{p_end}
 {synopt:{opt nodots}}suppress the progress dots{p_end}
@@ -198,6 +203,25 @@ draws, and {cmd:stable}, 0 for windows that use the estimates of an earlier wind
 {opt every()} bootstraps fewer windows.
 
 {pstd}
+{opt pairwise} and {opt npdc} add the pairwise connectedness table, whose element
+(i, j) is the spillover from variable j to variable i, and net pairwise directional
+connectedness, whose element (i, j) is the net spillover from j to i (the spillover
+from j to i minus that from i to j, as {cmd:NPDC} in ConnectednessApproach). They come
+from the same draws at almost no extra cost, and the bias-corrected estimates keep
+the identities of the measures: the rows of the pairwise table, own shares excluded,
+sum to FROM, its columns to TO, and the columns of the NPDC matrix to NET. A
+bias-corrected pairwise share can be negative when the bias exceeds the estimate.
+Static results store k x k matrices (see {help connectedness_postestimation##results:stored results})
+and display the bias-corrected pairwise table and the NPDC matrix, with a star where
+the interval of a net spillover excludes zero; {opt notable} suppresses the display.
+Rolling results store the bands in a second frame, {it:frame}{cmd:_pw}
+({opt pwframe()}), with one observation per window and ordered pair: the time and
+date variables, {cmd:from} and {cmd:to}, the transmitting and receiving variables,
+and {cmd:pw}, {cmd:pw_bias}, {cmd:pw_bc}, {cmd:pw_se}, {cmd:pw_lo}, {cmd:pw_hi}
+(spillover from {cmd:from} to {cmd:to}) and the same for {cmd:npdc} (net spillover
+from {cmd:from} to {cmd:to}). With 19 variables a window has 342 ordered pairs.
+
+{pstd}
 {opt event()} computes, for each event, the probability (percent) that the TCI of
 the window ending on the event date, and of the windows {opt leads()} later, exceeds
 its level just before the event: the share of corrected draws above the mean
@@ -217,6 +241,16 @@ marked.
 probability of a rise of at least {it:#} percent from the previous window (of any
 rise with {cmd:detect(0)}), and {cmd:flag}, equal to 1 when it reaches
 {opt cutoff()}, to locate changes at unknown dates.
+
+{pstd}
+{opt stat()} applies {opt event()} and {opt detect()} to another measure than the
+TCI: {cmd:stat(to US)}, {cmd:stat(from US)} or {cmd:stat(net US)} for one variable,
+{cmd:stat(pairwise US JPN)} for the spillover from US to JPN, and
+{cmd:stat(npdc US JPN)} for the net spillover from US to JPN. The probabilities are
+computed as for the TCI from the corrected draws of that measure. Since NET and NPDC
+can be zero or negative, rises in percent, {opt threshold()} and {opt detect(#)}
+with {it:#} > 0, are not allowed for them; {cmd:detect(0)} gives the probability of
+any rise.
 
 
 {marker examples}{...}
@@ -253,6 +287,9 @@ rise with {cmd:detect(0)}), and {cmd:flag}, equal to 1 when it reaches
 {phang2}{cmd:. estat bootstrap, event(17oct1997 11sep2001 09aug2007) leads(0 1 5 22) seed(1357)}{p_end}
 {phang2}{cmd:. estat bootstrap, reps(200) every(20) seed(1357)}{p_end}
 {phang2}{cmd:. frame cn_boot: twoway rarea tci_lo tci_hi date || line tci_bc date}{p_end}
+{phang2}{cmd:. estat bootstrap, event(17oct1997 11sep2001 09aug2007) seed(1357) stat(npdc US JPN)}{p_end}
+{phang2}{cmd:. estat bootstrap, reps(200) every(20) seed(1357) pairwise npdc replace}{p_end}
+{phang2}{cmd:. frame cn_boot_pw: twoway (rarea npdc_lo npdc_hi date) (line npdc_bc date) if from == "US" & to == "JPN"}{p_end}
 
 
 {marker results}{...}
@@ -312,9 +349,13 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 {synopt:{cmd:r(events)}}event dates ({opt event()}){p_end}
 {synopt:{cmd:r(leads)}}leads ({opt event()}){p_end}
 {synopt:{cmd:r(frame)}}frame holding the bands{p_end}
+{synopt:{cmd:r(pwframe)}}frame holding the pairwise bands ({opt pairwise}, {opt npdc}){p_end}
+{synopt:{cmd:r(stat)}}measure tested ({opt event()}, {opt detect()}){p_end}
 
 {p2col 5 16 20 2: Matrices}{p_end}
 {synopt:{cmd:r(table)}}estimate, bias, bias-corrected estimate, standard error and interval of TCI, TO, FROM and NET (static results){p_end}
+{synopt:{cmd:r(pw_b)}}pairwise table, estimate, k x k ({opt pairwise}, static results); also {cmd:r(pw_bias)}, {cmd:r(pw_bc)}, {cmd:r(pw_se)}, {cmd:r(pw_lo)} and {cmd:r(pw_hi)}{p_end}
+{synopt:{cmd:r(npdc_b)}}NPDC matrix, estimate, k x k ({opt npdc}, static results); also {cmd:r(npdc_bias)}, {cmd:r(npdc_bc)}, {cmd:r(npdc_se)}, {cmd:r(npdc_lo)} and {cmd:r(npdc_hi)}{p_end}
 {synopt:{cmd:r(prob)}}event probabilities (percent), events x leads ({opt event()}){p_end}
 
 

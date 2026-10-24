@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.1  24oct2026}{...}
+{* *! version 0.9.2  24oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}

@@ -1317,6 +1317,117 @@ foreach s in perm temp {
     cn_assert "simulated break detected (`s')" `=cond(`S'[1, 1] >= 90, 0, 1)' 0.5
 }
 
+di _n as txt "{hline 78}" _n "19. Bootstrap of pairwise and NPDC measures; stat() (0.9.2)" _n "{hline 78}"
+* Exact checks against the independent R implementation in test/r/make_fixtures_092.R
+* (the same resampled rows as section 18): bands for the pairwise table and the NPDC
+* matrix of ConnectednessApproach, static and rolling, and event and detection
+* probabilities for TO, NET, pairwise and NPDC measures; identities that hold draw by
+* draw (FROM, TO and NET from the pairwise table, NPDC = CT - CT').
+capture confirm file "fixtures/R_boot_static_pw.csv"
+if !_rc {
+    use ../data/cn_dy2012, clear
+    tsset t
+    local v SP500 R_10Y DJUBSCOM USDX
+    tempname IDX RT A Tb pw_b pw_bias pw_bc pw_se pw_lo pw_hi npdc_b npdc_bias npdc_bc ///
+        npdc_se npdc_lo npdc_hi
+    cn_loadidx "fixtures/R_boot_idx_static.csv" `IDX'
+    connectedness `v' in 1/800, lags(2) horizon(10) `opt'
+    quietly estat bootstrap, reps(40) level(90) testindices(`IDX') pairwise npdc nodots
+    matrix `Tb' = r(table)
+    foreach blk in pw npdc {
+        foreach s in b bias bc se lo hi {
+            matrix ``blk'_`s'' = r(`blk'_`s')
+        }
+    }
+    cn_loadfx "fixtures/R_boot_static_gen.csv" `RT'
+    cn_assert "R_boot static table, with pairwise" `=mreldif(`Tb', `RT')' 1e-8
+    foreach blk in pw npdc {
+        mata: st_matrix("`A'", (vec(st_matrix("``blk'_b'")'), vec(st_matrix("``blk'_bias'")'), ///
+            vec(st_matrix("``blk'_bc'")'), vec(st_matrix("``blk'_se'")'), ///
+            vec(st_matrix("``blk'_lo'")'), vec(st_matrix("``blk'_hi'")')))
+        cn_loadfx "fixtures/R_boot_static_`blk'.csv" `RT'
+        cn_assert "R_boot static `blk'" `=mreldif(`A', `RT')' 1e-8
+    }
+    * identities of the bias-corrected estimates (linear in the draws)
+    mata: cn__T = st_matrix("`Tb'")[., 3]; cn__P = st_matrix("`pw_bc'"); cn__N = st_matrix("`npdc_bc'")
+    mata: st_local("d1", strofreal(max(abs(rowsum(cn__P) - diagonal(cn__P) - cn__T[|6 \ 9|])), "%12.0g"))
+    mata: st_local("d2", strofreal(max(abs(colsum(cn__P)' - diagonal(cn__P) - cn__T[|2 \ 5|])), "%12.0g"))
+    mata: st_local("d3", strofreal(max(abs(colsum(cn__N)' - cn__T[|10 \ 13|])), "%12.0g"))
+    mata: st_local("d4", strofreal(max(abs(cn__N - (cn__P - cn__P'))), "%12.0g"))
+    mata: st_local("d5", strofreal(max(abs(st_matrix("`npdc_lo'") + st_matrix("`npdc_hi'")')), "%12.0g"))
+    mata: mata drop cn__T cn__P cn__N
+    cn_assert "pairwise rows less own = FROM" `d1' 1e-10
+    cn_assert "pairwise columns less own = TO" `d2' 1e-10
+    cn_assert "NPDC columns = NET" `d3' 1e-10
+    cn_assert "NPDC = pairwise - pairwise'" `d4' 1e-10
+    cn_assert "NPDC intervals antisymmetric" `d5' 1e-10
+
+    cn_loadidx "fixtures/R_boot_idx_roll.csv" `IDX'
+    connectedness `v' in 1/230, lags(2) horizon(10) window(202) `opt'
+    quietly estat bootstrap, reps(25) testindices(`IDX') pairwise npdc frame(cn_btest) replace nodots
+    cn_assert "default pairwise frame" `=("`r(pwframe)'" != "cn_btest_pw")' 0.5
+    frame cn_btest_pw {
+        mkmat pw-npdc_hi, matrix(`A')
+        local okn = (from[1] == "SP500" & to[1] == "R_10Y" & from[_N] == "USDX" & ///
+            to[_N] == "DJUBSCOM" & _N == 31*12)
+    }
+    cn_loadfx "fixtures/R_boot_roll_pw.csv" `RT'
+    matrix `RT' = `RT'[1..., 4...]
+    cn_assert "R_boot rolling pairwise and NPDC" `=mreldif(`A', `RT')' 1e-8
+    cn_assert "pairwise frame layout" `=1 - `okn'' 0.5
+
+    tempname E E2
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) ///
+        stat(npdc SP500 R_10Y) nodots
+    matrix `E' = r(prob)
+    local st `r(stat)'
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) ///
+        stat(pairwise USDX SP500) reference(3) threshold(2) nodots
+    matrix `E' = `E' \ r(prob)
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) ///
+        stat(net DJUBSCOM) decrease nodots
+    matrix `E' = `E' \ r(prob)
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) ///
+        stat(to R_10Y) threshold(1) nodots
+    matrix `E' = `E' \ r(prob)
+    cn_loadfx "fixtures/R_boot_roll_statevent.csv" `RT'
+    cn_assert "R_boot events, stat()" `=mreldif(`E', `RT')' 1e-8
+    cn_assert "r(stat)" `=("`st'" != "npdc SP500 R_10Y")' 0.5
+    quietly estat bootstrap, reps(25) testindices(`IDX') detect(0) stat(npdc SP500 R_10Y) ///
+        frame(cn_btest) replace nodots
+    frame cn_btest: mkmat prob, matrix(`E')
+    quietly estat bootstrap, reps(25) testindices(`IDX') detect(2) stat(from USDX) ///
+        frame(cn_btest) replace nodots
+    frame cn_btest: mkmat prob, matrix(`E2')
+    matrix `E' = `E', `E2'
+    cn_loadfx "fixtures/R_boot_roll_statdetect.csv" `RT'
+    cn_assert "R_boot detect, stat()" `=mreldif(`E', `RT')' 1e-8
+
+    cn_expect 198 estat bootstrap, reps(5) stat(net SP500)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(npdc SP500 R_10Y) threshold(2)
+    cn_expect 198 estat bootstrap, reps(5) detect(2) stat(net SP500)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(level SP500)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(npdc SP500 SP500)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(npdc SP500)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(to XYZ)
+    cn_expect 198 estat bootstrap, reps(5) event(209) pairwise
+    capture frame drop cn_btest cn_btest_pw
+
+    * clustered identification: identities hold, NPDC table displayed
+    connectedness `v' in 1/800, lags(2) clusters("A: SP500 R_10Y" "B: DJUBSCOM USDX") `opt'
+    capture noisily estat bootstrap, reps(10) seed(5) pairwise npdc nodots
+    local rc = _rc
+    if !`rc' {
+        mata: cn__T = st_matrix("r(table)")[., 3]; cn__N = st_matrix("r(npdc_bc)")
+        mata: st_local("d3", strofreal(max(abs(colsum(cn__N)' - cn__T[|10 \ 13|])), "%12.0g"))
+        mata: mata drop cn__T cn__N
+    }
+    else local d3 = 1
+    cn_assert "clusters: NPDC columns = NET" `d3' 1e-10
+    cn_expect 198 estat bootstrap, reps(5) pwframe(x) pairwise
+}
+else di as txt "  R_boot pairwise: no fixture, skipped"
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"

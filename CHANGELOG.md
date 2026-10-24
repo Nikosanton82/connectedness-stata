@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.2 (2026-10-24)
+- `estat bootstrap` gives bands for the pairwise measures: option `pairwise` for the
+  pairwise connectedness table (element (i, j): spillover from j to i) and option
+  `npdc` for net pairwise directional connectedness (element (i, j): net spillover from
+  j to i, as NPDC in ConnectednessApproach). They come from the same draws at almost
+  no extra cost, static or rolling, generalized or orthogonalized, with `normalize()`
+  and `clusters()`. Static results store k x k matrices `r(pw_*)` and `r(npdc_*)`
+  (estimate, bias, corrected, se, lower, upper) and display the bias-corrected pairwise
+  table and the NPDC matrix, starring net spillovers whose interval excludes zero
+  (`notable` suppresses the display). Rolling results store the bands in a long frame
+  (`pwframe()`, default `cn_boot_pw`), one observation per window and ordered pair.
+- New option `stat()`: `event()` and `detect()` for any measure, `stat(to|from|net
+  name)` or `stat(pairwise|npdc name1 name2)` (from name1 to name2), besides the TCI.
+  Rises in percent (`threshold()`, `detect(#)` with # > 0) are refused for NET and NPDC,
+  which can be zero or negative.
+- Validation: `test/r/make_fixtures_092.R` extends the independent R bootstrap of 0.9.1
+  to every measure, with the pairwise table and NPDC from ConnectednessApproach, on the
+  same resampled rows. Stata agrees with R to 8e-14 for the static and rolling pairwise
+  and NPDC bands and to 1e-16 for event and detection probabilities of TO, NET,
+  pairwise and NPDC measures; the bias-corrected estimates satisfy the identities
+  (pairwise rows and columns sum to FROM and TO, NPDC columns to NET) to 1e-13.
+  280 of 280 certification tests pass in Stata 19 (`docs/certification-log-v0.9.2.txt`);
+  run times are unchanged.
+
 ## 0.9.1 (2026-10-24)
 - New `estat bootstrap`: bootstrap inference for VAR connectedness (Greenwood-Nimmo,
   Kocenda and Nguyen 2024), after `connectedness` with `model(var)`, static or rolling,

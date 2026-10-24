@@ -21,7 +21,8 @@ correlations (`estat correlation`), and since version 0.8.2 scalar normalization
 the spillover asymmetry measure of good and bad volatility (Baruník, Kočenda and Vácha
 2016), since version 0.9.0 clustered network connectedness (Buchwalter, Diebold and
 Yilmaz 2025), and since version 0.9.1 bootstrap inference and event tests
-(Greenwood-Nimmo, Kočenda and Nguyen 2024).
+(Greenwood-Nimmo, Kočenda and Nguyen 2024), extended in version 0.9.2 to the pairwise
+and net pairwise (NPDC) measures.
 
 The numerical routines port the [ConnectednessApproach](https://gabauerdavid.github.io/ConnectednessApproach/)
 R package by David Gabauer (GPL-3) and reproduce its results to numerical precision;
@@ -48,7 +49,7 @@ connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96
 cnportfolio r_EUR r_GBP r_JPY r_CHF, method(mcp)
 ```
 
-Status: development (version 0.9.1). The Stata Journal article describes version 0.2.1:
+Status: development (version 0.9.2). The Stata Journal article describes version 0.2.1:
 static and rolling VAR, TVP-VAR, corrected TCI, PCI, influence, and the aggregated,
 conditional and decomposed group measures. Version 0.3.0 adds frequency, joint and
 extended joint connectedness, version 0.4.0 quantile and LAD VARs, and version 0.5.0
@@ -57,7 +58,8 @@ elastic-net VARs, version 0.7.0 DCC-GARCH volatility connectedness, version 0.8.
 portfolio and hedging strategies (`cnportfolio`), version 0.8.1 DCC-GARCH R2
 decomposed connectedness and `estat correlation`, and version 0.8.2 scalar
 normalizations, adaptive elastic nets and the spillover asymmetry measure, version
-0.9.0 clustered network connectedness, and version 0.9.1 bootstrap inference
-(`estat bootstrap`).
+0.9.0 clustered network connectedness, version 0.9.1 bootstrap inference
+(`estat bootstrap`), and version 0.9.2 bootstrap bands for the pairwise and NPDC
+measures and event tests for any measure.
 
 Requires Stata 16.1 or newer. License: GPL-3.
