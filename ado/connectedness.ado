@@ -1,4 +1,4 @@
-*! version 0.8.1  23oct2026
+*! version 0.8.2  24oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -23,7 +23,9 @@ program define Estimate, eclass
         QUANTile(numlist >0 <1) CORMethod(string)                 ///
         ALPha(numlist max=1 >=0 <=1) NALPha(integer 10) NFOLDs(integer 10) ///
         LOSS(string) FOLDs(string) SEED(string)                   ///
-        STANDardize DCCParams(name) noCOVariance ]
+        STANDardize DCCParams(name) noCOVariance                  ///
+        NORMalize(string) ADAPTive                                ///
+        POSitive(varlist numeric ts) NEGative(varlist numeric ts) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -39,6 +41,31 @@ program define Estimate, eclass
     tsrevar `varlist'
     local tsvars `r(varlist)'
     markout `touse' `tsvars'
+    local k : word count `varlist'
+
+    // asymmetric connectedness of user-supplied positive and negative series, such as
+    // realized semivariances (Barunik, Kocenda and Vacha 2016)
+    local semi = ("`positive'`negative'" != "")
+    if `semi' {
+        if "`positive'" == "" | "`negative'" == "" {
+            di as err "options positive() and negative() must be specified together"
+            exit 198
+        }
+        if "`asymmetric'" != "" {
+            di as err "option asymmetric may not be combined with positive() and negative()"
+            exit 184
+        }
+        if `: word count `positive'' != `k' | `: word count `negative'' != `k' {
+            di as err "positive() and negative() must each contain `k' variables, one per variable in varlist"
+            exit 198
+        }
+        tsrevar `positive'
+        local posvars `r(varlist)'
+        tsrevar `negative'
+        local negvars `r(varlist)'
+        markout `touse' `posvars' `negvars'
+        local asymmetric asymmetric
+    }
 
     quietly count if `touse'
     local T = r(N)
@@ -49,7 +76,6 @@ program define Estimate, eclass
         di as err "gaps or missing values were found within the sample"
         exit 498
     }
-    local k : word count `varlist'
 
     // ---------------------------------------------------------- options
     local model = lower(strtrim(`"`model'"'))
@@ -306,6 +332,10 @@ program define Estimate, eclass
         }
         if "`seed'" != "" set seed `seed'
     }
+    if "`adaptive'" != "" & !`enet' {
+        di as err "option adaptive is allowed only with model(lasso), model(ridge) or model(elasticnet)"
+        exit 198
+    }
     if "`model'" != "tvpvar" & (`kappa1' != 0.99 | `kappa2' != 0.99 | `gamma' != 0.01) {
         di as err "options kappa1(), kappa2() and gamma() are allowed only with model(tvpvar)"
         exit 198
@@ -349,6 +379,33 @@ program define Estimate, eclass
     }
     local gen  = ("`orthogonalized'" == "")
     local corr = ("`corrected'" != "")
+
+    // normalization of the generalized FEVD: row (Diebold and Yilmaz 2012) or scalar
+    // (Caloia, Cipollini and Muzzioli 2019)
+    local normalize = lower(strtrim("`normalize'"))
+    local normalize : subinstr local normalize " " "", all
+    if inlist("`normalize'", "", "row") local normalize row
+    else if inlist("`normalize'", "maxrow", "rowmax", "maxrowsum") local normalize maxrow
+    else if inlist("`normalize'", "maxcol", "colmax", "maxcolumn", "maxcolsum", "maxcolumnsum") ///
+        local normalize maxcol
+    else if inlist("`normalize'", "spectral", "spectralradius") local normalize spectral
+    else {
+        di as err "normalize() must be row, maxrow, maxcol or spectral"
+        exit 198
+    }
+    if "`normalize'" != "row" {
+        if "`approach'" != "time" | `dcc' {
+            di as err "normalize(`normalize') requires approach(time) and a VAR-type or TVP-VAR model"
+            exit 198
+        }
+        if !`gen' {
+            di as err "normalize(`normalize') applies to the generalized FEVD; " ///
+                "option orthogonalized is not allowed"
+            exit 198
+        }
+        local gen = 1 + ("`normalize'" == "maxrow") + 2*("`normalize'" == "maxcol") + ///
+            3*("`normalize'" == "spectral")
+    }
 
     if `lags' < 1 & !inlist("`approach'", "r2", "modelfree") {
         di as err "lags() must be a positive integer"
@@ -418,6 +475,7 @@ program define Estimate, eclass
     if "`fevd'" == "" local nvars = `nvars' + `k'*`k'
     local savecov = ("`covariance'" == "" & (!inlist("`approach'", "r2", "modelfree") | `dcc'))
     local nvars = (`nvars')*(`ncomp' + 1) + 2
+    if "`asymmetric'" != "" local nvars = `nvars' + 1 + 3*`k'
     if `savecov' {
         // the covariances are left out, with a note, when they would not fit
         if `nvars' + `k'*(`k'+1)/2 > c(maxvar) - 10 {
@@ -478,7 +536,7 @@ program define Estimate, eclass
     }
 
     // positive and negative parts of each series (Adekoya et al. 2022)
-    if "`asymmetric'" != "" {
+    if "`asymmetric'" != "" & !`semi' {
         local posvars
         local negvars
         foreach v of local tsvars {
@@ -509,7 +567,7 @@ program define Estimate, eclass
             "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'", ///
             strtoreal(tokens("`taus'")), "`csufs'", "`cormethod'",                ///
             strtoreal(tokens("`alphas'")), `nfolds', "`loss'", "`folds'",         ///
-            ("`standardize'" != ""), "`dccparams'")
+            ("`standardize'" != ""), "`dccparams'", ("`adaptive'" != ""))
         capture frame drop `f'
         frame create `f'
         frame `f' {
@@ -535,6 +593,35 @@ program define Estimate, eclass
         }
     }
     local sc `sc1'
+
+    // spillover asymmetry measure: positive minus negative (Barunik, Kocenda and Vacha
+    // 2016), in the main results frame
+    if "`asymmetric'" != "" {
+        local samv tci
+        local samn sam
+        forvalues j = 1/`k' {
+            local samv `samv' to_`j' from_`j' net_`j'
+            local samn `samn' sam_to_`j' sam_from_`j' sam_net_`j'
+        }
+        frame `frame'_pos: mata: cn__sp = st_data(., tokens("`samv'"))
+        frame `frame'_neg: mata: cn__sn = st_data(., tokens("`samv'"))
+        frame `frame' {
+            local j 0
+            foreach v of local samn {
+                local ++j
+                quietly generate double `v' = .
+            }
+            mata: st_store(., tokens("`samn'"), cn__sp - cn__sn)
+            label variable sam "SAM: TCI of positive minus TCI of negative"
+            forvalues j = 1/`k' {
+                local nj : word `j' of `names'
+                label variable sam_to_`j'   "SAM: TO, `nj'"
+                label variable sam_from_`j' "SAM: FROM, `nj'"
+                label variable sam_net_`j'  "SAM: NET, `nj'"
+            }
+        }
+        mata: mata drop cn__sp cn__sn
+    }
 
     // sample period, in dates when datevar() is given
     local first  : display `tfmt' `sc'[1,5]
@@ -599,6 +686,7 @@ program define Estimate, eclass
         ereturn local loss   "`loss'"
         ereturn local folds  "`folds'"
         ereturn local seed   "`seed'"
+        ereturn local adaptive "`adaptive'"
     }
     ereturn matrix table = `tab1'
     ereturn matrix fevd  = `fev1'
@@ -614,6 +702,11 @@ program define Estimate, eclass
         ereturn local frame_pos "`frame'_pos"
         ereturn local frame_neg "`frame'_neg"
         ereturn local asymmetric "asymmetric"
+        ereturn scalar SAM = `sc2'[1,1] - `sc3'[1,1]
+        if `semi' {
+            ereturn local positive "`positive'"
+            ereturn local negative "`negative'"
+        }
     }
     ereturn local first    "`=strtrim("`first'")'"
     ereturn local last     "`=strtrim("`last'")'"
@@ -625,6 +718,9 @@ program define Estimate, eclass
     ereturn local depvar   "`varlist'"
     ereturn local corrected "`corrected'"
     ereturn local fevdtype = cond(`gen', "generalized", "orthogonalized")
+    if `gen' & "`approach'" == "time" & !`dcc' ereturn local normalize "`normalize'"
+    if `gen' > 1 ereturn local fevdtype = "generalized, " + cond(`gen' == 2, "max row sum", ///
+        cond(`gen' == 3, "max column sum", "spectral radius"))
     if "`approach'" == "r2" ereturn local fevdtype = cond(`dccr2', ///
         "R2 decomposition (DCC correlations)", "R2 decomposition (`cormethod')")
     if "`approach'" == "modelfree" ereturn local fevdtype "squared correlations (`cormethod')"
@@ -733,6 +829,7 @@ program define Display
     if "`e(model)'" == "lasso" local mname "LASSO-VAR"
     if "`e(model)'" == "ridge" local mname "ridge VAR"
     if "`e(model)'" == "elasticnet" local mname "elastic-net VAR"
+    if "`e(adaptive)'" != "" local mname "adaptive `mname'"
     local wdesc = cond(e(window) > 0, "rolling window", "static")
     if "`approach'" == "r2" & "`e(model)'" == "dccgarch" local mdesc "DCC-GARCH(1,1), full sample"
     else if "`approach'" == "r2" local mdesc "R2, `e(lags)' lag(s), `wdesc'"
@@ -741,6 +838,7 @@ program define Display
     else if "`e(model)'" == "dccgarch" local mdesc "DCC-GARCH(1,1), full sample"
     else if e(window) > 0      local mdesc "`mname'(`e(lags)'), rolling window"
     else                       local mdesc "`mname'(`e(lags)'), static"
+    if length("`mdesc'") > 39 local mdesc : subinstr local mdesc ", rolling window" ", rolling"
 
     di _n as txt "`e(title)'" _col(49) "Number of variables = " as res %8.0g e(k)
     if "`approach'" == "r2" & "`e(model)'" == "dccgarch" {
@@ -809,7 +907,8 @@ program define Display
     di as txt "Results frame: " as res "`fr'" as txt " (first period " as res "`e(firstm)'" as txt ")"
     if "`e(asymmetric)'" != "" {
         local ptxt = cond("`suf'" == "_pos", "positive", cond("`suf'" == "_neg", "negative", "all"))
-        di as txt "Asymmetric connectedness: " as res "`ptxt'" as txt " changes shown; " ///
+        local stxt = cond("`e(positive)'" != "", "series", "changes")
+        di as txt "Asymmetric connectedness: " as res "`ptxt'" as txt " `stxt' shown; " ///
             "see {cmd:connectedness, part()}"
     }
     if `band' {
@@ -848,8 +947,10 @@ program define Display
     if "`e(corrected)'" != "" di as txt "    (NET row reports the corrected TCI)"
     else di
     if "`e(asymmetric)'" != "" & "`suf'" == "" {
-        di as txt "Positive changes: TCI = " as res %6.`digits'f e(TCI_pos) ///
-            as txt "    Negative changes: TCI = " as res %6.`digits'f e(TCI_neg)
+        local stxt = cond("`e(positive)'" != "", "series", "changes")
+        di as txt "Positive `stxt': TCI = " as res %6.`digits'f e(TCI_pos) ///
+            as txt "    Negative `stxt': TCI = " as res %6.`digits'f e(TCI_neg)
+        di as txt "Spillover asymmetry measure: SAM = " as res %6.`digits'f e(SAM)
     }
     if "`approach'" == "r2" & "`e(TCI_c)'" != "" & "`suf'" == "" {
         di _n as txt %-16s "Component" %12s "TCI" %16s "corrected TCI"

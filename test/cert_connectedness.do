@@ -908,6 +908,151 @@ cn_corrcase tvp_acg2020
 capture frame drop cn_ctest
 capture frame drop cn_ptest
 
+di _n as txt "{hline 78}" _n "16. Normalizations, adaptive elastic net and SAM (0.8.2)" _n "{hline 78}"
+* Scalar normalizations of the generalized FEVD (Caloia, Cipollini and Muzzioli 2019),
+* adaptive LASSO, ridge and elastic-net VARs (Demirer et al. 2018) and the spillover
+* asymmetry measure of user-supplied positive and negative series (Barunik, Kocenda
+* and Vacha 2016).
+capture program drop cn_assert
+program define cn_assert
+    args name d tol
+    global cn_tests = $cn_tests + 1
+    local ok = (`d' < `tol')
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-36s "`name'" " diff " as res %9.2e `d' as txt "  " cond(`ok', "pass", "FAIL")
+end
+capture program drop cn_pubcheck
+program define cn_pubcheck
+    * largest absolute difference between TO, FROM, NET and TCI of e(table) and the
+    * values published by Caloia, Cipollini and Muzzioli (2019, Table 11), in shares
+    args name to from net tci
+    tempname T
+    matrix `T' = e(table)
+    local k = e(k)
+    local d = abs(`T'[`k'+3, `k'+1]/100 - `tci')
+    forvalues i = 1/`k' {
+        local d = max(`d', abs(`T'[`k'+1, `i']/100 - real(word("`to'", `i'))))
+        local d = max(`d', abs(`T'[`i', `k'+1]/100 - real(word("`from'", `i'))))
+        local d = max(`d', abs(`T'[`k'+3, `i']/100 - real(word("`net'", `i'))))
+    }
+    cn_assert "`name'" `d' 0.00051
+end
+
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+foreach n in maxrow maxcol spectral {
+    connectedness `v', lags(4) horizon(10) normalize(`n') `opt'
+    cn_check, case(dy2012_norm_`n') tol(1e-8) prefix(R_)
+}
+connectedness `v', lags(4) horizon(10) normalize(maxrow) `opt'
+cn_pubcheck "published, max row sum (Table 11)" ".161 .169 .045 .109" ".107 .186 .055 .137" ///
+    ".054 -.016 -.010 -.028" .121
+connectedness `v', lags(4) horizon(10) `opt'
+tempname F0
+matrix `F0' = e(fevd)
+cn_pubcheck "published, row (Table 11)" ".164 .180 .046 .114" ".112 .186 .063 .143" ///
+    ".051 -.005 -.017 -.029" .126
+connectedness `v', lags(4) horizon(10) normalize(row) `opt'
+tempname F1 FX
+matrix `F1' = e(fevd)
+cn_assert "normalize(row) equals the default" `=mreldif(`F1', `F0')' 1e-15
+cn_expect 198 connectedness `v', lags(4) normalize(maxrow) orthogonalized `opt'
+cn_expect 198 connectedness `v', lags(4) normalize(maxrow) approach(frequency) `opt'
+cn_expect 198 connectedness `v', lags(4) normalize(columns) `opt'
+connectedness `v', lags(4) horizon(10) normalize(maxcol) `opt'
+cn_expect 198 estat group, type(conditional) groups(SP500 R_10Y)
+
+use ../data/cn_acg2020, clear
+tsset month
+connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) ///
+    normalize(maxrow) `opt'
+cn_check, case(acg2020_tvp_norm_maxrow) tol(1e-6) prefix(R_)
+use ../data/cn_g2020, clear
+tsset t
+cn_expect 198 connectedness EUR GBP CHF JPY, model(dccgarch) normalize(maxrow) `opt'
+
+* adaptive elastic net: glmnet with penalty.factor = 1/|b_OLS|, interleaved folds
+use ../data/cn_dy2012, clear
+tsset t
+local f folds(interleaved)
+timer on 14
+connectedness `v', model(lasso) adaptive lags(2) `f' `opt'
+timer off 14
+cn_check, case(dy2012_alasso_static) tol(1e-8) prefix(R_)
+connectedness `v', model(ridge) adaptive lags(2) `f' `opt'
+cn_check, case(dy2012_aridge_static) tol(1e-8) prefix(R_)
+connectedness `v', model(elasticnet) alpha(0.5) adaptive lags(2) `f' `opt'
+cn_check, case(dy2012_aenet_a05) tol(1e-8) prefix(R_)
+connectedness `v', model(elasticnet) nalpha(4) loss(mse) adaptive lags(1) `f' `opt'
+cn_check, case(dy2012_aenet4_mse) tol(1e-8) prefix(R_)
+connectedness `v' in 1/300, model(lasso) adaptive lags(1) window(200) `f' `opt'
+cn_check, case(dy2012_alasso_roll200) tol(1e-8) prefix(R_)
+cn_expect 198 connectedness `v', adaptive `opt'
+
+* SAM of positive and negative series: squared positive and negative daily returns
+* stand in for realized semivariances
+use ../data/cn_g2020, clear
+tsset t
+foreach x in EUR GBP CHF JPY {
+    quietly generate double rv_`x' = `x'^2
+    quietly generate double rp_`x' = cond(`x' > 0, `x'^2, 0)
+    quietly generate double rn_`x' = cond(`x' < 0, `x'^2, 0)
+    quietly generate double p_`x'  = max(`x', 0)
+    quietly generate double n_`x'  = min(`x', 0)
+}
+local rv rv_EUR rv_GBP rv_CHF rv_JPY
+local rp rp_EUR rp_GBP rp_CHF rp_JPY
+local rn rn_EUR rn_GBP rn_CHF rn_JPY
+connectedness `rv', positive(`rp') negative(`rn') window(500) `opt'
+local sam = e(SAM)
+local tp  = e(TCI_pos)
+local tn  = e(TCI_neg)
+tempname FP FN
+matrix `FP' = e(fevd_pos)
+matrix `FN' = e(fevd_neg)
+cn_assert "SAM = TCI positive - TCI negative" `=abs(`sam' - (`tp' - `tn'))' 1e-12
+* per-period SAM series against the positive and negative frames
+frame cn_test {
+    quietly frlink 1:1 t, frame(cn_test_pos) generate(__lp)
+    quietly frget __tp = tci, from(__lp)
+    quietly frget __top = to_1, from(__lp)
+    quietly frget __fp = from_1, from(__lp)
+    quietly frlink 1:1 t, frame(cn_test_neg) generate(__ln)
+    quietly frget __tn = tci, from(__ln)
+    quietly frget __ton = to_1, from(__ln)
+    quietly frget __fn = from_1, from(__ln)
+    quietly generate double __d = max(abs(sam - (__tp - __tn)), abs(sam_to_1 - (__top - __ton)), ///
+        abs(sam_from_1 - (__fp - __fn)), abs(sam_net_1 - ((__top - __fp) - (__ton - __fn))))
+    quietly summarize __d, meanonly
+    local d = r(max)
+    drop __lp __ln __tp __tn __top __ton __fp __fn __d
+}
+cn_assert "SAM series against the part frames" `d' 1e-10
+connectedness `rp', window(500) frame(cn_test2) replace notable
+matrix `FX' = e(fevd)
+cn_assert "positive part = its own estimation" `=max(mreldif(`FX', `FP'), abs(e(TCI) - `tp'))' 1e-12
+connectedness `rn', window(500) frame(cn_test2) replace notable
+matrix `FX' = e(fevd)
+cn_assert "negative part = its own estimation" `=max(mreldif(`FX', `FN'), abs(e(TCI) - `tn'))' 1e-12
+capture frame drop cn_test2
+* positive() and negative() with the positive and negative changes = asymmetric
+connectedness EUR GBP CHF JPY, asymmetric window(500) `opt'
+matrix `FP' = e(fevd_pos)
+matrix `FN' = e(fevd_neg)
+local sam = e(SAM)
+connectedness EUR GBP CHF JPY, positive(p_EUR p_GBP p_CHF p_JPY) negative(n_EUR n_GBP n_CHF n_JPY) ///
+    window(500) `opt'
+tempname GP GN
+matrix `GP' = e(fevd_pos)
+matrix `GN' = e(fevd_neg)
+cn_assert "positive()/negative() = asymmetric" ///
+    `=max(mreldif(`GP', `FP'), mreldif(`GN', `FN'), abs(e(SAM) - `sam'))' 1e-12
+cn_expect 198 connectedness `rv', positive(`rp') `opt'
+cn_expect 198 connectedness `rv', positive(`rp') negative(rn_EUR rn_GBP) `opt'
+cn_expect 184 connectedness `rv', positive(`rp') negative(`rn') asymmetric `opt'
+cn_expect 198 connectedness `rv', positive(`rp') negative(`rn') approach(r2) `opt'
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -923,6 +1068,7 @@ di as txt "Timing: LASSO, k = 51, static:             " as res %6.1f r(t10) as t
 di as txt "Timing: DCC-GARCH case, k = 4, T = 4,200:  " as res %6.1f r(t11) as txt " s"
 di as txt "Timing: portfolio (MCP), T = 4,200:         " as res %6.1f r(t12) as txt " s"
 di as txt "Timing: DCC-GARCH R2, k = 4, T = 4,200:     " as res %6.1f r(t13) as txt " s"
+di as txt "Timing: adaptive LASSO, k = 4, 2 lags:      " as res %6.1f r(t14) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

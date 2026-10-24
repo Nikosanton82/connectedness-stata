@@ -1,4 +1,4 @@
-*! version 0.8.1  23oct2026
+*! version 0.8.2  24oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -301,7 +301,7 @@ void cn_qvar(real matrix x, real scalar p, real rowvector tau, real scalar lad,
 // and, in alm, the lambdas on the standardized scale.
 real matrix cn_elnet1(real scalar bta, real matrix G, real colvector g0,
                       real scalar nlam, real scalar flmin, real colvector ulam,
-                      real colvector alm)
+                      real colvector alm, real colvector vp)
 {
     real scalar    ni, ne, omb, al, alf, rsq, rsq0, nlp, nin, iz, jz, mnl, m, k, l
     real scalar    ak, u, v, dlx, dl, dem, ab, me, thr
@@ -330,7 +330,7 @@ real matrix cn_elnet1(real scalar bta, real matrix G, real colvector g0,
         if (flmin >= 1)  al = ulam[m]
         else if (m > 2)  al = al*alf
         else if (m == 1) al = 9.9e35
-        else             al = alf*max(abs(g))/max((bta, 1e-3))
+        else             al = alf*max(select(abs(g) :/ vp, vp :> 0))/max((bta, 1e-3))
         dem  = al*omb
         ab   = al*bta
         rsq0 = rsq
@@ -343,9 +343,9 @@ real matrix cn_elnet1(real scalar bta, real matrix G, real colvector g0,
                 for (k=1; k<=ni; k++) {
                     ak   = a[k]
                     u    = g[k] + ak
-                    v    = abs(u) - ab
+                    v    = abs(u) - vp[k]*ab
                     a[k] = 0
-                    if (v > 0) a[k] = sign(u)*v/(1 + dem)
+                    if (v > 0) a[k] = sign(u)*v/(1 + vp[k]*dem)
                     if (a[k] == ak) continue
                     if (mm[k] == 0) {
                         nin++
@@ -373,9 +373,9 @@ real matrix cn_elnet1(real scalar bta, real matrix G, real colvector g0,
                     k    = ia[l]
                     ak   = a[k]
                     u    = g[k] + ak
-                    v    = abs(u) - ab
+                    v    = abs(u) - vp[k]*ab
                     a[k] = 0
-                    if (v > 0) a[k] = sign(u)*v/(1 + dem)
+                    if (v > 0) a[k] = sign(u)*v/(1 + vp[k]*dem)
                     if (a[k] == ak) continue
                     dl    = a[k] - ak
                     rsq   = rsq + dl*(2*g[k] - dl)
@@ -411,15 +411,20 @@ real matrix cn_elnet1(real scalar bta, real matrix G, real colvector g0,
 // intercept. lam: lambdas to use (empty for glmnet's own path). Returns the
 // coefficients, intercept first, one row per lambda; lamb receives the lambdas.
 real matrix cn_glmnet(real matrix X, real colvector y, real scalar alpha,
-                      real colvector lam, real colvector lamb)
+                      real colvector lam, real colvector lamb, | real colvector pf)
 {
     real scalar    n, p, ym, ys, flmin
     real rowvector xm, xs
     real matrix    Xs, A, Bt, G
-    real colvector yy, g, alm, ll
+    real colvector yy, g, alm, ll, vp
 
     n  = rows(X)
     p  = cols(X)
+    // penalty factors, rescaled to sum to the number of regressors as in glmnet
+    vp = J(p, 1, 1)
+    if (args() >= 6) {
+        if (rows(pf) > 0) vp = pf * p / sum(pf)
+    }
     xm = mean(X)
     Xs = (X :- xm) / sqrt(n)
     xs = sqrt(colsum(Xs:^2))
@@ -433,10 +438,10 @@ real matrix cn_glmnet(real matrix X, real colvector y, real scalar alpha,
     _diag(G, 1)                     // glmnet sets xv = 1 after standardizing
     if (rows(lam) == 0) {
         flmin = (n < p ? 0.01 : 1e-4)
-        A = cn_elnet1(alpha, G, g, 100, flmin, J(0, 1, .), alm)
+        A = cn_elnet1(alpha, G, g, 100, flmin, J(0, 1, .), alm, vp)
     }
     else {
-        A = cn_elnet1(alpha, G, g, rows(lam), 1, lam/ys, alm)
+        A = cn_elnet1(alpha, G, g, rows(lam), 1, lam/ys, alm, vp)
     }
     Bt   = ys * A :/ xs
     lamb = alm * ys
@@ -496,14 +501,16 @@ real matrix cn_lambdainterp(real matrix C, real colvector lam, real colvector s)
 // cv.glmnet(x, y, alpha, foldid, type.measure = loss) and its coefficients at
 // lambda.1se (intercept first)
 real colvector cn_cvglmnet(real matrix X, real colvector y, real scalar alpha,
-                           real colvector foldid, string scalar loss)
+                           real colvector foldid, string scalar loss, | real colvector pf)
 {
     real scalar    nf, f, L, cvmin, lmin, idmin, semin, l1se, i1
     real matrix    C, Cf, pred, raw, fm
-    real colvector lamb, lf, tr, te, wf, ix
+    real colvector lamb, lf, tr, te, wf, ix, vpf
     real rowvector cvm, cvsd
 
-    C    = cn_glmnet(X, y, alpha, J(0, 1, .), lamb)
+    vpf  = J(0, 1, .)
+    if (args() >= 6) vpf = pf
+    C    = cn_glmnet(X, y, alpha, J(0, 1, .), lamb, vpf)
     L    = rows(lamb)
     nf   = max(foldid)
     pred = J(rows(y), L, .)
@@ -513,7 +520,7 @@ real colvector cn_cvglmnet(real matrix X, real colvector y, real scalar alpha,
         tr = selectindex(foldid :!= f)
         te = selectindex(foldid :== f)
         lf = J(0, 1, .)
-        Cf = cn_lambdainterp(cn_glmnet(X[tr, .], y[tr], alpha, J(0, 1, .), lf), lf, lamb)
+        Cf = cn_lambdainterp(cn_glmnet(X[tr, .], y[tr], alpha, J(0, 1, .), lf, vpf), lf, lamb)
         pred[te, .] = J(rows(te), 1, 1)*Cf[., 1]' + X[te, .]*Cf[|1, 2 \ L, cols(Cf)|]'
     }
     raw = (loss == "mse" ? (y :- pred):^2 : abs(y :- pred))
@@ -551,11 +558,12 @@ real colvector cn_folds(real scalar n, real scalar nfolds, string scalar mode)
 // ElasticNetVAR(): for each equation, cross-validated elastic nets for every alpha
 // in alphas; the alpha with the smallest in-sample mean absolute error is kept.
 void cn_enetvar(real matrix x, real scalar p, real rowvector alphas, real scalar nfolds,
-                string scalar loss, string scalar foldmode, real matrix B, real matrix Q)
+                string scalar loss, string scalar foldmode, real matrix B, real matrix Q,
+                | real scalar adapt)
 {
-    real scalar    k, n, i, j, best, mae, minmae
-    real matrix    z, Y, X, Res, Bj
-    real colvector b, yp, Yp, fid
+    real scalar    k, n, i, j, best, mae, minmae, ad
+    real matrix    z, Y, X, Res, Bj, X1
+    real colvector b, yp, Yp, fid, pf, bo
 
     k   = cols(x)
     z   = cn_embed(x, p+1)
@@ -564,13 +572,28 @@ void cn_enetvar(real matrix x, real scalar p, real rowvector alphas, real scalar
     n   = rows(X)
     B   = J(k, k*p, .)
     Res = J(n, k, .)
+    ad  = 0
+    if (args() >= 9) ad = adapt
+    pf  = J(0, 1, .)
+    if (ad) X1 = J(n, 1, 1), X
     for (i=1; i<=k; i++) {
+        // adaptive weights 1/|b_OLS| (Demirer, Diebold, Liu and Yilmaz 2018), passed
+        // to glmnet as penalty factors
+        if (ad) {
+            bo = qrsolve(X1, Y[., i])
+            bo = bo[|2 \ rows(bo)|]
+            if (hasmissing(bo) | anyof(bo, 0)) {
+                errprintf("adaptive weights could not be computed: an OLS coefficient is zero or missing\n")
+                exit(error(498))
+            }
+            pf = 1 :/ abs(bo)
+        }
         Bj     = J(cols(alphas), k*p, .)
         best   = 0
         minmae = .
         for (j=1; j<=cols(alphas); j++) {
             fid = cn_folds(n, nfolds, foldmode)
-            b   = cn_cvglmnet(X, Y[., i], alphas[j], fid, loss)
+            b   = cn_cvglmnet(X, Y[., i], alphas[j], fid, loss, pf)
             Bj[j, .] = b[|2 \ rows(b)|]'
             yp  = b[1] :+ X*b[|2 \ rows(b)|]
             mae = mean(abs(Y[., i] - yp))
@@ -713,7 +736,15 @@ real matrix cn_fevd(real matrix B, real matrix S, real scalar H, real scalar gen
             P   = PS[|1, h*k+1 \ k, (h+1)*k|] * S
             num = num + (P :/ sd):^2
         }
-        return(num :/ rowsum(num))
+        if (gen == 1) return(num :/ rowsum(num))
+        // scalar normalizations (Caloia, Cipollini and Muzzioli 2019) of the
+        // unnormalized generalized FEVD of Pesaran and Shin (1998)
+        den = J(k, 1, 0)
+        for (h=0; h<H; h++) {
+            P   = PS[|1, h*k+1 \ k, (h+1)*k|]
+            den = den + diagonal(P*S*P')
+        }
+        return(cn_normalize(num :/ den, gen))
     }
     L = cholesky(S)
     if (hasmissing(L)) return(J(k, k, .))
@@ -724,6 +755,15 @@ real matrix cn_fevd(real matrix B, real matrix S, real scalar H, real scalar gen
         den = den + diagonal(P*S*P')
     }
     return(num :/ den)
+}
+
+// Scalar normalization of an unnormalized decomposition W: 2 = maximum row sum,
+// 3 = maximum column sum, 4 = spectral radius (Caloia, Cipollini and Muzzioli 2019)
+real matrix cn_normalize(real matrix W, real scalar code)
+{
+    if (code == 2) return(W / max(rowsum(W)))
+    if (code == 3) return(W / max(colsum(W)))
+    return(W / max(abs(eigenvalues(W))))
 }
 
 // Per-period measures from a k x k FEVD in percent. Order:
@@ -1551,7 +1591,8 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              real rowvector part, string scalar scen, string scalar blabels,
              real rowvector tau, string scalar csufs, string scalar r2m,
              real rowvector enalpha, real scalar nfolds, string scalar enloss,
-             string scalar foldmode, real scalar stdz, string scalar dccfix)
+             string scalar foldmode, real scalar stdz, string scalar dccfix,
+             real scalar adapt)
 {
     external real matrix   cn__M, cn__CT, cn__Q
     external real colvector cn__tv, cn__dv
@@ -1614,7 +1655,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
             else if (model=="qvar" | model=="lad") {
                 cn_qvar(x[|t, 1 \ t+ws-1, k|], p, tau, (model=="lad"), B, Q)
             }
-            else cn_enetvar(x[|t, 1 \ t+ws-1, k|], p, enalpha, nfolds, enloss, foldmode, B, Q)
+            else cn_enetvar(x[|t, 1 \ t+ws-1, k|], p, enalpha, nfolds, enloss, foldmode, B, Q, adapt)
             Bt[t, .] = rowshape(B, 1)
             Qt[t, .] = rowshape(Q, 1)
         }

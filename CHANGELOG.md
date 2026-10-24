@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.2 (2026-10-24)
+- Scalar normalizations of the generalized FEVD (Caloia, Cipollini and Muzzioli 2019):
+  `normalize(maxrow)`, `normalize(maxcol)` and `normalize(spectral)` divide the
+  unnormalized decomposition of Pesaran and Shin (1998) by its largest row sum, largest
+  column sum or spectral radius instead of normalizing each row (`normalize(row)`, the
+  default). They apply to `approach(time)` with VAR-type and TVP-VAR models;
+  `estat group` requires the row normalization. `e(normalize)` records the choice.
+- Adaptive LASSO, ridge and elastic-net VARs (Demirer, Diebold, Liu and Yilmaz 2018):
+  option `adaptive` penalizes each slope with weight 1/|b_OLS|, passed to the elastic
+  net as `glmnet`'s `penalty.factor` (rescaled to sum to the number of regressors).
+  The glmnet port now supports penalty factors.
+- Spillover asymmetry measure (Barunik, Kocenda and Vacha 2016, 2017): options
+  `positive(varlist)` and `negative(varlist)` take the positive and negative series
+  directly, such as realized semivariances, and estimate the three systems as
+  `asymmetric` does. With either, `e(SAM)` holds the TCI of the positive system minus
+  that of the negative system, and the results frame holds the per-period `sam`,
+  `sam_to_i`, `sam_from_i` and `sam_net_i`.
+- Validation: 9 R cases from `test/r/make_fixtures_082.R` (ConnectednessApproach 1.0.4,
+  glmnet 4.1.8): the three normalizations of the Diebold and Yilmaz (2012) VAR and the
+  maximum-row normalization of a TVP-VAR, computed from R's VAR() and TVPVAR() and
+  passed to R's ConnectednessTable(), and five adaptive LASSO, ridge and elastic-net
+  cases against glmnet with penalty factors. The R cases agree with R to 3e-13. TO,
+  FROM, NET and TCI also match Table 11 of Caloia, Cipollini and Muzzioli (2019) under
+  row and maximum-row normalization, to the three decimals published. SAM is checked
+  against separate estimations of the positive and negative systems and against
+  `asymmetric`. 214 of 214 certification tests pass in Stata 19
+  (`docs/certification-log-v0.8.2.txt`).
+- Replication do-file `cn_rep_2019ccm.do` (Caloia, Cipollini and Muzzioli 2019).
+
 ## 0.8.1 (2026-10-23)
 - DCC-GARCH R2 decomposed connectedness (Cocca, Gabauer and Pomberger 2024):
   `model(dccgarch) approach(r2)` applies the R2 decomposition to the conditional

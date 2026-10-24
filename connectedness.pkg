@@ -2,21 +2,23 @@ v 3
 d connectedness. VAR-type, TVP-VAR and DCC-GARCH connectedness measures
 d
 d Estimates the connectedness measures of Diebold and Yilmaz (2009, 2012) from static
-d and rolling-window VARs, quantile and LAD VARs, LASSO, ridge and elastic-net VARs and the TVP-VAR connectedness measures of Antonakakis,
+d and rolling-window VARs, quantile and LAD VARs, (adaptive) LASSO, ridge and
+d elastic-net VARs and the TVP-VAR connectedness measures of Antonakakis,
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
-d indices, frequency connectedness (Barunik and Krehlik 2018), joint and extended
-d joint connectedness, R2 decomposed and model-free connectedness, DCC-GARCH
-d volatility connectedness (Gabauer 2020) and its R2 decomposition, asymmetric
-d (positive and negative) connectedness, group measures
-d (aggregated, conditional, inclusive, exclusive, internal, external), network plots,
-d and portfolio and hedging strategies (minimum connectedness, multivariate hedging,
-d risk-parity, bivariate portfolios, hedge ratios). Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
+d indices, row or scalar normalization, frequency connectedness (Barunik and Krehlik
+d 2018), joint and extended joint connectedness, R2 decomposed and model-free
+d connectedness, DCC-GARCH volatility connectedness (Gabauer 2020) and its R2
+d decomposition, asymmetric (positive and negative) connectedness and the spillover
+d asymmetry measure, group measures (aggregated, conditional, inclusive, exclusive,
+d internal, external), network plots, and portfolio and hedging strategies (minimum
+d connectedness, multivariate hedging, risk-parity, bivariate portfolios, hedge
+d ratios). Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
 d Includes 18 datasets from published applications.
 d
 d Requires: Stata 16.1 or newer
 d Author: Nikolaos Antonakakis, University of Nicosia
 d Support: antonakakis.n@unic.ac.cy
-d Distribution-Date: 20261023
+d Distribution-Date: 20261024
 d License: GPL-3
 f ado/connectedness.ado
 f ado/connectedness_estat.ado

@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.8.1  23oct2026}{...}
+{* *! version 0.8.2  24oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -37,6 +37,7 @@
 {synopt:{opt loss(loss)}}cross-validation loss, {cmd:mae} (default) or {cmd:mse}{p_end}
 {synopt:{opt fold:s(folds)}}{cmd:random} (default) or {cmd:interleaved} fold assignment{p_end}
 {synopt:{opt seed(#)}}random-number seed for the folds{p_end}
+{synopt:{opt adapt:ive}}adaptive LASSO, ridge or elastic net, with penalty weights 1/|b_OLS|{p_end}
 
 {syntab:TVP-VAR}
 {synopt:{opt kappa1(#)}}forgetting factor for the coefficients; default {cmd:0.99}{p_end}
@@ -53,8 +54,11 @@
 {synopt:{opt h:orizon(#)}}forecast horizon {it:H}; default {cmd:horizon(10)}{p_end}
 {synopt:{opt gen:eralized}}generalized FEVD; the default{p_end}
 {synopt:{opt orth:ogonalized}}Cholesky (orthogonalized) FEVD{p_end}
+{synopt:{opt norm:alize(norm)}}normalization of the generalized FEVD: {cmd:row} (default), {cmd:maxrow}, {cmd:maxcol} or {cmd:spectral}{p_end}
 {synopt:{opt corr:ected}}report the corrected total connectedness index{p_end}
 {synopt:{opt asym:metric}}also estimate the systems of positive and negative changes{p_end}
+{synopt:{opt pos:itive(varlist)}}positive series, such as positive realized semivariances, for asymmetric connectedness; requires {opt negative()}{p_end}
+{synopt:{opt neg:ative(varlist)}}negative series, such as negative realized semivariances{p_end}
 
 {syntab:R2 and model-free}
 {synopt:{opt corm:ethod(method)}}{cmd:pearson} (default), {cmd:spearman} or {cmd:kendall} correlations{p_end}
@@ -152,6 +156,17 @@ only with the same folds; {opt folds(interleaved)} assigns observation {it:i} to
 fold 1 + mod({it:i}-1, {it:nfolds}) and is used by the certification script.
 
 {phang}
+{opt adaptive} fits the adaptive LASSO, ridge or elastic net used by Demirer,
+Diebold, Liu and Yilmaz (2018): each slope of an equation is penalized with weight
+1/|b_j|, where b_j is its OLS estimate in the regression of the equation on all
+lags with an intercept, so that coefficients with small OLS estimates are shrunk
+most. The weights are passed to the elastic net as {cmd:glmnet}'s
+{cmd:penalty.factor}: they are rescaled to sum to the number of regressors and apply
+to the standardized coefficients, and the cross-validation is otherwise unchanged.
+With rolling windows the weights are recomputed in each window. The R package has
+no adaptive option; the results are checked against {cmd:glmnet} itself.
+
+{phang}
 {cmd:dccgarch} fits the DCC-GARCH(1,1) model of Engle (2002) and gives the volatility
 connectedness of Gabauer (2020), as R's {cmd:ConnectednessApproach(}..., {cmd:model="DCC-GARCH")}.
 Each variable follows a GARCH(1,1) (Bollerslev 1986) with a constant mean and normal
@@ -225,6 +240,21 @@ with variance 4.
 variance decomposition (Koop, Pesaran and Potter 1996; Pesaran and Shin 1998),
 which is the default, or the Cholesky decomposition used by Diebold and Yilmaz (2009),
 which depends on the order of {it:varlist}.
+
+{phang}
+{opt normalize(norm)} sets how the generalized FEVD is normalized.
+{cmd:normalize(row)}, the default, divides each row by its sum (Diebold and Yilmaz
+2012), so that every row sums to 100. Caloia, Cipollini and Muzzioli (2019) show
+that row normalization can distort the ranking of net transmitters and receivers, and
+propose dividing the whole unnormalized decomposition of Pesaran and Shin (1998) by a
+single number: {cmd:maxrow}, its largest row sum (their preferred choice),
+{cmd:maxcol}, its largest column sum, or {cmd:spectral}, its spectral radius. The
+shares then sum to at most 100 by row, TO and FROM keep their relative sizes, and
+TCI, the sum of the off-diagonal shares divided by k, reproduces the values in their
+Table 11. {opt normalize()} applies to {cmd:approach(time)} with VAR-type and TVP-VAR
+models; {cmd:estat group} requires the row-normalized decomposition. For a linear
+VAR, the generalized FEVD of Lanne and Nyberg (2016) coincides with row
+normalization.
 
 {phang}
 {opt approach(approach)} selects the connectedness framework applied to the
@@ -301,7 +331,18 @@ their negative parts (positive values set to zero). The variables are typically
 returns or percentage changes. The results go to {opt frame()},
 {opt frame()}{cmd:_pos} and {opt frame()}{cmd:_neg}; {cmd:connectedness, part(positive)}
 or {cmd:part(negative)} redisplays the other tables, and {helpb cngraph} overlays the
-three sets of measures automatically.
+three sets of measures automatically. The spillover asymmetry measure, the TCI of the
+positive system minus the TCI of the negative one, is stored in {cmd:e(SAM)} and,
+for every period, in the results frame (see {it:Stored results}).
+
+{phang}
+{opt positive(varlist)} and {opt negative(varlist)} give the positive and negative
+series directly, one for each variable in {it:varlist}, in the same order. With
+realized volatilities in {it:varlist} and the positive and negative realized
+semivariances in {opt positive()} and {opt negative()}, this gives the good and bad
+volatility spillovers and the spillover asymmetry measure (SAM) of Baruník, Kočenda
+and Vácha (2016, 2017). The three systems are estimated and stored as with
+{opt asymmetric}, which may not be combined with these options.
 
 {phang}
 {opt nofevd} stops {cmd:connectedness} from storing the full decomposition,
@@ -467,6 +508,27 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. connectedness, part(negative)}{p_end}
 {phang2}{cmd:. cngraph tci}{p_end}
 
+{pstd}Baruník, Kočenda and Vácha (2016): good and bad volatility spillovers and SAM
+(squared positive and negative daily returns stand in for realized semivariances){p_end}
+{phang2}{cmd:. use cn_g2020, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. foreach v in EUR GBP CHF JPY {c -(}}{p_end}
+{phang2}{cmd:.     generate double rv_`v' = `v'^2}{p_end}
+{phang2}{cmd:.     generate double rp_`v' = cond(`v' > 0, `v'^2, 0)}{p_end}
+{phang2}{cmd:.     generate double rn_`v' = cond(`v' < 0, `v'^2, 0)}{p_end}
+{phang2}{cmd:. {c )-}}{p_end}
+{phang2}{cmd:. connectedness rv_*, positive(rp_*) negative(rn_*) window(500) datevar(date) replace}{p_end}
+{phang2}{cmd:. frame cn_results: tsline sam}{p_end}
+
+{pstd}Caloia, Cipollini and Muzzioli (2019): scalar normalization of the Diebold and Yilmaz (2012) table{p_end}
+{phang2}{cmd:. use cn_dy2012, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10)}{p_end}
+{phang2}{cmd:. connectedness SP500 R_10Y DJUBSCOM USDX, lags(4) horizon(10) normalize(maxrow)}{p_end}
+
+{pstd}Demirer, Diebold, Liu and Yilmaz (2018): adaptive LASSO VAR{p_end}
+{phang2}{cmd:. connectedness SP500 R_10Y DJUBSCOM USDX, model(lasso) adaptive lags(2) seed(2018)}{p_end}
+
 
 {marker results}{...}
 {title:Stored results}
@@ -490,6 +552,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(nfolds)}}cross-validation folds ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(TCI_pos)}, {cmd:e(cTCI_pos)}}TCI of positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
+{synopt:{cmd:e(SAM)}}spillover asymmetry measure, {cmd:e(TCI_pos)} - {cmd:e(TCI_neg)} ({cmd:asymmetric}, {opt positive()}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
 {synopt:{cmd:e(TCI_c)}, {cmd:e(TCI_l)}}TCI of the contemporaneous and lagged components ({cmd:r2} with lags); also {cmd:e(cTCI_c)}, {cmd:e(cTCI_l)}{p_end}
 {synopt:{cmd:e(TCI_f}{it:b}{cmd:)}, {cmd:e(cTCI_f}{it:b}{cmd:)}}TCI and corrected TCI of band {it:b} ({cmd:frequency}){p_end}
@@ -503,12 +566,14 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(quantiles)}}quantile of each equation ({cmd:qvar}){p_end}
 {synopt:{cmd:e(alphas)}}alpha values considered ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(loss)}, {cmd:e(folds)}, {cmd:e(seed)}}cross-validation settings{p_end}
+{synopt:{cmd:e(adaptive)}}{cmd:adaptive} or empty ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
 {synopt:{cmd:e(cormethod)}}correlation used ({cmd:r2}, {cmd:modelfree}): {cmd:pearson}, {cmd:spearman}, {cmd:kendall}, or {cmd:dcc} for the DCC-GARCH conditional correlations{p_end}
 {synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(partition)}}band limits in radians ({cmd:frequency}){p_end}
 {synopt:{cmd:e(scenario)}}{cmd:abs} or {cmd:wth} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(fevdtype)}}type of decomposition, for example {cmd:generalized}{p_end}
+{synopt:{cmd:e(normalize)}}{cmd:row}, {cmd:maxrow}, {cmd:maxcol} or {cmd:spectral} (generalized FEVD, {cmd:approach(time)}){p_end}
 {synopt:{cmd:e(standardize)}}{cmd:standardize} or empty ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(dccparams)}}name of the matrix in {opt dccparams()} ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(corrected)}}{cmd:corrected} or empty{p_end}
@@ -520,6 +585,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(first)}, {cmd:e(last)}}first and last period of the sample (dates if {cmd:datevar()}){p_end}
 {synopt:{cmd:e(asymmetric)}}{cmd:asymmetric} or empty{p_end}
 {synopt:{cmd:e(frame_pos)}, {cmd:e(frame_neg)}}results frames of positive and negative changes{p_end}
+{synopt:{cmd:e(positive)}, {cmd:e(negative)}}the variables in {opt positive()} and {opt negative()}{p_end}
 
 {p2col 5 18 22 2: Matrices}{p_end}
 {synopt:{cmd:e(table)}}connectedness table, (k+4) x (k+1); (k+3) x (k+1) for {cmd:joint}{p_end}
@@ -562,6 +628,13 @@ overall measures and the suffixes {cmd:_c} and {cmd:_l} the contemporaneous and
 lagged components; {cmd:fevd_}{it:i}{cmd:_}{it:j} then holds the share (percent) of
 variable {it:i}'s variance explained by variable {it:j}.
 
+{pstd}
+With {opt asymmetric} or {opt positive()} and {opt negative()}, the results frame
+also holds the spillover asymmetry measures of every period: {cmd:sam}, the TCI of
+the positive system minus that of the negative system, and {cmd:sam_to_}{it:i},
+{cmd:sam_from_}{it:i} and {cmd:sam_net_}{it:i}, the same differences of TO, FROM and
+NET. Graph them with, for example, {cmd:frame cn_results: tsline sam}.
+
 
 {marker methods}{...}
 {title:Methods and formulas}
@@ -580,6 +653,28 @@ shocks in j: TO_j = sum_{i!=j} w_ij, FROM_i = sum_{j!=i} w_ij,
 NET_i = TO_i - FROM_i, NPDC_ij = w_ji - w_ij, TCI = (1/k) sum_i FROM_i,
 corrected TCI = TCI k/(k-1) and
 PCI_ij = 200 (w_ij + w_ji)/(w_ii + w_ij + w_ji + w_jj).
+
+{pstd}
+{it:Normalizations.} Dividing theta_ij by d_i = sum_{h=0}^{H-1} e_i' {bf:A}_h
+{bf:Sigma} {bf:A}_h' e_i gives the unnormalized decomposition {bf:W} of Pesaran and
+Shin (1998), whose rows need not sum to one. {cmd:normalize(row)} uses
+w_ij = W_ij / sum_j W_ij; the scalar normalizations of Caloia, Cipollini and Muzzioli
+(2019) use w_ij = W_ij / c, with c the largest row sum ({cmd:maxrow}), the largest
+column sum ({cmd:maxcol}) or the largest eigenvalue modulus ({cmd:spectral}) of
+{bf:W}. The measures above then follow from w_ij unchanged.
+
+{pstd}
+{it:Adaptive elastic net.} For equation i with regressors x_j (all lags of all
+variables), the coefficients minimize
+(1/2n) sum_t (y_t - b_0 - sum_j b_j x_jt)^2 + lambda sum_j v_j (alpha |b_j| + (1-alpha) b_j^2/2)
+on standardized regressors, with v_j = 1 for the elastic net and v_j proportional to
+1/|b_j^OLS|, rescaled to sum to the number of regressors, with {opt adaptive}, as in
+{cmd:glmnet}; lambda is chosen by cross-validation as without {opt adaptive}.
+
+{pstd}
+{it:Spillover asymmetry.} With TCI+ and TCI- the total connectedness of the
+positive and negative systems, SAM = TCI+ - TCI- (Baruník, Kočenda and Vácha 2016),
+and the directional versions are the differences of TO, FROM and NET.
 
 {pstd}
 {it:Frequency.} Let {bf:Psi}(w) = sum_{h=0}^{H} {bf:A}_h exp(-i w h) at the
@@ -674,8 +769,22 @@ financial connectedness and systemic risk. {it:Journal of Financial Econometrics
 16: 271-296.
 
 {phang}
+Baruník, J., E. Kočenda, and L. Vácha. 2016. Asymmetric connectedness on the U.S.
+stock market: Bad and good volatility spillovers. {it:Journal of Financial Markets}
+27: 55-78.
+
+{phang}
+Baruník, J., E. Kočenda, and L. Vácha. 2017. Asymmetric volatility connectedness on
+the forex market. {it:Journal of International Money and Finance} 77: 39-56.
+
+{phang}
 Bollerslev, T. 1986. Generalized autoregressive conditional heteroskedasticity.
 {it:Journal of Econometrics} 31: 307-327.
+
+{phang}
+Caloia, F. G., A. Cipollini, and S. Muzzioli. 2019. How do normalization schemes
+affect net spillovers? A replication of the Diebold and Yilmaz (2012) study.
+{it:Energy Economics} 84: 104536.
 
 {phang}
 Chatziantoniou, I., E. J. A. Abakah, D. Gabauer, and A. K. Tiwari. 2022. Quantile
@@ -701,6 +810,10 @@ transmission mechanism of monetary policy: A quantile connectedness approach.
 Cocca, T., D. Gabauer, and S. Pomberger. 2024. Clean energy market connectedness and
 investment strategies: New evidence from DCC-GARCH R2 decomposed connectedness
 measures. {it:Energy Economics} 136: 107680.
+
+{phang}
+Demirer, M., F. X. Diebold, L. Liu, and K. Yilmaz. 2018. Estimating global bank
+network connectedness. {it:Journal of Applied Econometrics} 33: 1-15.
 
 {phang}
 Diebold, F. X., and K. Yilmaz. 2009. Measuring financial asset return and volatility
@@ -757,6 +870,11 @@ Koop, G., and D. Korobilis. 2013. Large time-varying parameter VARs.
 {phang}
 Koop, G., M. H. Pesaran, and S. M. Potter. 1996. Impulse response analysis in
 nonlinear multivariate models. {it:Journal of Econometrics} 74: 119-147.
+
+{phang}
+Lanne, M., and H. Nyberg. 2016. Generalized forecast error variance decomposition for
+linear and nonlinear multivariate models. {it:Oxford Bulletin of Economics and
+Statistics} 78: 595-603.
 
 {phang}
 Lastrapes, W. D., and T. F. P. Wiesen. 2021. The joint spillover index.

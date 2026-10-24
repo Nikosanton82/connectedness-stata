@@ -1,0 +1,17 @@
+ConnectednessApproach version: 1.0.4
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3
+glmnet version: 4.1.8
+  row-normalized check against TimeConnectedness(): max abs difference 1.11e-16
+dy2012_norm_maxrow         periods=    1 mean TCI=12.118129
+  row-normalized check against TimeConnectedness(): max abs difference 1.11e-16
+dy2012_norm_maxcol         periods=    1 mean TCI=12.053953
+  row-normalized check against TimeConnectedness(): max abs difference 1.11e-16
+dy2012_norm_spectral       periods=    1 mean TCI=12.605937
+  row-normalized check against TimeConnectedness(): max abs difference 3.33e-16
+acg2020_tvp_norm_maxrow    periods=   53 mean TCI=46.019249
+dy2012_alasso_static       periods=    1 mean TCI=9.310235
+dy2012_aridge_static       periods=    1 mean TCI=11.306616
+dy2012_aenet_a05           periods=    1 mean TCI=9.457811
+dy2012_aenet4_mse          periods=    1 mean TCI=11.920567
+dy2012_alasso_roll200      periods=  102 mean TCI=9.565719

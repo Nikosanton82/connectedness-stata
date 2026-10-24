@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.8.1  23oct2026}{...}
+{* *! version 0.8.2  24oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
@@ -81,7 +81,8 @@ as they are.
 {cmd:estat group} works on the decomposition stored for every period in the results
 frame, so {cmd:connectedness} must not have been run with {cmd:nofevd}, and it
 requires the time-domain or model-free measures ({cmd:approach(time)} or
-{cmd:approach(modelfree)}), as in the R package. For each
+{cmd:approach(modelfree)}), as in the R package, with the default row
+normalization ({cmd:normalize(row)}). For each
 period it transforms the decomposition and recomputes TCI, corrected TCI, TO, FROM,
 NET, NPT and NPDC; it displays the table of the averaged transformed decomposition
 and stores the series in {opt frame()} (default {cmd:cn_group}), which

@@ -1,4 +1,4 @@
-*! version 0.8.1  23oct2026
+*! version 0.8.2  24oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -43,6 +43,11 @@ program define Group, rclass
 
     if !inlist("`e(approach)'", "", "time", "modelfree") {
         di as err "estat group requires results estimated with approach(time) or approach(modelfree)"
+        exit 198
+    }
+    if !inlist("`e(normalize)'", "", "row") {
+        di as err "estat group requires the row-normalized decomposition; " ///
+            "the results use normalize(`e(normalize)')"
         exit 198
     }
 

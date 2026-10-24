@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.8.1, 23 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.8.2, 24 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -25,8 +25,9 @@ Commands
   connectedness   estimation (static and rolling VAR, QVAR and LAD-VAR, LASSO, ridge
                   and elastic-net VARs, TVP-VAR, DCC-GARCH; time,
                   frequency, joint, extended joint, R2 decomposed (also of the
-                  DCC-GARCH correlations) and model-free connectedness; asymmetric
-                  option)
+                  DCC-GARCH correlations) and model-free connectedness; row or
+                  scalar normalization; adaptive elastic nets; asymmetric
+                  connectedness and the spillover asymmetry measure)
   estat table     redisplay the connectedness table
   estat group     aggregated, conditional, inclusive, exclusive, internal and
                   external connectedness
@@ -59,4 +60,5 @@ Reproducing the checks
   the PerformanceAnalytics and riskParityPortfolio packages, also installed with
   ConnectednessApproach. The fixtures of DCC-GARCH R2 decomposed connectedness and
   estat correlation (version 0.8.1) come from test/r/make_fixtures_dccr2.R
-  (test/r/run_r_dccr2.bat).
+  (test/r/run_r_dccr2.bat), and those of the normalizations and adaptive elastic nets
+  (version 0.8.2) from test/r/make_fixtures_082.R (test/r/run_r_082.bat).
