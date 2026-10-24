@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.8.2  24oct2026}{...}
+{* *! version 0.9.0  24oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -54,6 +54,8 @@
 {synopt:{opt h:orizon(#)}}forecast horizon {it:H}; default {cmd:horizon(10)}{p_end}
 {synopt:{opt gen:eralized}}generalized FEVD; the default{p_end}
 {synopt:{opt orth:ogonalized}}Cholesky (orthogonalized) FEVD{p_end}
+{synopt:{opt clus:ters(clusters)}}clustered identification: shocks correlated within clusters, orthogonal across them{p_end}
+{synopt:{opt clord:er(order)}}{cmd:average} (default) over all orderings of the clusters, or {cmd:given}{p_end}
 {synopt:{opt norm:alize(norm)}}normalization of the generalized FEVD: {cmd:row} (default), {cmd:maxrow}, {cmd:maxcol} or {cmd:spectral}{p_end}
 {synopt:{opt corr:ected}}report the corrected total connectedness index{p_end}
 {synopt:{opt asym:metric}}also estimate the systems of positive and negative changes{p_end}
@@ -240,6 +242,31 @@ with variance 4.
 variance decomposition (Koop, Pesaran and Potter 1996; Pesaran and Shin 1998),
 which is the default, or the Cholesky decomposition used by Diebold and Yilmaz (2009),
 which depends on the order of {it:varlist}.
+
+{phang}
+{opt clusters(clusters)} gives the clustered network connectedness of Buchwalter,
+Diebold and Yilmaz (2025). The variables are grouped into clusters, such as regions
+or countries, listed as in {cmd:estat group}: each cluster in double quotes,
+optionally preceded by a name and a colon, for example
+{cmd:clusters("Americas: US BRA" "Europe: UK FRA GER")}. Variables not listed form
+clusters of their own. Shocks may be correlated within a cluster, as in the
+generalized decomposition, but are orthogonal across clusters, as in the Cholesky
+decomposition: the residuals of each cluster are projected on those of the clusters
+before it. One cluster thus gives the generalized FEVD, and one variable per cluster
+the Cholesky FEVD. Besides the usual measures, {cmd:connectedness} reports, for each
+cluster, the shares of its variables' forecast error variance due to their own shocks
+(own), to shocks in the same cluster (co-movement) and to shocks in other clusters
+(contagion), which sum to 100, and a cluster-to-cluster contagion table. Clustered
+identification applies to {cmd:approach(time)} with VAR-type and TVP-VAR models, and
+may not be combined with {opt orthogonalized} or {opt normalize()}.
+
+{phang}
+{opt clorder(order)} sets how the ordering of the clusters is handled. Only the
+ordering across clusters matters, not the order within them. {cmd:clorder(average)},
+the default, averages the row-normalized decompositions over all orderings of the
+clusters, as the paper does; this allows up to 6 clusters (720 orderings).
+{cmd:clorder(given)} uses the clusters in the order listed, followed by the clusters
+of the variables not listed, in {it:varlist} order.
 
 {phang}
 {opt normalize(norm)} sets how the generalized FEVD is normalized.
@@ -520,6 +547,12 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. connectedness rv_*, positive(rp_*) negative(rn_*) window(500) datevar(date) replace}{p_end}
 {phang2}{cmd:. frame cn_results: tsline sam}{p_end}
 
+{pstd}Buchwalter, Diebold and Yilmaz (2025): clustered connectedness of equity markets by region{p_end}
+{phang2}{cmd:. use cn_dy2009, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness US-TUR, lags(2) clusters("Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") replace}{p_end}
+{phang2}{cmd:. matrix list e(cl_contagion)}{p_end}
+
 {pstd}Caloia, Cipollini and Muzzioli (2019): scalar normalization of the Diebold and Yilmaz (2012) table{p_end}
 {phang2}{cmd:. use cn_dy2012, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -552,6 +585,8 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(nfolds)}}cross-validation folds ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(TCI_pos)}, {cmd:e(cTCI_pos)}}TCI of positive changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
+{synopt:{cmd:e(nclusters)}}number of clusters ({opt clusters()}){p_end}
+{synopt:{cmd:e(norderings)}}number of cluster orderings averaged ({opt clusters()}){p_end}
 {synopt:{cmd:e(SAM)}}spillover asymmetry measure, {cmd:e(TCI_pos)} - {cmd:e(TCI_neg)} ({cmd:asymmetric}, {opt positive()}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
 {synopt:{cmd:e(TCI_c)}, {cmd:e(TCI_l)}}TCI of the contemporaneous and lagged components ({cmd:r2} with lags); also {cmd:e(cTCI_c)}, {cmd:e(cTCI_l)}{p_end}
@@ -585,6 +620,8 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(first)}, {cmd:e(last)}}first and last period of the sample (dates if {cmd:datevar()}){p_end}
 {synopt:{cmd:e(asymmetric)}}{cmd:asymmetric} or empty{p_end}
 {synopt:{cmd:e(frame_pos)}, {cmd:e(frame_neg)}}results frames of positive and negative changes{p_end}
+{synopt:{cmd:e(clusters)}}cluster names ({opt clusters()}){p_end}
+{synopt:{cmd:e(clorder)}}{cmd:average} or {cmd:given} ({opt clusters()}){p_end}
 {synopt:{cmd:e(positive)}, {cmd:e(negative)}}the variables in {opt positive()} and {opt negative()}{p_end}
 
 {p2col 5 18 22 2: Matrices}{p_end}
@@ -594,6 +631,10 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(table_neg)}, {cmd:e(fevd_neg)}}same, negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(table_f}{it:b}{cmd:)}, {cmd:e(fevd_f}{it:b}{cmd:)}}same, frequency band {it:b} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(table_c)}, {cmd:e(fevd_c)}}same, contemporaneous component ({cmd:r2} with lags); {cmd:e(table_l)}, {cmd:e(fevd_l)} for the lagged one{p_end}
+{synopt:{cmd:e(cl_shares)}}own, co-movement and contagion shares, TO and NET of each cluster, and their averages over clusters, (C+1) x 5 ({opt clusters()}){p_end}
+{synopt:{cmd:e(cl_contagion)}}C x C table: share of the row cluster's variance due to the column cluster, averaged over the row cluster's variables{p_end}
+{synopt:{cmd:e(cl_contagion_avg)}}the same divided by the number of variables in the column cluster, the definition printed in the paper{p_end}
+{synopt:{cmd:e(cl_id)}}cluster of each variable, 1 x k{p_end}
 {synopt:{cmd:e(garch)}}GARCH(1,1) parameters mu, omega, alpha and beta, k x 4 ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(dcc)}}DCC(1,1) parameters a and b, 1 x 2 ({cmd:dccgarch}){p_end}
 
@@ -635,6 +676,15 @@ the positive system minus that of the negative system, and {cmd:sam_to_}{it:i},
 {cmd:sam_from_}{it:i} and {cmd:sam_net_}{it:i}, the same differences of TO, FROM and
 NET. Graph them with, for example, {cmd:frame cn_results: tsline sam}.
 
+{pstd}
+With {opt clusters()}, the results frame also holds, for every period and each cluster
+{it:c} (numbered in the order of {cmd:e(clusters)}), {cmd:cl_own_}{it:c},
+{cmd:cl_comove_}{it:c} and {cmd:cl_contag_}{it:c}, the own, co-movement and contagion
+shares, {cmd:cl_to_}{it:c} and {cmd:cl_net_}{it:c}, the contagion transmitted to the
+other clusters and its net value, {cmd:cl_own}, {cmd:cl_comove} and {cmd:cl_contag},
+their averages over clusters, and {cmd:cl_}{it:c}{cmd:_}{it:d}, the contagion to
+cluster {it:c} from cluster {it:d}.
+
 
 {marker methods}{...}
 {title:Methods and formulas}
@@ -670,6 +720,26 @@ variables), the coefficients minimize
 on standardized regressors, with v_j = 1 for the elastic net and v_j proportional to
 1/|b_j^OLS|, rescaled to sum to the number of regressors, with {opt adaptive}, as in
 {cmd:glmnet}; lambda is chosen by cross-validation as without {opt adaptive}.
+
+{pstd}
+{it:Clustered identification.} For an ordering of the clusters, let the residuals of
+cluster b be projected on those of the clusters before it,
+{bf:Q}^(-1)_(b,<b) = -{bf:Sigma}_(b,<b) {bf:Sigma}_(<b,<b)^(-1), with identity
+blocks on the diagonal, so that {bf:Omega} = {bf:Q}^(-1) {bf:Sigma}
+{bf:Q}^(-1)' is block diagonal (Buchwalter, Diebold and Yilmaz 2025, eqs. 7 and 8).
+The decomposition is
+omega_jj^(-1) sum_{h=0}^{H-1} (e_i' {bf:A}_h {bf:Q} {bf:Omega} e_j)^2 /
+sum_{h=0}^{H-1} e_i' {bf:A}_h {bf:Sigma} {bf:A}_h' e_i, normalized by row; with
+{cmd:clorder(average)} it is averaged over all orderings. With N_c the number of
+variables in cluster c and w_ij the decomposition, own_c = (1/N_c) sum_{i in c}
+w_ii, co-movement_c = (1/N_c) sum_{i,j in c, i!=j} w_ij, contagion_c = (1/N_c)
+sum_{i in c} sum_{j not in c} w_ij, TO_c = (1/N_c) sum_{i not in c} sum_{j in c}
+w_ij and NET_c = TO_c - contagion_c; the contagion table holds (1/N_c) sum_{i in c}
+sum_{j in d} w_ij. The paper prints the contagion from cluster d to c with a further
+division by N_d; with that definition the own, co-movement and contagion shares do
+not sum to one, as the paper states they do, unless every cluster has one variable,
+so the package reports the version that sums to 100 and stores the printed one in
+{cmd:e(cl_contagion_avg)}.
 
 {pstd}
 {it:Spillover asymmetry.} With TCI+ and TCI- the total connectedness of the
@@ -780,6 +850,11 @@ the forex market. {it:Journal of International Money and Finance} 77: 39-56.
 {phang}
 Bollerslev, T. 1986. Generalized autoregressive conditional heteroskedasticity.
 {it:Journal of Econometrics} 31: 307-327.
+
+{phang}
+Buchwalter, B., F. X. Diebold, and K. Yilmaz. 2025. Clustered network connectedness: A
+new measurement framework, with application to global equity markets. NBER Working
+Paper 34796.
 
 {phang}
 Caloia, F. G., A. Cipollini, and S. Muzzioli. 2019. How do normalization schemes

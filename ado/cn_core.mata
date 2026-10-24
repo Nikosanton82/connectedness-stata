@@ -1,4 +1,4 @@
-*! version 0.8.2  24oct2026
+*! version 0.9.0  24oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -730,6 +730,7 @@ real matrix cn_fevd(real matrix B, real matrix S, real scalar H, real scalar gen
         PS[|1, h*k+1 \ k, (h+1)*k|] = P
     }
     num = J(k, k, 0)
+    if (gen == 5) return(cn_clustvd(PS, S, H))
     if (gen) {
         sd = sqrt(diagonal(S))'
         for (h=0; h<H; h++) {
@@ -755,6 +756,192 @@ real matrix cn_fevd(real matrix B, real matrix S, real scalar H, real scalar gen
         den = den + diagonal(P*S*P')
     }
     return(num :/ den)
+}
+
+// Clustered identification (Buchwalter, Diebold and Yilmaz 2025): shocks correlated
+// within clusters and orthogonal across them. For each cluster ordering (rows of
+// cn__clperm; cn__clid gives the cluster of each variable), the residuals are
+// projected sequentially on the earlier clusters, u = Q eps with Q block unit lower
+// triangular and V(eps) = Omega block diagonal; the decomposition
+// omega_jj^-1 sum_h (A_h Q Omega)_ij^2 / sum_h (A_h Sigma A_h')_ii is normalized by
+// row and averaged over the orderings. PS holds A_0, ..., A_H-1 side by side.
+real matrix cn_clustvd(real matrix PS, real matrix S, real scalar H)
+{
+    external real colvector cn__clid
+    external real matrix    cn__clperm
+    real scalar    k, np, C, r, c, h
+    real colvector idx, pv, b, den, om
+    real matrix    F, Sp, Qi, Op, M, num, P, W
+
+    k   = rows(S)
+    C   = cols(cn__clperm)
+    np  = rows(cn__clperm)
+    den = J(k, 1, 0)
+    for (h=0; h<H; h++) {
+        P   = PS[|1, h*k+1 \ k, (h+1)*k|]
+        den = den + diagonal(P*S*P')
+    }
+    F = J(k, k, 0)
+    for (r=1; r<=np; r++) {
+        idx = J(0, 1, .)
+        for (c=1; c<=C; c++) idx = idx \ selectindex(cn__clid :== cn__clperm[r, c])
+        Sp = S[idx, idx]
+        Qi = I(k)
+        pv = J(0, 1, .)
+        for (c=1; c<=C; c++) {
+            b = selectindex(cn__clid[idx] :== cn__clperm[r, c])
+            if (rows(pv) > 0) Qi[b, pv] = -(lusolve(Sp[pv, pv], Sp[pv, b]))'
+            pv = pv \ b
+        }
+        Op = Qi*Sp*Qi'
+        M  = J(k, k, .)
+        om = J(k, 1, .)
+        M[idx, idx] = solvelower(Qi, Op)
+        om[idx] = diagonal(Op)
+        num = J(k, k, 0)
+        for (h=0; h<H; h++) {
+            num = num + (PS[|1, h*k+1 \ k, (h+1)*k|]*M):^2
+        }
+        W = (num :/ om') :/ den
+        F = F + W :/ rowsum(W)
+    }
+    return(F / np)
+}
+
+// All orderings of 1, ..., C, one per row
+real matrix cn_perms(real scalar C)
+{
+    transmorphic   info
+    real colvector p
+    real matrix    out
+
+    out  = J(0, C, .)
+    info = cvpermutesetup((1::C))
+    while ((p = cvpermute(info)) != J(0, 1, .)) out = out \ p'
+    return(out)
+}
+
+// Cluster measures of a k x k decomposition in percent, with cid the cluster of each
+// variable (1, ..., C). Order: own_c, comove_c, contag_c, to_c, net_c (C each), the
+// averages over clusters of own, comove and contag, then T_c<-k for c != k (by c,
+// then k), with T_c<-k = (1/N_c) sum_{i in c} sum_{j in k} theta_ij.
+real rowvector cn_clmeasures(real matrix ct, real colvector cid, real scalar C)
+{
+    real scalar    c, d, nc
+    real colvector ic, jc
+    real rowvector own, com, ctg, to, pr
+    real matrix    T, B
+
+    own = J(1, C, .)
+    com = J(1, C, .)
+    ctg = J(1, C, .)
+    to  = J(1, C, .)
+    T   = J(C, C, .)
+    for (c=1; c<=C; c++) {
+        ic = selectindex(cid :== c)
+        jc = selectindex(cid :!= c)
+        nc = rows(ic)
+        B  = ct[ic, ic]
+        own[c] = trace(B)/nc
+        com[c] = (sum(B) - trace(B))/nc
+        ctg[c] = (rows(jc) > 0 ? sum(ct[ic, jc])/nc : 0)
+        to[c]  = (rows(jc) > 0 ? sum(ct[jc, ic])/nc : 0)
+        for (d=1; d<=C; d++) T[c, d] = sum(ct[ic, selectindex(cid :== d)])/nc
+    }
+    pr = J(1, 0, .)
+    for (c=1; c<=C; c++) {
+        for (d=1; d<=C; d++) {
+            if (d != c) pr = pr, T[c, d]
+        }
+    }
+    return((own, com, ctg, to, to - ctg, mean(own'), mean(com'), mean(ctg'), pr))
+}
+
+// Names and labels of the cluster measures, matching cn_clmeasures()
+string rowvector cn_clnames(real scalar C)
+{
+    real scalar      c, d
+    string rowvector nm, s
+
+    nm = J(1, 0, "")
+    s  = strofreal(1..C)
+    nm = nm, ("cl_own_" :+ s), ("cl_comove_" :+ s), ("cl_contag_" :+ s), ("cl_to_" :+ s), ("cl_net_" :+ s)
+    nm = nm, ("cl_own", "cl_comove", "cl_contag")
+    for (c=1; c<=C; c++) {
+        for (d=1; d<=C; d++) {
+            if (d != c) nm = nm, "cl_" + strofreal(c) + "_" + strofreal(d)
+        }
+    }
+    return(nm)
+}
+
+// Adds the cluster measures of every period (rows of cn__CT) to the current frame
+// and posts the measures of the averaged decomposition avg to Stata matrices
+void cn_postclust(string scalar cnames, string scalar avgname, string scalar shname,
+                  string scalar ctgname)
+{
+    external real matrix    cn__CT
+    external real colvector cn__clid
+    real scalar      k, C, t, c, d, i
+    real matrix      V, avg, T
+    real rowvector   m
+    string rowvector nm, cn, lab
+    real colvector   nk
+
+    cn  = tokens(cnames)
+    C   = cols(cn)
+    k   = rows(cn__clid)
+    V   = J(rows(cn__CT), 5*C + 3 + C*(C-1), .)
+    for (t=1; t<=rows(cn__CT); t++) {
+        V[t, .] = cn_clmeasures(rowshape(cn__CT[|t, 1 \ t, k*k|], k), cn__clid, C)
+    }
+    nm = cn_clnames(C)
+    (void) st_addvar("double", nm)
+    st_store(., nm, V)
+    lab = J(1, cols(nm), "")
+    for (c=1; c<=C; c++) {
+        lab[c]       = "Own share, " + cn[c]
+        lab[C+c]     = "Co-movement share, " + cn[c]
+        lab[2*C+c]   = "Contagion share received, " + cn[c]
+        lab[3*C+c]   = "Contagion transmitted per variable, " + cn[c]
+        lab[4*C+c]   = "Net contagion, " + cn[c]
+    }
+    lab[5*C+1] = "Own share, average over clusters"
+    lab[5*C+2] = "Co-movement share, average over clusters"
+    lab[5*C+3] = "Contagion share, average over clusters"
+    i = 5*C + 3
+    for (c=1; c<=C; c++) {
+        for (d=1; d<=C; d++) {
+            if (d != c) {
+                i++
+                lab[i] = "Contagion to " + cn[c] + " from " + cn[d]
+            }
+        }
+    }
+    for (i=1; i<=cols(nm); i++) st_varlabel(nm[i], substr(lab[i], 1, 80))
+
+    // measures of the averaged decomposition
+    avg = st_matrix(avgname)
+    m   = cn_clmeasures(avg, cn__clid, C)
+    T   = J(C, C, .)
+    for (c=1; c<=C; c++) {
+        T[c, c] = m[c] + m[C+c]
+    }
+    i = 5*C + 3
+    for (c=1; c<=C; c++) {
+        for (d=1; d<=C; d++) {
+            if (d != c) {
+                i++
+                T[c, d] = m[i]
+            }
+        }
+    }
+    st_matrix(shname, (m[|1 \ C|]', m[|C+1 \ 2*C|]', m[|2*C+1 \ 3*C|]', m[|3*C+1 \ 4*C|]',
+                       m[|4*C+1 \ 5*C|]') \ (m[5*C+1], m[5*C+2], m[5*C+3], .z, .z))
+    st_matrix(ctgname, T)
+    nk = J(C, 1, .)
+    for (c=1; c<=C; c++) nk[c] = sum(cn__clid :== c)
+    st_matrix(ctgname + "_avg", T :/ nk')
 }
 
 // Scalar normalization of an unnormalized decomposition W: 2 = maximum row sum,

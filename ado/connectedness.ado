@@ -1,4 +1,4 @@
-*! version 0.8.2  24oct2026
+*! version 0.9.0  24oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -25,7 +25,8 @@ program define Estimate, eclass
         LOSS(string) FOLDs(string) SEED(string)                   ///
         STANDardize DCCParams(name) noCOVariance                  ///
         NORMalize(string) ADAPTive                                ///
-        POSitive(varlist numeric ts) NEGative(varlist numeric ts) ]
+        POSitive(varlist numeric ts) NEGative(varlist numeric ts) ///
+        CLUSters(string asis) CLORDer(string) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -407,6 +408,93 @@ program define Estimate, eclass
             3*("`normalize'" == "spectral")
     }
 
+    // clustered identification (Buchwalter, Diebold and Yilmaz 2025): clusters listed
+    // as in estat group, "name: var var ..."; variables not listed form clusters of
+    // their own
+    local clorder = lower(strtrim("`clorder'"))
+    local ncl 0
+    if `"`clusters'"' == "" & "`clorder'" != "" {
+        di as err "option clorder() requires clusters()"
+        exit 198
+    }
+    if `"`clusters'"' != "" {
+        if "`approach'" != "time" | `dcc' {
+            di as err "clusters() requires approach(time) and a VAR-type or TVP-VAR model"
+            exit 198
+        }
+        if !`gen' {
+            di as err "clusters() defines its own identification; option orthogonalized is not allowed"
+            exit 198
+        }
+        if "`normalize'" != "row" {
+            di as err "clusters() may not be combined with normalize(`normalize')"
+            exit 198
+        }
+        if "`clorder'" == "" local clorder average
+        if !inlist("`clorder'", "average", "given") {
+            di as err "clorder() must be average or given"
+            exit 198
+        }
+        tempname CLID
+        matrix `CLID' = J(`k', 1, 0)
+        local clnames
+        local m : word count `clusters'
+        forvalues g = 1/`m' {
+            local spec : word `g' of `clusters'
+            local gname "C`g'"
+            local pos = strpos(`"`spec'"', ":")
+            if `pos' {
+                local gname = strtrim(substr(`"`spec'"', 1, `pos' - 1))
+                local spec  = substr(`"`spec'"', `pos' + 1, .)
+                if "`gname'" == "" local gname "C`g'"
+            }
+            local gname = strtoname("`gname'")
+            if `: list gname in clnames' {
+                di as err "cluster name `gname' is used twice"
+                exit 198
+            }
+            local clnames `clnames' `gname'
+            local nv 0
+            foreach v of local spec {
+                local p : list posof "`v'" in varlist
+                if `p' == 0 {
+                    di as err "`v' in clusters() is not one of the variables: `varlist'"
+                    exit 198
+                }
+                if `CLID'[`p', 1] != 0 {
+                    di as err "`v' appears in more than one cluster"
+                    exit 198
+                }
+                matrix `CLID'[`p', 1] = `g'
+                local ++nv
+            }
+            if `nv' == 0 {
+                di as err "cluster `g' is empty"
+                exit 198
+            }
+        }
+        // variables not listed: one cluster each, in varlist order
+        local ncl `m'
+        forvalues i = 1/`k' {
+            if `CLID'[`i', 1] == 0 {
+                local ++ncl
+                matrix `CLID'[`i', 1] = `ncl'
+                local vn : word `i' of `varlist'
+                local vn = strtoname("`vn'")
+                if `: list vn in clnames' local vn "C`ncl'"
+                local clnames `clnames' `vn'
+            }
+        }
+        if "`clorder'" == "average" & `ncl' > 6 {
+            di as err "averaging over all orderings is limited to 6 clusters (720 orderings); " ///
+                "specify clorder(given) or fewer clusters"
+            exit 198
+        }
+        local nord = cond("`clorder'" == "average", exp(lnfactorial(`ncl')), 1)
+        local nord = round(`nord')
+        local gen 5
+    }
+
     if `lags' < 1 & !inlist("`approach'", "r2", "modelfree") {
         di as err "lags() must be a positive integer"
         exit 198
@@ -476,6 +564,7 @@ program define Estimate, eclass
     local savecov = ("`covariance'" == "" & (!inlist("`approach'", "r2", "modelfree") | `dcc'))
     local nvars = (`nvars')*(`ncomp' + 1) + 2
     if "`asymmetric'" != "" local nvars = `nvars' + 1 + 3*`k'
+    if `ncl' local nvars = `nvars' + (5*`ncl' + 3 + `ncl'*(`ncl'-1))*(1 + 2*("`asymmetric'" != ""))
     if `savecov' {
         // the covariances are left out, with a note, when they would not fit
         if `nvars' + `k'*(`k'+1)/2 > c(maxvar) - 10 {
@@ -553,6 +642,11 @@ program define Estimate, eclass
     local dfmt
     if "`datevar'" != "" local dfmt : format `datevar'
     local savef = ("`fevd'" == "")
+    if `ncl' {
+        mata: cn__clid = st_matrix("`CLID'")
+        if "`clorder'" == "average" mata: cn__clperm = cn_perms(`ncl')
+        else mata: cn__clperm = (1..`ncl')
+    }
     local i 0
     foreach part of local parts {
         local ++i
@@ -590,8 +684,14 @@ program define Estimate, eclass
             char _dta[cn_comps]     "`csufs'"
             char _dta[cn_model]     "`model'"
             char _dta[cn_cov]       "`savecov'"
+            if `ncl' {
+                tempname clsh`i' clct`i'
+                mata: cn_postclust("`clnames'", "`fev`i''", "`clsh`i''", "`clct`i''")
+                char _dta[cn_clusters] "`clnames'"
+            }
         }
     }
+    if `ncl' capture mata: mata drop cn__clid cn__clperm
     local sc `sc1'
 
     // spillover asymmetry measure: positive minus negative (Barunik, Kocenda and Vacha
@@ -744,6 +844,30 @@ program define Estimate, eclass
             "volatility FEVD")
         if `dccr2' ereturn local fevdtype "R2 decomposition (DCC correlations)"
         matrix drop `tab1'_g `tab1'_d
+    }
+    if `ncl' {
+        local rn `clnames' average
+        matrix rownames `clsh1' = `rn'
+        matrix colnames `clsh1' = own comove contag to net
+        matrix rownames `clct1' = `clnames'
+        matrix colnames `clct1' = `clnames'
+        matrix rownames `clct1'_avg = `clnames'
+        matrix colnames `clct1'_avg = `clnames'
+        ereturn matrix cl_shares = `clsh1'
+        ereturn matrix cl_contagion = `clct1'
+        ereturn matrix cl_contagion_avg = `clct1'_avg
+        ereturn scalar nclusters  = `ncl'
+        ereturn scalar norderings = `nord'
+        ereturn local clusters "`clnames'"
+        ereturn local clorder  "`clorder'"
+        tempname cm
+        matrix `cm' = `CLID''
+        matrix colnames `cm' = `names'
+        ereturn matrix cl_id = `cm'
+        ereturn local fevdtype "clustered (`ncl' clusters)"
+        if `semi' | "`asymmetric'" != "" {
+            capture matrix drop `clsh2' `clct2' `clct2'_avg `clsh3' `clct3' `clct3'_avg
+        }
     }
     ereturn local approach "`approach'"
     ereturn local model    "`model'"
@@ -905,6 +1029,12 @@ program define Display
     local fr "`e(frame)'"
     if inlist("`suf'", "_pos", "_neg") local fr "`e(frame`suf')'"
     di as txt "Results frame: " as res "`fr'" as txt " (first period " as res "`e(firstm)'" as txt ")"
+    if "`e(clusters)'" != "" {
+        local otxt = cond("`e(clorder)'" == "average", ///
+            "averaged over " + string(e(norderings)) + " ordering" + cond(e(norderings) > 1, "s", ""), ///
+            "ordered as listed")
+        di as txt "Clusters: " as res "`e(clusters)'" as txt " (`otxt')"
+    }
     if "`e(asymmetric)'" != "" {
         local ptxt = cond("`suf'" == "_pos", "positive", cond("`suf'" == "_neg", "negative", "all"))
         local stxt = cond("`e(positive)'" != "", "series", "changes")
@@ -959,6 +1089,16 @@ program define Display
         di as txt %-16s "Lagged" as res %12.`digits'f e(TCI_l) %16.`digits'f e(cTCI_l)
         di as txt "{hline 44}"
         di as txt %-16s "Overall" as res %12.`digits'f e(TCI) %16.`digits'f e(cTCI)
+    }
+    if "`e(clusters)'" != "" & "`suf'" == "" & "`table'" == "" {
+        di _n as txt "Clustered connectedness (percent): own, co-movement (same cluster) and"
+        di as txt "contagion (other clusters) shares, averaged over the variables of each cluster"
+        matlist e(cl_shares), format(%`w'.`digits'f) border(rows) lines(oneline) nodotz ///
+            rowtitle("Cluster") twidth(12)
+        di as txt "TO and NET: contagion sent to other clusters, per variable of the cluster"
+        di _n as txt "Contagion table: share of the row cluster's variance due to the column cluster"
+        matlist e(cl_contagion), format(%`w'.`digits'f) border(rows) lines(oneline) ///
+            rowtitle("Cluster") twidth(12)
     }
     if "`approach'" == "frequency" & `band' == 0 {
         di _n as txt %-16s "Band (periods)" %12s "TCI" %16s "corrected TCI"

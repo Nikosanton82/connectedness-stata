@@ -1053,6 +1053,139 @@ cn_expect 198 connectedness `rv', positive(`rp') negative(rn_EUR rn_GBP) `opt'
 cn_expect 184 connectedness `rv', positive(`rp') negative(`rn') asymmetric `opt'
 cn_expect 198 connectedness `rv', positive(`rp') negative(`rn') approach(r2) `opt'
 
+di _n as txt "{hline 78}" _n "17. Clustered network connectedness (0.9.0)" _n "{hline 78}"
+* Buchwalter, Diebold and Yilmaz (2025). R_<case> fixtures come from the independent
+* R implementation in test/r/make_fixtures_090.R; the nested cases are checked
+* against the generalized and the orthogonalized decompositions.
+capture program drop cn_clcheck
+program define cn_clcheck
+    syntax , case(string) tol(real)
+    cn_check, case(`case') tol(`tol') prefix(R_)
+    local f "fixtures/R_`case'"
+    capture confirm file "`f'_clts.csv"
+    if _rc {
+        di as txt "  R_`case' clusters: no fixture, skipped"
+        exit
+    }
+    local C = e(nclusters)
+    tempname S T A B S1
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`f'_cl.csv", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`S')
+        quietly import delimited using "`f'_ctg.csv", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`T')
+    }
+    matrix `A' = e(cl_shares)
+    matrix `B' = `A'[1..`C', 1...]
+    matrix `S1' = `S'[1..`C', 1...]
+    local d1 = mreldif(`B', `S1')
+    matrix `B' = `A'[`C'+1, 1..3]
+    matrix `S1' = `S'[`C'+1, 1..3]
+    local d1 = max(`d1', mreldif(`B', `S1'))
+    matrix `B' = e(cl_contagion)
+    local d1 = max(`d1', mreldif(`B', `T'))
+    frame __fx: quietly import delimited using "`f'_clts.csv", clear varnames(1) asdouble
+    mata: st_local("d2", strofreal(cn_tsdiff("`e(frame)'", "__fx"), "%12.0g"))
+    frame drop __fx
+    local ok = (`d1' < `tol') & (`d2' < `tol')
+    global cn_tests = $cn_tests + 1
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-26s "R_`case' clusters" " tables " as res %9.2e `d1' ///
+        as txt "  series " as res %9.2e `d2' as txt "  " cond(`ok', "pass", "FAIL")
+end
+
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+connectedness `v', lags(4) horizon(10) clusters("A: SP500 R_10Y" "B: DJUBSCOM USDX") `opt'
+cn_clcheck, case(dy2012_clust2) tol(1e-8)
+tempname S C0
+matrix `S' = e(cl_shares)
+matrix `C0' = e(cl_contagion)
+local d 0
+forvalues c = 1/2 {
+    local d = max(`d', abs(`S'[`c', 1] + `S'[`c', 2] + `S'[`c', 3] - 100), ///
+        abs(`C0'[`c', 1] + `C0'[`c', 2] - 100))
+}
+local d = max(`d', abs(`S'[3, 1] + `S'[3, 2] + `S'[3, 3] - 100))
+cn_assert "own + co-movement + contagion = 100" `d' 1e-10
+
+* nested cases: one cluster = generalized; one variable per cluster = Cholesky,
+* in the given order or averaged over all orderings
+connectedness `v', lags(4) horizon(10) `opt'
+tempname G F
+matrix `G' = e(fevd)
+connectedness `v', lags(4) horizon(10) clusters("all: `v'") `opt'
+matrix `F' = e(fevd)
+cn_assert "one cluster = generalized FEVD" `=mreldif(`F', `G')' 1e-12
+connectedness `v', lags(4) horizon(10) orthogonalized `opt'
+matrix `G' = e(fevd)
+connectedness `v', lags(4) horizon(10) clusters("a: SP500" "b: R_10Y" "c: DJUBSCOM" "d: USDX") ///
+    clorder(given) `opt'
+matrix `F' = e(fevd)
+cn_assert "singletons, given order = Cholesky" `=mreldif(`F', `G')' 1e-12
+mata: cn__P = cn_perms(4); cn__A = J(4, 4, 0); cn__T = tokens("`v'")
+forvalues r = 1/24 {
+    mata: st_local("pv", invtokens(cn__T[cn__P[`r', .]]))
+    quietly connectedness `pv', lags(4) horizon(10) orthogonalized frame(cn_test) replace notable
+    mata: cn__F = st_matrix("e(fevd)"); cn__A[cn__P[`r', .], cn__P[`r', .]] = cn__A[cn__P[`r', .], cn__P[`r', .]] + cn__F
+}
+mata: st_matrix("`G'", cn__A/24)
+mata: mata drop cn__P cn__A cn__F cn__T
+connectedness `v', lags(4) horizon(10) clusters("a: SP500") `opt'
+matrix `F' = e(fevd)
+cn_assert "singletons, averaged = mean Cholesky" `=mreldif(`F', `G')' 1e-12
+
+use ../data/cn_dy2009, clear
+tsset t
+quietly ds t date, not
+local v `r(varlist)'
+local reg `""Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA""'
+connectedness `v', lags(2) horizon(10) clusters(`reg') `opt'
+cn_clcheck, case(dy2009_regions) tol(1e-8)
+connectedness `v', lags(2) horizon(10) clusters(`reg') clorder(given) `opt'
+cn_clcheck, case(dy2009_regions_given) tol(1e-8)
+cn_expect 198 connectedness `v', lags(2) clusters("a: US") `opt'
+
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+connectedness `v' in 1/400, lags(2) horizon(10) window(200) clusters("A: SP500" "B: R_10Y DJUBSCOM USDX") `opt'
+cn_clcheck, case(dy2012_clust_roll200) tol(1e-8)
+cn_expect 198 connectedness `v', clusters("a: SP500 R_10Y") orthogonalized `opt'
+cn_expect 198 connectedness `v', clusters("a: SP500 R_10Y") approach(frequency) `opt'
+cn_expect 198 connectedness `v', clusters("a: SP500 R_10Y") normalize(maxrow) `opt'
+cn_expect 198 connectedness `v', clusters("a: SP500 R_10Y" "b: R_10Y DJUBSCOM") `opt'
+cn_expect 198 connectedness `v', clusters("a: SP500 FOO") `opt'
+cn_expect 198 connectedness `v', clorder(given) `opt'
+cn_expect 198 connectedness `v', clusters("a: SP500 R_10Y") clorder(random) `opt'
+
+use ../data/cn_acg2020, clear
+tsset month
+connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) ///
+    clusters("Europe: EUR GBP CHF" "Japan: JPY") `opt'
+cn_clcheck, case(acg2020_tvp_clust) tol(1e-6)
+
+use ../data/cn_cgs2022, clear
+tsset t
+quietly ds t date, not
+local v `r(varlist)'
+timer on 15
+connectedness `v', lags(1) horizon(10) clusters("CHF: X2YCHF X5YCHF X10YCHF" ///
+    "DKK: X2YDKK X5YDKK X10YDKK" "EUR: X2YEUR X5YEUR X10YEUR" "GBP: X2YGBP X5YGBP X10YGBP" ///
+    "NOK: X2YNOK X5YNOK X10YNOK" "SEK: X2YSEK X5YSEK X10YSEK") `opt'
+timer off 15
+cn_clcheck, case(cgs2022_countries) tol(1e-8)
+
+use ../data/cn_g2020, clear
+tsset t
+connectedness EUR GBP CHF JPY, window(500) asymmetric clusters("Europe: EUR GBP CHF" "Japan: JPY") `opt'
+capture frame cn_test_neg: confirm variable cl_contag_2 cl_2_1
+cn_assert "clusters with asymmetric" `=_rc' 0.5
+cn_expect 198 connectedness EUR GBP CHF JPY, model(dccgarch) clusters("a: EUR GBP") `opt'
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -1069,6 +1202,7 @@ di as txt "Timing: DCC-GARCH case, k = 4, T = 4,200:  " as res %6.1f r(t11) as t
 di as txt "Timing: portfolio (MCP), T = 4,200:         " as res %6.1f r(t12) as txt " s"
 di as txt "Timing: DCC-GARCH R2, k = 4, T = 4,200:     " as res %6.1f r(t13) as txt " s"
 di as txt "Timing: adaptive LASSO, k = 4, 2 lags:      " as res %6.1f r(t14) as txt " s"
+di as txt "Timing: clusters, k = 18, 720 orderings:   " as res %6.1f r(t15) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

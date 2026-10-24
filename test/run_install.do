@@ -24,7 +24,7 @@ net get connectedness, from("`root'") replace
 dir cn_*.dta
 set graphics off
 local rc 0
-foreach f in 2009dy 2012dy 2018gg 2019ccm 2020acg 2021cg 2022adekoya 2022scg 2022cagt 2023cegg 2024cgp {
+foreach f in 2009dy 2012dy 2018gg 2019ccm 2020acg 2021cg 2022adekoya 2022scg 2022cagt 2023cegg 2024cgp 2025bdy {
     display as text _n "{hline 78}" _n "Replication `f'" _n "{hline 78}"
     capture noisily do "`root'/replication/cn_rep_`f'.do"
     if _rc {

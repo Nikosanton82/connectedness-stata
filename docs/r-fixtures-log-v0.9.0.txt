@@ -1,0 +1,10 @@
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+one cluster against TimeConnectedness(): max abs difference 1.11e-16
+dy2012_clust2              periods=    1 mean TCI=9.653261 own/comove/contagion=90.3467/4.8337/4.8195
+dy2009_regions             periods=    1 mean TCI=53.614330 own/comove/contagion=46.3130/27.4100/26.2770
+dy2009_regions_given       periods=    1 mean TCI=51.226908 own/comove/contagion=49.0451/27.1507/23.8042
+dy2012_clust_roll200       periods=  203 mean TCI=10.276121 own/comove/contagion=89.3408/2.7108/7.9483
+acg2020_tvp_clust          periods=  521 mean TCI=46.896474 own/comove/contagion=60.2106/23.0649/16.7246
+cgs2022_countries          periods=    1 mean TCI=73.720268 own/comove/contagion=26.2797/27.8684/45.8519

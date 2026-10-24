@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.0 (2026-10-24)
+- Clustered network connectedness (Buchwalter, Diebold and Yilmaz 2025): option
+  `clusters()` groups the variables, for example by region, as in `estat group`.
+  Shocks may be correlated within a cluster (generalized identification) and are
+  orthogonal across clusters (sequential projection on the earlier clusters); the
+  row-normalized decomposition is averaged over all orderings of the clusters
+  (`clorder(average)`, up to 6 clusters) or uses the order listed (`clorder(given)`).
+  One cluster gives the generalized FEVD and one variable per cluster the Cholesky
+  FEVD. It works with every VAR-type and TVP-VAR model, static or rolling.
+- Cluster measures: own, co-movement and contagion shares of each cluster (summing to
+  100), contagion transmitted (TO) and its net value, their averages over clusters,
+  and a cluster-to-cluster contagion table, in `e(cl_shares)`, `e(cl_contagion)` and,
+  for every period, in the results frame (`cl_own_c`, `cl_comove_c`, `cl_contag_c`,
+  `cl_to_c`, `cl_net_c`, `cl_c_d`). The paper prints the contagion from cluster d to
+  c with a further division by the size of d, which contradicts its statement that
+  the three shares sum to one; that version is kept in `e(cl_contagion_avg)`.
+- Validation: the paper publishes no code and its data are not public, so
+  `test/r/make_fixtures_090.R` implements the method independently in R, from the
+  paper's equations, on 6 cases (two to six clusters, static, rolling and TVP-VAR,
+  averaged and given orderings, singleton clusters). Stata agrees with it to 8e-13.
+  One cluster reproduces the generalized FEVD, and one variable per cluster the
+  Cholesky FEVD, in the given order and averaged over all 24 orderings, to 2e-15.
+  240 of 240 certification tests pass in Stata 19 (`docs/certification-log-v0.9.0.txt`).
+- Replication do-file `cn_rep_2025bdy.do`: the paper's design (adaptive elastic-net
+  VAR, three regions, rolling windows) applied to the Diebold and Yilmaz (2009)
+  equity markets.
+
 ## 0.8.2 (2026-10-24)
 - Scalar normalizations of the generalized FEVD (Caloia, Cipollini and Muzzioli 2019):
   `normalize(maxrow)`, `normalize(maxcol)` and `normalize(spectral)` divide the

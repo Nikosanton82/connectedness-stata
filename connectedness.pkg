@@ -5,14 +5,15 @@ d Estimates the connectedness measures of Diebold and Yilmaz (2009, 2012) from s
 d and rolling-window VARs, quantile and LAD VARs, (adaptive) LASSO, ridge and
 d elastic-net VARs and the TVP-VAR connectedness measures of Antonakakis,
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
-d indices, row or scalar normalization, frequency connectedness (Barunik and Krehlik
-d 2018), joint and extended joint connectedness, R2 decomposed and model-free
-d connectedness, DCC-GARCH volatility connectedness (Gabauer 2020) and its R2
-d decomposition, asymmetric (positive and negative) connectedness and the spillover
-d asymmetry measure, group measures (aggregated, conditional, inclusive, exclusive,
-d internal, external), network plots, and portfolio and hedging strategies (minimum
-d connectedness, multivariate hedging, risk-parity, bivariate portfolios, hedge
-d ratios). Port of the ConnectednessApproach R package by David Gabauer (GPL-3).
+d indices, row or scalar normalization, clustered identification (Buchwalter, Diebold
+d and Yilmaz 2025), frequency connectedness (Barunik and Krehlik 2018), joint and
+d extended joint connectedness, R2 decomposed and model-free connectedness, DCC-GARCH
+d volatility connectedness (Gabauer 2020) and its R2 decomposition, asymmetric
+d (positive and negative) connectedness and the spillover asymmetry measure, group
+d measures (aggregated, conditional, inclusive, exclusive, internal, external),
+d network plots, and portfolio and hedging strategies (minimum connectedness,
+d multivariate hedging, risk-parity, bivariate portfolios, hedge ratios). Port of the
+d ConnectednessApproach R package by David Gabauer (GPL-3).
 d Includes 18 datasets from published applications.
 d
 d Requires: Stata 16.1 or newer
