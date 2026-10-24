@@ -1,4 +1,4 @@
-*! version 0.8.0  23oct2026
+*! version 0.8.1  23oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -1532,7 +1532,9 @@ void cn_dccgarch(real matrix x, real scalar nf, real scalar stdz, string scalar 
     ll = ll - 0.5*(T*k*ln(2*pi()) + 2*sum(ln(S)))
     Ht = J(T, k*k, .)
     for (t=1; t<=T; t++) Ht[t, .] = rowshape((S[t, .]'*S[t, .]) :* rowshape(Rt[t, .], k), 1)
-    F = cn_vfevd(Ht, Qbar, G[., 3], G[., 4], a, b, nf, stdz)
+    // nf = 0: no volatility FEVD (R2 connectedness of the conditional correlations)
+    if (nf > 0) F = cn_vfevd(Ht, Qbar, G[., 3], G[., 4], a, b, nf, stdz)
+    else        F = J(0, 0, .)
     D = (a, b, ll, conv)
 }
 
@@ -1561,7 +1563,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     real rowvector ma, m, cv, sc
     string rowvector nm, bl, fn, fl, mn0, ml0, cs
     real matrix    Z, Cc, Cl, Ft, G, Ht
-    real scalar    wr
+    real scalar    wr, nfb
     real rowvector D
 
     x  = st_data(., tokens(vars), touse)
@@ -1582,13 +1584,17 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         t0 = T - ws + 1
     }
 
-    if (approach=="r2" | approach=="modelfree") {
+    if ((approach=="r2" | approach=="modelfree") & model!="dccgarch") {
         Z  = (approach=="r2" ? cn_embed(x, p+1) : x)
         wr = (window==0 ? rows(Z) : window - (approach=="r2" ? 2*p : 0))
         nT = rows(Z) - wr + 1
     }
     else if (model=="dccgarch") {
-        cn_dccgarch(x, H, stdz, dccfix, Ft, G, D, Ht)
+        cn_dccgarch(x, (approach=="r2" ? 0 : H), stdz, dccfix, Ft, G, D, Ht)
+        if (approach=="r2") {
+            Ft = cn_r2dcc(Ht, k, nfb)
+            st_local("r2fallback", strofreal(nfb))
+        }
         st_matrix(tabname + "_g", G)
         st_matrix(tabname + "_d", D)
         nT = T
@@ -1654,8 +1660,8 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     // covariance matrices of the measured periods (upper triangle by rows): the
     // residual covariance of each VAR window or TVP-VAR period, or the DCC-GARCH
     // conditional covariance; none for the R2 and model-free approaches
-    if (approach=="r2" | approach=="modelfree") cn__Q = J(nT, 0, .)
-    else if (model=="dccgarch")                 cn__Q = cn_vechu(Ht, k)
+    if (model=="dccgarch")                           cn__Q = cn_vechu(Ht, k)
+    else if (approach=="r2" | approach=="modelfree") cn__Q = J(nT, 0, .)
     else                                        cn__Q = cn_vechu(Qt, k)
     if (rows(cn__Q) != nT & cols(cn__Q) > 0) cn__Q = cn__Q[|rows(cn__Q)-nT+1, 1 \ rows(cn__Q), cols(cn__Q)|]
 
@@ -1663,7 +1669,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     cn__M  = J(nT, cols(cn__mn), .)
     tabsum = J(k+3, k+1, 0)
     for (t=1; t<=nT; t++) {
-        if (approach=="r2") {
+        if (approach=="r2" & model!="dccgarch") {
             cn_r2decomp(Z[|t, 1 \ t+wr-1, cols(Z)|], k, p, r2m, Cc, Cl)
             ct = 100*(Cc + Cl)
             m  = cn_measures(ct)
@@ -1765,6 +1771,48 @@ void cn_posttable(string scalar tabname, real matrix avg, real scalar corrected,
     st_matrix(tabname, cn_table(avg, corrected))
     st_matrixrowstripe(tabname, (J(k+4, 1, ""), (nm, ("TO", "Inc_Own", "NET", "NPT"))'))
     st_matrixcolstripe(tabname, (J(k+1, 1, ""), (nm, "FROM")'))
+}
+
+// R2 decomposed connectedness of DCC-GARCH conditional correlations (Cocca, Gabauer
+// and Pomberger 2024), as R's R2Correlations(): for each period and variable i, the
+// R2 of i on the others is split into the shares of each regressor (Genizi 1993);
+// own shares are 1. As in R, a period whose shares for i sum to more than 1 takes the
+// previous period's shares; in the first period, where R stops, the shares are kept
+// and counted in nfb
+real matrix cn_r2dcc(real matrix Ht, real scalar k, real scalar nfb)
+{
+    real scalar    T, t, i
+    real matrix    C, R, Dg, V, Rd, Rp, root
+    real colvector v, ryx, cd
+    real rowvector L
+
+    T   = rows(Ht)
+    Rd  = J(T, k*k, .)
+    nfb = 0
+    for (t=1; t<=T; t++) {
+        C  = rowshape(Ht[t, .], k)
+        Dg = diag(1 :/ sqrt(diagonal(C)))
+        R  = Dg*C*Dg
+        R  = (R + R')/2
+        C  = I(k)
+        for (i=1; i<=k; i++) {
+            v   = select((1::k), (1::k) :!= i)
+            ryx = R[v, i]
+            symeigensystem(R[v, v], V, L)
+            root = V*diag(sqrt(abs(L)))*V'
+            cd   = (root:^2) * (lusolve(root, ryx):^2)
+            if (sum(cd) > 1) {
+                if (t > 1) {
+                    Rp = rowshape(Rd[t-1, .], k)
+                    cd = Rp[i, v]'
+                }
+                else nfb++
+            }
+            C[i, v] = cd'
+        }
+        Rd[t, .] = rowshape(C, 1)
+    }
+    return(Rd)
 }
 
 // Upper triangles (by rows, diagonal included) of the k x k matrices held as the
@@ -2535,6 +2583,81 @@ void cn_pfpost()
     st_store(., idx, cn__PP)
     for (i=1; i<=cols(cn__PWn); i++) st_varlabel(cn__PWn[i], substr(cn__PWl[i], 1, 80))
     for (i=1; i<=cols(cn__PPn); i++) st_varlabel(cn__PPn[i], substr(cn__PPl[i], 1, 80))
+}
+
+
+// =============================================================================
+// Conditional and partial correlations of the stored covariances (estat
+// correlation), as R's ConditionalCorrelation() and PartialCorrelations()
+// =============================================================================
+
+// From the current (results) frame: the correlations (partial = 0) or partial
+// correlations (partial = 1, -P_ij/sqrt(P_ii P_jj) with P the (pseudo)inverse of the
+// covariance matrix) of every period, for the pairs i < j, kept in cn__CR; the
+// average over the periods (diagonal 1) in tabname
+void cn_corr(real scalar k, real scalar partial, string scalar tabname)
+{
+    external real matrix cn__CR
+    real matrix    Hs, H, P, A
+    real scalar    t, i, j, c, T
+    real colvector d
+
+    Hs = cn_unvechu(st_data(., cn_covnames(k)), k, "cov")
+    T  = rows(Hs)
+    cn__CR = J(T, k*(k-1)/2, .)
+    A  = J(k, k, 0)
+    for (t=1; t<=T; t++) {
+        H = rowshape(Hs[t, .], k)
+        if (partial) {
+            P = pinv(H)
+            d = 1 :/ sqrt(diagonal(P))
+            H = -(d*d') :* P
+        }
+        else {
+            d = 1 :/ sqrt(diagonal(H))
+            H = (d*d') :* H
+        }
+        _diag(H, 1)
+        A = A + H
+        c = 0
+        for (i=1; i<k; i++) {
+            for (j=i+1; j<=k; j++) cn__CR[t, ++c] = H[i, j]
+        }
+    }
+    st_matrix(tabname, A/T)
+}
+
+void cn_postcorr(real colvector tv, string scalar tvar, string scalar tfmt,
+                 real colvector dv, string scalar dvar, string scalar dfmt,
+                 string scalar names, real scalar partial)
+{
+    external real matrix cn__CR
+    real scalar      k, i, j, c
+    real rowvector   idx
+    string rowvector nm, vn, vl
+
+    nm = tokens(names)
+    k  = cols(nm)
+    vn = J(1, 0, "")
+    vl = J(1, 0, "")
+    for (i=1; i<k; i++) {
+        for (j=i+1; j<=k; j++) {
+            vn = vn, (partial ? "pcor_" : "cor_") + strofreal(i) + "_" + strofreal(j)
+            vl = vl, (partial ? "Partial correlation of " : "Correlation of ") + nm[i] + " and " + nm[j]
+        }
+    }
+    st_addobs(rows(tv))
+    idx = st_addvar("double", tvar)
+    st_store(., idx, tv)
+    st_varformat(tvar, tfmt)
+    if (dvar != "") {
+        idx = st_addvar("double", dvar)
+        st_store(., idx, dv)
+        st_varformat(dvar, dfmt)
+    }
+    idx = st_addvar("double", vn)
+    st_store(., idx, cn__CR)
+    for (c=1; c<=cols(vn); c++) st_varlabel(vn[c], substr(vl[c], 1, 80))
 }
 
 end

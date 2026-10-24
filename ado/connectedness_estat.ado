@@ -1,4 +1,4 @@
-*! version 0.7.2  20oct2026
+*! version 0.8.1  23oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -10,6 +10,9 @@ program define connectedness_estat
     }
     else if `lsub' >= 3 & "`sub'" == substr("group", 1, `lsub') {
         Group `rest'
+    }
+    else if `lsub' >= 4 & "`sub'" == substr("correlation", 1, `lsub') {
+        Correlation `rest'
     }
     else {
         estat_default `0'
@@ -221,4 +224,91 @@ program define Group, rclass
     return local frame "`frame'"
     if inlist("`type'", "aggregated", "internal", "external") return matrix gtci = `gt'
     return matrix table = `tab'
+end
+
+// Conditional or partial correlations of the covariance matrices stored in the
+// results frame, as R's ConditionalCorrelation() and PartialCorrelations()
+program define Correlation, rclass
+    syntax [, PARtial FRame(name) REPLACE DIGits(integer 3) noTABle]
+    if `digits' < 0 | `digits' > 8 {
+        di as err "digits() must be between 0 and 8"
+        exit 198
+    }
+    local fr `e(frame)'
+    mata: st_local("fexist", strofreal(st_frameexists("`fr'")))
+    if !`fexist' {
+        di as err "results frame {bf:`fr'} not found; rerun {cmd:connectedness}"
+        exit 111
+    }
+    frame `fr': local hascov : char _dta[cn_cov]
+    if "`hascov'" != "1" {
+        di as err "estat correlation needs the covariance matrices of the results frame;"
+        if inlist("`e(approach)'", "r2", "modelfree") & "`e(model)'" != "dccgarch" ///
+            di as err "approach(`e(approach)') does not estimate a covariance matrix"
+        else di as err "rerun {cmd:connectedness} without the {cmd:nocovariance} option"
+        exit 498
+    }
+    local names `e(names)'
+    local k = e(k)
+    local ispart = ("`partial'" != "")
+    if "`frame'" == "" local frame cn_corr
+    if "`frame'" == "`c(frame)'" | "`frame'" == "`fr'" {
+        di as err "frame(`frame') may not be the current or the results frame"
+        exit 498
+    }
+    mata: st_local("cexist", strofreal(st_frameexists("`frame'")))
+    if `cexist' & "`replace'" == "" {
+        di as err "frame {bf:`frame'} already exists; specify {cmd:replace} or another {cmd:frame()}"
+        exit 110
+    }
+    capture mata: mata describe cn_corr()
+    if _rc {
+        quietly findfile cn_core.mata
+        quietly do `"`r(fn)'"'
+    }
+    local tvar `e(timevar)'
+    local dvar `e(datevar)'
+    tempname tab
+    frame `fr' {
+        local tfmt : format `tvar'
+        local dfmt
+        if "`dvar'" != "" local dfmt : format `dvar'
+        local T = _N
+        mata: cn__ctv = st_data(., "`tvar'")
+        if "`dvar'" != "" mata: cn__cdv = st_data(., "`dvar'")
+        else mata: cn__cdv = J(0, 1, .)
+        mata: cn_corr(`k', `ispart', "`tab'")
+    }
+    capture frame drop `frame'
+    frame create `frame'
+    frame `frame' {
+        mata: cn_postcorr(cn__ctv, "`tvar'", "`tfmt'", cn__cdv, "`dvar'", "`dfmt'", "`names'", `ispart')
+        quietly tsset `tvar'
+        local dlab = cond(`ispart', "partial correlations", "conditional correlations")
+        label data "connectedness: `dlab'"
+        char _dta[cn_kind]    "correlation"
+        char _dta[cn_names]   "`names'"
+        char _dta[cn_timevar] "`tvar'"
+        char _dta[cn_datevar] "`dvar'"
+    }
+    mata: mata drop cn__ctv cn__cdv cn__CR
+    matrix rownames `tab' = `names'
+    matrix colnames `tab' = `names'
+
+    local what = cond(`ispart', "Partial correlations", "Conditional correlations")
+    local src = cond("`e(model)'" == "dccgarch", "DCC-GARCH conditional covariances", ///
+        cond(e(window) > 0 | "`e(model)'" == "tvpvar", "residual covariances of each period", ///
+        "residual covariance"))
+    di _n as txt "`what'" _col(49) "Number of variables = " as res %8.0g `k'
+    di as txt "Source: " as res "`src'" as txt _col(49) "Periods averaged    = " as res %8.0g `T'
+    di as txt "Saved in frame: " as res "`frame'"
+    if "`table'" == "" {
+        local w = `digits' + 6
+        matlist `tab', format(%`w'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(12)
+    }
+    return scalar T = `T'
+    return scalar k = `k'
+    return local type = cond(`ispart', "partial", "conditional")
+    return local frame "`frame'"
+    return matrix mean = `tab'
 end

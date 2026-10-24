@@ -795,6 +795,119 @@ if !_rc {
 else di as txt "  R_pf_dcc: no fixture, skipped"
 capture frame drop cn_pftest
 
+di _n as txt "{hline 78}" _n "15. DCC-GARCH R2 connectedness and estat correlation (0.8.1)" _n "{hline 78}"
+* R2 decomposed connectedness of the DCC-GARCH conditional correlations, as R's
+* R2Correlations(): exact with rmgarch's estimates (dccparams()), and to 1e-3 with
+* Stata's own estimates. estat correlation: conditional and partial correlations of the
+* stored covariances, as ConditionalCorrelation() and PartialCorrelations().
+capture program drop cn_dccr2case
+program define cn_dccr2case
+    syntax varlist, case(string)
+    local f "fixtures/R_dccr2_`case'_par.csv"
+    capture confirm file "`f'"
+    if _rc {
+        di as txt "  R_dccr2_`case': no fixture, skipped"
+        exit
+    }
+    local k : word count `varlist'
+    tempname P
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`f'", clear varnames(1) asdouble
+        mkmat _all, matrix(`P')
+    }
+    frame drop __fx
+    matrix __rpar = `P'[1, 1..4*`k'+2]
+    connectedness `varlist', model(dccgarch) approach(r2) dccparams(__rpar) frame(cn_test) replace notable
+    cn_check, case(dccr2_`case') tol(1e-8) prefix(R_)
+    connectedness `varlist', model(dccgarch) approach(r2) frame(cn_test) replace notable
+    cn_check, case(dccr2_`case') tol(1e-3) prefix(R_)
+    matrix drop __rpar
+end
+capture program drop cn_corrcase
+program define cn_corrcase
+    gettoken case 0 : 0
+    local f "fixtures/R_corr_`case'"
+    capture confirm file "`f'_ts.csv"
+    if _rc {
+        di as txt "  R_corr_`case': no fixture, skipped"
+        exit
+    }
+    local k = e(k)
+    tempname C P M A B
+    quietly estat correlation, frame(cn_ctest) replace notable
+    matrix `C' = r(mean)
+    quietly estat correlation, partial frame(cn_ptest) replace notable
+    matrix `P' = r(mean)
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`f'_mean.csv", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`M')
+    }
+    matrix `A' = `M'[1..`k', 1...]
+    matrix `B' = `M'[`k'+1..2*`k', 1...]
+    local d1 = max(mreldif(`C', `A'), mreldif(`P', `B'))
+    frame __fx {
+        quietly import delimited using "`f'_ts.csv", clear varnames(1) asdouble
+        keep period cor_*
+    }
+    mata: st_local("d2", strofreal(cn_tsdiff("cn_ctest", "__fx"), "%12.0g"))
+    frame __fx {
+        quietly import delimited using "`f'_ts.csv", clear varnames(1) asdouble
+        keep period pcor_*
+    }
+    mata: st_local("d3", strofreal(cn_tsdiff("cn_ptest", "__fx"), "%12.0g"))
+    frame drop __fx
+    local d2 = max(`d2', `d3')
+    local ok = (`d1' < 1e-8) & (`d2' < 1e-8)
+    global cn_tests = $cn_tests + 1
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-22s "R_corr_`case'" " means " as res %8.2e `d1' as txt "  series " ///
+        as res %8.2e `d2' as txt "  " cond(`ok', "pass", "FAIL")
+end
+
+use ../data/cn_g2020, clear
+tsset t
+local v EUR GBP CHF JPY
+timer on 13
+cn_dccr2case `v', case(g2020)
+timer off 13
+capture confirm file "fixtures/R_dccr2_g2020_par.csv"
+if !_rc {
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "fixtures/R_dccr2_g2020_par.csv", clear varnames(1) asdouble
+        mkmat _all, matrix(__rpar)
+    }
+    frame drop __fx
+    matrix __rpar = __rpar[1, 1..18]
+    connectedness `v', model(dccgarch) dccparams(__rpar) frame(cn_test) replace notable
+    matrix drop __rpar
+    cn_corrcase dcc_g2020
+}
+connectedness `v', lags(1) horizon(10) frame(cn_test) replace notable
+cn_corrcase var_g2020
+cn_expect 198 connectedness `v', model(dccgarch) approach(r2) cormethod(kendall) `opt'
+cn_expect 198 connectedness `v', model(dccgarch) approach(r2) standardize `opt'
+cn_expect 198 connectedness `v', model(dccgarch) approach(modelfree) `opt'
+connectedness `v', lags(1) nocovariance frame(cn_test) replace notable
+cn_expect 498 estat correlation
+connectedness `v', approach(r2) lags(1) frame(cn_test) replace notable
+cn_expect 498 estat correlation, partial
+use ../data/cn_cgp2024, clear
+tsset t
+cn_dccr2case GRE SOL WIN GEO, case(cgp2024)
+use ../data/cn_acg2020, clear
+tsset month
+connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) ///
+    frame(cn_test) replace notable
+cn_corrcase tvp_acg2020
+capture frame drop cn_ctest
+capture frame drop cn_ptest
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -809,6 +922,7 @@ di as txt "Timing: elastic net, 11 alphas, k = 4:     " as res %6.1f r(t9) as tx
 di as txt "Timing: LASSO, k = 51, static:             " as res %6.1f r(t10) as txt " s"
 di as txt "Timing: DCC-GARCH case, k = 4, T = 4,200:  " as res %6.1f r(t11) as txt " s"
 di as txt "Timing: portfolio (MCP), T = 4,200:         " as res %6.1f r(t12) as txt " s"
+di as txt "Timing: DCC-GARCH R2, k = 4, T = 4,200:     " as res %6.1f r(t13) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

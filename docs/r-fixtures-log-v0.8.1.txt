@@ -1,0 +1,9 @@
+ConnectednessApproach version: 1.0.4
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3
+rugarch version: 1.5.3  rmgarch version: 1.3.9
+dccr2_g2020            periods= 4200 mean TCI=51.897563
+corr_dcc_g2020         periods= 4200 mean cor_1_2=0.648592 mean pcor_1_2=0.427557
+dccr2_cgp2024          periods= 3152 mean TCI=37.276951
+corr_var_g2020         periods=    1 mean cor_1_2=0.648123 mean pcor_1_2=0.482029
+corr_tvp_acg2020       periods=  521 mean cor_1_2=0.692028 mean pcor_1_2=0.313683

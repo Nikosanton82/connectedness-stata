@@ -1,5 +1,7 @@
 * Replication: Cocca, Gabauer and Pomberger (2024), investment strategies for clean
-* energy markets (data of the R package's cgp2024): the multivariate hedging portfolio
+* energy markets (data of the R package's cgp2024): DCC-GARCH R2 decomposed
+* connectedness, as R2Correlations() of the rmgarch conditional correlations (from
+* version 0.8.1), the conditional correlations, the multivariate hedging portfolio
 * from the DCC-GARCH conditional covariances, as MultivariateHedgingPortfolio(), and
 * minimum connectedness and risk-parity portfolios for comparison. The portfolio
 * functions take decimal returns, so the percentage returns are divided by 100.
@@ -9,6 +11,10 @@ tsset t
 foreach v in GRE SOL WIN GEO {
     generate double r_`v' = `v'/100
 }
+connectedness GRE SOL WIN GEO, model(dccgarch) approach(r2) datevar(date) frame(cgp2024_r2) replace
+cngraph tci
+cngraph net
+estat correlation, frame(cgp2024_cor) replace
 connectedness GRE SOL WIN GEO, model(dccgarch) horizon(10) datevar(date) frame(cgp2024_dcc) replace
 cnportfolio r_GRE r_SOL r_WIN r_GEO, method(mhp) saving(cgp2024_mhp, replace)
 cnportfolio r_GRE r_SOL r_WIN r_GEO, method(mcp) saving(cgp2024_mcp, replace)

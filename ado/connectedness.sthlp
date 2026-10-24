@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.8.0  23oct2026}{...}
+{* *! version 0.8.1  23oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -160,8 +160,12 @@ steps by maximum likelihood, as R's {cmd:rmgarch::dccfit()} does: first each GAR
 margin, then the DCC parameters from the standardized residuals. The decomposition
 comes from the volatility impulse responses of Gabauer (2020), computed for every
 period of the sample, so {opt window()} is not allowed and {opt lags()} is not used.
-Only {cmd:approach(time)} is available, as in the R package; {opt orthogonalized} and
-{opt asymmetric} are not allowed. At least 100 observations are required.
+{opt orthogonalized} and {opt asymmetric} are not allowed. At least 100 observations
+are required. Besides {cmd:approach(time)}, {cmd:approach(r2)} gives the DCC-GARCH R2
+decomposed connectedness of Cocca, Gabauer and Pomberger (2024): the R2 decomposition
+is applied to the conditional correlation matrix of each period, as R's
+{cmd:R2Correlations()} applied to {cmd:rmgarch::rcor()}, instead of to the
+volatility impulse responses (see {it:Methods and formulas}).
 
 {phang}
 {opt quantile(numlist)} sets the quantile tau, strictly between 0 and 1, for
@@ -239,7 +243,10 @@ work on the data directly, so {opt model()}, {opt orthogonalized}, {opt asymmetr
 and {opt horizon()} do not apply. With {cmd:r2}, {opt lags(#)} may be zero (only
 contemporaneous relations) and {opt window(#)} rows of data give
 {it:#} - 2{it:p} rows of (x_t, ..., x_{t-p}) per window, as in the R package;
-{cmd:modelfree} uses no lags.
+{cmd:modelfree} uses no lags. The exception is {cmd:model(dccgarch) approach(r2)},
+which decomposes the DCC-GARCH conditional correlations of every period (Cocca,
+Gabauer and Pomberger 2024); it has no lags and takes neither {opt cormethod()} nor
+{opt standardize}.
 
 {phang}
 {opt cormethod(method)} sets the correlation used by {cmd:approach(r2)} and
@@ -308,9 +315,10 @@ is still accepted and has no effect.)
 every period, {cmd:cov_}{it:i}{cmd:_}{it:j} for {it:i} <= {it:j}, in the results
 frame: the residual covariance of the VAR, of each rolling window or of each TVP-VAR
 period, or the conditional covariance of the DCC-GARCH model. {helpb cnportfolio}
-uses these matrices. They are not stored with {cmd:approach(r2)} or
-{cmd:approach(modelfree)}, which estimate no covariance matrix, and they are left out
-with a note when they would exceed {help maxvar}.
+and {cmd:estat correlation} use these matrices. They are not stored with
+{cmd:approach(r2)} or {cmd:approach(modelfree)} on the data, which estimate no
+covariance matrix (they are stored with {cmd:model(dccgarch) approach(r2)}), and they
+are left out with a note when they would exceed {help maxvar}.
 
 {phang}
 {opt datevar(varname)} copies a date variable into the results frame; {helpb cngraph}
@@ -433,6 +441,21 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. connectedness EUR GBP CHF JPY, model(dccgarch) datevar(date) replace}{p_end}
 {phang2}{cmd:. matrix list e(garch)}{p_end}
 {phang2}{cmd:. cngraph tci}{p_end}
+{phang2}{cmd:. estat correlation}{p_end}
+
+{pstd}Cocca, Gabauer and Pomberger (2024): DCC-GARCH R2 decomposed connectedness{p_end}
+{phang2}{cmd:. use cn_cgp2024, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness GRE SOL WIN GEO, model(dccgarch) approach(r2) datevar(date) replace}{p_end}
+{phang2}{cmd:. cngraph tci}{p_end}
+{phang2}{cmd:. cnnetwork}{p_end}
+
+{pstd}Chatziantoniou, Abakah, Gabauer and Tiwari (2022): quantile frequency connectedness{p_end}
+{phang2}{cmd:. use cn_gcat2022, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness S_P_GREEN_BOND_INDEX-S_P_GLOBAL_CLEAN_ENERGY, model(qvar) quantile(0.05) horizon(100) window(200) approach(frequency) bands(5) datevar(date) replace}{p_end}
+{phang2}{cmd:. connectedness, band(1)}{p_end}
+{phang2}{cmd:. cngraph tci}{p_end}
 
 {pstd}Adekoya et al. (2022): asymmetric connectedness of positive and negative changes{p_end}
 {phang2}{cmd:. use cn_aaacgo2022, clear}{p_end}
@@ -481,7 +504,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(alphas)}}alpha values considered ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(loss)}, {cmd:e(folds)}, {cmd:e(seed)}}cross-validation settings{p_end}
 {synopt:{cmd:e(approach)}}{cmd:time}, {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
-{synopt:{cmd:e(cormethod)}}correlation used ({cmd:r2}, {cmd:modelfree}){p_end}
+{synopt:{cmd:e(cormethod)}}correlation used ({cmd:r2}, {cmd:modelfree}): {cmd:pearson}, {cmd:spearman}, {cmd:kendall}, or {cmd:dcc} for the DCC-GARCH conditional correlations{p_end}
 {synopt:{cmd:e(bands)}}band labels in periods, for example {cmd:1-5 5-Inf} ({cmd:frequency}){p_end}
 {synopt:{cmd:e(partition)}}band limits in radians ({cmd:frequency}){p_end}
 {synopt:{cmd:e(scenario)}}{cmd:abs} or {cmd:wth} ({cmd:frequency}){p_end}
@@ -605,6 +628,18 @@ a diag(h_1) + b {bf:H}_t and {bf:Q}_j+1 = (1-a-b) {bf:Qbar} + (a+b) {bf:Q}_j. Wi
 each row divided by its sum.
 
 {pstd}
+{it:DCC-GARCH R2 decomposition.} With {cmd:approach(r2)}, the conditional correlation
+matrix {bf:R}_t of each period is decomposed as in {cmd:R2Correlations()}: row {it:i}
+of the table holds the relative-weight shares of the R2 of variable {it:i} regressed
+on the others, computed from {bf:R}_t as for the data-based R2 decomposition above,
+and the own share is 1, so the table is not row-normalized. A period in which the
+shares of variable {it:i} sum to more than 1 (an indefinite {bf:R}_t submatrix)
+takes the previous period's shares for that row, as R does. In the first period, R
+stops with an error; Stata keeps the shares and reports a note. The pairwise
+connectedness index of {cmd:R2Correlations()} is on a scale of 0 to 2; the results
+frame holds it in percent, like the other approaches.
+
+{pstd}
 For the TVP-VAR, the coefficient prediction covariance is the filtered covariance
 divided by kappa1, and the error covariance is updated as
 kappa2 {bf:Sigma}_{t-1} + (1-kappa2) u_t u_t'.
@@ -641,6 +676,11 @@ financial connectedness and systemic risk. {it:Journal of Financial Econometrics
 {phang}
 Bollerslev, T. 1986. Generalized autoregressive conditional heteroskedasticity.
 {it:Journal of Econometrics} 31: 307-327.
+
+{phang}
+Chatziantoniou, I., E. J. A. Abakah, D. Gabauer, and A. K. Tiwari. 2022. Quantile
+time-frequency price connectedness between green bond, green equity, sustainable
+investments and clean energy markets. {it:Journal of Cleaner Production} 361: 132088.
 
 {phang}
 Chatziantoniou, I., and D. Gabauer. 2021. EMU risk-synchronisation and financial

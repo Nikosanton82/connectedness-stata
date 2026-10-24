@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.1 (2026-10-23)
+- DCC-GARCH R2 decomposed connectedness (Cocca, Gabauer and Pomberger 2024):
+  `model(dccgarch) approach(r2)` applies the R2 decomposition to the conditional
+  correlation matrix of every period, as R's `R2Correlations()` applied to
+  `rmgarch::rcor()`. As in R, a period whose shares for a variable sum to more than 1
+  takes the previous period's shares; in the first period, where R stops with an
+  error, Stata keeps the shares and reports a note. The pairwise connectedness index
+  is stored in percent (R reports it on a scale of 0 to 2). The conditional
+  covariances are stored in the results frame, so `cnportfolio` and
+  `estat correlation` work after it.
+- New `estat correlation [, partial]`: the conditional correlations of the covariance
+  matrices stored in the results frame (VAR, rolling windows, TVP-VAR or DCC-GARCH),
+  as R's `ConditionalCorrelation()`, or the partial correlations, as
+  `PartialCorrelations()`. The series `cor_i_j` or `pcor_i_j` are saved in a frame
+  (default `cn_corr`) and the average matrix is displayed and returned in `r(mean)`.
+- Help: examples of DCC-GARCH R2 connectedness, conditional correlations and quantile
+  frequency connectedness (Chatziantoniou, Abakah, Gabauer and Tiwari 2022), and the
+  formulas of the DCC-GARCH R2 decomposition.
+- Validation: 5 R cases from `test/r/make_fixtures_dccr2.R` (ConnectednessApproach
+  1.0.4, rugarch 1.5.3, rmgarch 1.3.9): DCC-GARCH R2 connectedness of g2020 and
+  cgp2024, and conditional and partial correlations after DCC-GARCH, static VAR and
+  TVP-VAR. With rmgarch's estimates the results agree with R to 6e-14, and with
+  Stata's own estimates to 2e-5. 187 of 187 certification tests pass in Stata 19
+  (`docs/certification-log-v0.8.1.txt`).
+- Replication do-files: `cn_rep_2022cagt.do` (Chatziantoniou, Abakah, Gabauer and
+  Tiwari 2022: quantile frequency connectedness of green bonds, green equities,
+  sustainable investment and clean energy at the 5%, 50% and 95% quantiles), and
+  `cn_rep_2024cgp.do` now starts with the DCC-GARCH R2 connectedness of the paper.
+
 ## 0.8.0 (2026-10-23)
 - New command `cnportfolio`: portfolio and hedging strategies from the matrices of
   each period, as the portfolio functions of the R package. `method(mcp)` gives the

@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.8.0, 23 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.8.1, 23 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -24,11 +24,13 @@ Contents
 Commands
   connectedness   estimation (static and rolling VAR, QVAR and LAD-VAR, LASSO, ridge
                   and elastic-net VARs, TVP-VAR, DCC-GARCH; time,
-                  frequency, joint, extended joint, R2 decomposed and model-free
-                  connectedness; asymmetric option)
+                  frequency, joint, extended joint, R2 decomposed (also of the
+                  DCC-GARCH correlations) and model-free connectedness; asymmetric
+                  option)
   estat table     redisplay the connectedness table
   estat group     aggregated, conditional, inclusive, exclusive, internal and
                   external connectedness
+  estat correlation  conditional or partial correlations of each period
   cngraph         graphs of TCI, TO, FROM, NET, NPT, NPDC, PCI, influence, group TCIs
   cnnetwork       network plots of pairwise connectedness
   cnportfolio     portfolio weights, hedge ratios and hedging effectiveness (minimum
@@ -55,4 +57,6 @@ Reproducing the checks
   installed with ConnectednessApproach. The fixtures of cnportfolio (version 0.8.0)
   come from test/r/make_fixtures_portfolio.R (test/r/run_r_portfolio.bat), which uses
   the PerformanceAnalytics and riskParityPortfolio packages, also installed with
-  ConnectednessApproach.
+  ConnectednessApproach. The fixtures of DCC-GARCH R2 decomposed connectedness and
+  estat correlation (version 0.8.1) come from test/r/make_fixtures_dccr2.R
+  (test/r/run_r_dccr2.bat).

@@ -1,4 +1,4 @@
-*! version 0.8.0  23oct2026
+*! version 0.8.1  23oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -114,14 +114,26 @@ program define Estimate, eclass
         di as err "option cormethod() requires approach(r2) or approach(modelfree)"
         exit 198
     }
-    if inlist("`approach'", "r2", "modelfree") {
+    // R2 connectedness of DCC-GARCH conditional correlations (Cocca et al. 2024)
+    local dccr2 = ("`model'" == "dccgarch" & "`approach'" == "r2")
+    if `dccr2' {
+        if !inlist("`cormethod'", "", "pearson") {
+            di as err "option cormethod() is not allowed with model(dccgarch); " ///
+                "the conditional correlations are used"
+            exit 198
+        }
+        local cormethod dcc
+        local lags 0
+    }
+    if inlist("`approach'", "r2", "modelfree") & !`dccr2' {
         if "`cormethod'" == "" local cormethod pearson
         if !inlist("`cormethod'", "pearson", "spearman", "kendall") {
             di as err "cormethod() must be pearson, spearman or kendall"
             exit 198
         }
         if "`model'" != "var" {
-            di as err "approach(`approach') does not use an estimated model; model() not allowed"
+            di as err "approach(`approach') does not use an estimated model; " ///
+                "model() not allowed (except model(dccgarch) with approach(r2))"
             exit 198
         }
         if "`orthogonalized'" != "" | "`asymmetric'" != "" {
@@ -149,8 +161,12 @@ program define Estimate, eclass
         exit 198
     }
     if `dcc' {
-        if "`approach'" != "time" {
-            di as err "model(dccgarch) is available with approach(time) only"
+        if !inlist("`approach'", "time", "r2") {
+            di as err "model(dccgarch) is available with approach(time) or approach(r2) only"
+            exit 198
+        }
+        if `dccr2' & "`standardize'" != "" {
+            di as err "option standardize is not allowed with approach(r2)"
             exit 198
         }
         if `window' != 0 {
@@ -400,7 +416,7 @@ program define Estimate, eclass
     local np = `k'*(`k'-1)/2
     local nvars = cond("`approach'" == "joint", 1 + 3*`k', 2 + 4*`k' + 3*`np')
     if "`fevd'" == "" local nvars = `nvars' + `k'*`k'
-    local savecov = ("`covariance'" == "" & !inlist("`approach'", "r2", "modelfree"))
+    local savecov = ("`covariance'" == "" & (!inlist("`approach'", "r2", "modelfree") | `dcc'))
     local nvars = (`nvars')*(`ncomp' + 1) + 2
     if `savecov' {
         // the covariances are left out, with a note, when they would not fit
@@ -609,7 +625,8 @@ program define Estimate, eclass
     ereturn local depvar   "`varlist'"
     ereturn local corrected "`corrected'"
     ereturn local fevdtype = cond(`gen', "generalized", "orthogonalized")
-    if "`approach'" == "r2" ereturn local fevdtype "R2 decomposition (`cormethod')"
+    if "`approach'" == "r2" ereturn local fevdtype = cond(`dccr2', ///
+        "R2 decomposition (DCC correlations)", "R2 decomposition (`cormethod')")
     if "`approach'" == "modelfree" ereturn local fevdtype "squared correlations (`cormethod')"
     if inlist("`approach'", "r2", "modelfree") ereturn scalar horizon = .
     if `dcc' {
@@ -629,6 +646,7 @@ program define Estimate, eclass
         ereturn local dccparams   "`dccparams'"
         ereturn local fevdtype = cond("`standardize'" != "", "volatility FEVD (standardized)", ///
             "volatility FEVD")
+        if `dccr2' ereturn local fevdtype "R2 decomposition (DCC correlations)"
         matrix drop `tab1'_g `tab1'_d
     }
     ereturn local approach "`approach'"
@@ -642,6 +660,13 @@ program define Estimate, eclass
     if `dcc' & e(converged) == 0 {
         di as txt "{p 0 6 2}note: the maximum likelihood optimization did not report convergence; " ///
             "check the estimates in {cmd:e(garch)} and {cmd:e(dcc)}{p_end}"
+    }
+    if "`r2fallback'" != "" {
+        if `r2fallback' > 0 {
+            di as txt "{p 0 6 2}note: in the first period, the R2 shares of `r2fallback' " ///
+                "variable(s) sum to more than 1; they are kept (R's R2Correlations() stops here)," ///
+                " while later periods take the previous period's shares, as in R{p_end}"
+        }
     }
     if "`covnote'" != "" {
         di as txt "{p 0 6 2}note: the covariances were not stored in the results frame, " ///
@@ -709,7 +734,8 @@ program define Display
     if "`e(model)'" == "ridge" local mname "ridge VAR"
     if "`e(model)'" == "elasticnet" local mname "elastic-net VAR"
     local wdesc = cond(e(window) > 0, "rolling window", "static")
-    if "`approach'" == "r2" local mdesc "R2, `e(lags)' lag(s), `wdesc'"
+    if "`approach'" == "r2" & "`e(model)'" == "dccgarch" local mdesc "DCC-GARCH(1,1), full sample"
+    else if "`approach'" == "r2" local mdesc "R2, `e(lags)' lag(s), `wdesc'"
     else if "`approach'" == "modelfree" local mdesc "model-free, `wdesc'"
     else if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
     else if "`e(model)'" == "dccgarch" local mdesc "DCC-GARCH(1,1), full sample"
@@ -717,7 +743,10 @@ program define Display
     else                       local mdesc "`mname'(`e(lags)'), static"
 
     di _n as txt "`e(title)'" _col(49) "Number of variables = " as res %8.0g e(k)
-    if inlist("`approach'", "r2", "modelfree") {
+    if "`approach'" == "r2" & "`e(model)'" == "dccgarch" {
+        di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Lags                = " as res %8.0g 0
+    }
+    else if inlist("`approach'", "r2", "modelfree") {
         di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Lags                = " as res %8.0g e(lags)
     }
     else {
@@ -760,6 +789,10 @@ program define Display
     else if "`approach'" == "extjoint" {
         di as txt "Approach: " as res "extended joint" as txt " (Balcilar, Gabauer and Umar 2021)"
     }
+    else if "`approach'" == "r2" & "`e(cormethod)'" == "dcc" {
+        di as txt "Approach: " as res "R2 decomposed connectedness" as txt " (" ///
+            as res "DCC-GARCH conditional correlations" as txt ")"
+    }
     else if "`approach'" == "r2" {
         di as txt "Approach: " as res "R2 decomposed connectedness" as txt " (" as res "`e(cormethod)'" ///
             as txt " correlations)"
@@ -799,7 +832,8 @@ program define Display
             di as txt "Rows: generalized FEVD (percent); TO, FROM and NET are joint spillovers."
         }
         else if "`approach'" == "r2" {
-            di as txt "Rows: share of the row variable's variance explained by the column variable (R2, percent)."
+            di as txt "Rows: R2 share of the row variable's variance explained by the column" _n ///
+                "variable (percent)."
         }
         else {
             di as txt "Rows: variance of the row variable explained by the column variable (percent)."

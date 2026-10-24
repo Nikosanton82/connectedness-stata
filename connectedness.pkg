@@ -6,7 +6,7 @@ d and rolling-window VARs, quantile and LAD VARs, LASSO, ridge and elastic-net V
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
 d indices, frequency connectedness (Barunik and Krehlik 2018), joint and extended
 d joint connectedness, R2 decomposed and model-free connectedness, DCC-GARCH
-d volatility connectedness (Gabauer 2020), asymmetric
+d volatility connectedness (Gabauer 2020) and its R2 decomposition, asymmetric
 d (positive and negative) connectedness, group measures
 d (aggregated, conditional, inclusive, exclusive, internal, external), network plots,
 d and portfolio and hedging strategies (minimum connectedness, multivariate hedging,
