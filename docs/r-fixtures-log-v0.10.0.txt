@@ -1,0 +1,21 @@
+Warning messages:
+1: package 'ConnectednessApproach' was built under R version 4.5.3 
+2: package 'BEKKs' was built under R version 4.5.3 
+ConnectednessApproach 1.0.4 ; BEKKs 1.4.7 
+Proposition 1, Gaussian shocks: max relative difference, simulation (1e6 draws) against formula 0.0014
+Proposition 1, t(8) shocks: max relative difference, simulation (1e6 draws) against formula 0.0124
+g2020_full     own scores with BEKKs' H_1 convention = BEKKs' scores: max abs difference 6.18e-11
+g2020_full     standard errors, BEKKs' scores against exact scores: max relative difference 3.31e-04
+g2020_full     bekk  ll -10741.599180 iter 64 valid TRUE; mean TCI 38.7373; sub-indices 1.651 13.656 9.696 13.735 -4.038; kurtosis 3.000 3.000 3.000 3.000
+g2020_diag     own scores with BEKKs' H_1 convention = BEKKs' scores: max abs difference 6.18e-11
+g2020_diag     standard errors, BEKKs' scores against exact scores: max relative difference 1.45e-04
+g2020_diag     maximum: ll -11050.958731 (BEKKs +1.931420; after the BHHH stage -11052.767651), iterations 36/36/0, converged TRUE, largest Hessian eigenvalue -488, g'|H|^-1 g 3.4e-18; max |theta - BEKKs| 4.98e-03
+g2020_diag     dbekk ll -11052.890150 iter 37 valid TRUE; mean TCI 64.4788; sub-indices 5.422 14.447 9.632 34.979 -25.347; kurtosis 80.699 5.769 475.692 6.288
+cgp2024_scalar own scores with BEKKs' H_1 convention = BEKKs' scores: max abs difference 4.55e-12
+cgp2024_scalar standard errors, BEKKs' scores against exact scores: max relative difference 1.31e-04
+cgp2024_scalar maximum: ll -20760.690136 (BEKKs +0.000439; after the BHHH stage -20760.690244), iterations 91/20/0, converged TRUE, largest Hessian eigenvalue -1.78e+03, g'|H|^-1 g 4.3e-14; max |theta - BEKKs| 2.71e-04
+cgp2024_scalar sbekk ll -20760.690574 iter 83 valid TRUE; mean TCI 44.9899; sub-indices 3.433 12.202 11.491 17.863 -6.372; kurtosis 3.000 3.000 3.000 3.000
+cgp2024_full   own scores with BEKKs' H_1 convention = BEKKs' scores: max abs difference 1.46e-11
+cgp2024_full   standard errors, BEKKs' scores against exact scores: max relative difference 3.20e-04
+cgp2024_full   maximum: ll -20637.756405 (BEKKs +13.329482; after the BHHH stage -20651.017513), iterations 32/131/0, converged TRUE, largest Hessian eigenvalue -6.04, g'|H|^-1 g 7.2e-12; max |theta - BEKKs| 1.83e-01
+cgp2024_full   bekk  ll -20651.085887 iter 34 valid TRUE; mean TCI 31.3125; sub-indices 1.120 10.728 7.713 11.751 -4.038; kurtosis 3.000 3.000 3.000 3.000

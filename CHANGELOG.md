@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.10.0 (2026-10-25)
+- `model(bekk)`: BEKK(1,1) multivariate GARCH (Engle and Kroner 1995) and the spot
+  variance spillovers of Fengler and Herwartz (2018). The decomposition is of the
+  k(k+1)/2 conditional variances and covariances at every date, from the forecast
+  covariances of vech(e e') (Proposition 1, with Gaussian or empirical fourth moments,
+  `kurtosis()`) and their symmetric or Cholesky roots (`bekkid()`); the table, the frame,
+  `cngraph` and `cnnetwork` use names such as `var_EUR` and `cov_EUR_GBP`. `bekk()` sets
+  the full, diagonal or scalar BEKK. The frame also holds the sub-indices of Fengler and
+  Herwartz (own variance, own covariance, variances from covariances, covariances from
+  variances and their net), which add up to the TCI (`e(bekk_sub)` holds their means).
+- Estimation: Gaussian maximum likelihood on the full sample, with the starting
+  values, first covariance (H_1 = e'e/T) and sign normalization of the R package BEKKs
+  (Fülle, Lange, Hafner and Herwartz 2024), analytic scores, and three stages (BHHH
+  with the step grid of BEKKs, BFGS, and Newton steps with a numerical Hessian until
+  the scaled gradient is below 1e-10 and the Hessian is negative definite,
+  `e(converged)`). Two features of BEKKs 1.4.7 make its estimates differ: its scores
+  include a derivative of H_1 with respect to C, although H_1 does not depend on the
+  parameters, and it keeps the diagonal of C positive during the iterations, which
+  stops it before the maximum when a diagonal element of C tends to zero. The
+  likelihood does not depend on the signs of the columns of C, so no sign restriction
+  is imposed during the search. Standard errors come from the outer product of the
+  exact scores, and are missing for a diagonal element of C at zero. When the
+  likelihood has no interior maximum (it rises towards the stationarity boundary, as
+  for the full BEKK of the four exchange rates of `cn_g2020`), `e(converged)` is 0 and
+  a note reports `e(bekk_rho)`. `bekkparams()` takes the parameters as given, for
+  example those of BEKKs. Stored results include `e(bekk)`, `e(bekk_se)`, the matrices
+  `e(bekk_C)`, `e(bekk_A)` and `e(bekk_G)`, `e(bekk_kurt)`, `e(bekk_iter)`, `e(ll)`,
+  `e(bekk_rho)` and `e(bekk_hmax)`.
+- `estat virf`: volatility impulse responses of Hafner and Herwartz (2006) of all
+  conditional variances and covariances to a shock at a given date: a quantile of the
+  standardized residuals of one series (`shock()`, `quantile()`), the residuals of that
+  date (`residual`) or given shocks (`shocks()`), over `horizon()` periods; `frame()`
+  saves them for plotting.
+- Validation: `test/r/make_fixtures_0100.R` estimates the models with BEKKs, computes
+  the spillovers independently (the covariances of vech(e e') from fourth moments
+  instead of the Kronecker form of Proposition 1, Theta_m in closed form instead of the
+  recursion), takes the VIRFs from BEKKs' `virf()`, reproduces BEKKs' scores with its
+  H_1 convention (to 1e-10) and the exact scores without it, and finds the maximum of
+  the likelihood independently (BHHH, R's BFGS and Newton stages). With BEKKs'
+  estimates (`bekkparams()`), Stata reproduces the conditional covariances, the
+  decompositions, the measures, the sub-indices and the VIRFs to 1e-11 or better in
+  four cases (full, diagonal with empirical kurtosis and scalar with the Cholesky
+  root, `cn_g2020` and `cn_cgp2024`). Stata's own estimates agree with the R maximum in
+  the three cases that have one (parameters and standard errors to 2.3e-7, log
+  likelihood to 1.3e-11), and lie above BEKKs' by 13.33 (full, `cn_cgp2024`), 1.93
+  (diagonal, `cn_g2020`) and 0.0004 (scalar, `cn_cgp2024`); for the full BEKK of
+  `cn_g2020` Stata reports no interior maximum. Proposition 1 is confirmed by
+  simulation (Gaussian and t(8) shocks). 418 of 418 certification tests pass in Stata
+  19 (`docs/certification-log-v0.10.0.txt`, `docs/r-fixtures-log-v0.10.0.txt`).
+
 ## 0.9.5 (2026-10-25)
 - `clcontrols()`: a cluster of control variables, such as volatility indices that proxy
   for common shocks, ordered first in every ordering (Buchwalter, Diebold and Yilmaz

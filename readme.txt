@@ -1,6 +1,6 @@
-connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
+connectedness: VAR-type, TVP-VAR, DCC-GARCH and BEKK connectedness measures for Stata
 ================================================================================
-Version 0.9.5, 25 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.10.0, 25 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -79,4 +79,7 @@ Reproducing the checks
   0.9.4) against test/r/make_fixtures_094.R (test/r/run_r_094.bat), with a Monte Carlo
   study of its coverage in test/r/sam_coverage_094.R; the control cluster, the
   ordering diagnostic and simultaneous clustered orthogonalization (version 0.9.5)
-  against test/r/make_fixtures_095.R (test/r/run_r_095.bat).
+  against test/r/make_fixtures_095.R (test/r/run_r_095.bat); the BEKK spot variance
+  spillovers and volatility impulse responses (version 0.10.0) against the R package
+  BEKKs and an independent R implementation in test/r/make_fixtures_0100.R
+  (test/r/run_r_0100.bat).

@@ -23,8 +23,10 @@ the spillover asymmetry measure of good and bad volatility (Baruník, Kočenda a
 Yilmaz 2026, *Journal of Econometrics*), and since version 0.9.1 bootstrap inference and event tests
 (Greenwood-Nimmo, Kočenda and Nguyen 2024), extended in version 0.9.2 to the pairwise
 and net pairwise (NPDC) measures and in version 0.9.4 to the spillover asymmetry measure,
-and since version 0.9.5 control clusters, the ordering-sensitivity diagnostic and
-simultaneous clustered orthogonalization (Buchwalter, Diebold and Yilmaz 2026b, 2026c).
+since version 0.9.5 control clusters, the ordering-sensitivity diagnostic and
+simultaneous clustered orthogonalization (Buchwalter, Diebold and Yilmaz 2026b, 2026c),
+and since version 0.10.0 BEKK spot variance spillovers (Fengler and Herwartz 2018) and
+volatility impulse responses (Hafner and Herwartz 2006).
 
 The numerical routines port the [ConnectednessApproach](https://gabauerdavid.github.io/ConnectednessApproach/)
 R package by David Gabauer (GPL-3) and reproduce its results to numerical precision;
@@ -51,7 +53,7 @@ connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96
 cnportfolio r_EUR r_GBP r_JPY r_CHF, method(mcp)
 ```
 
-Status: development (version 0.9.5). The Stata Journal article describes version 0.2.1:
+Status: development (version 0.10.0). The Stata Journal article describes version 0.2.1:
 static and rolling VAR, TVP-VAR, corrected TCI, PCI, influence, and the aggregated,
 conditional and decomposed group measures. Version 0.3.0 adds frequency, joint and
 extended joint connectedness, version 0.4.0 quantile and LAD VARs, and version 0.5.0
@@ -67,6 +69,7 @@ within/cross split of the TCI of the published clustered connectedness paper, an
 version 0.9.4 bootstrap bands for the spillover asymmetry measure (`estat bootstrap, sam`),
 and version 0.9.5 a control cluster (`clcontrols()`), the ordering-sensitivity
 diagnostic (`estat clorder`) and simultaneous clustered orthogonalization
-(`clorder(simultaneous)`).
+(`clorder(simultaneous)`), and version 0.10.0 BEKK(1,1) spot variance spillovers
+(`model(bekk)`) and volatility impulse responses (`estat virf`).
 
 Requires Stata 16.1 or newer. License: GPL-3.

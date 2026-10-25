@@ -1,4 +1,4 @@
-*! version 0.9.5  25oct2026
+*! version 0.10.0  25oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -26,7 +26,8 @@ program define Estimate, eclass
         STANDardize DCCParams(name) noCOVariance                  ///
         NORMalize(string) ADAPTive                                ///
         POSitive(varlist numeric ts) NEGative(varlist numeric ts) ///
-        CLUSters(string asis) CLORDer(string) CLCONtrols(string asis) ]
+        CLUSters(string asis) CLORDer(string) CLCONtrols(string asis)     ///
+        BEKK(string) KURTosis(string) BEKKID(string) BEKKParams(name) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -101,9 +102,12 @@ program define Estimate, eclass
     else if inlist("`model'", "dccgarch", "dcc-garch", "dcc") {
         local model dccgarch
     }
+    else if inlist("`model'", "bekk", "bekkgarch", "bekk-garch") {
+        local model bekk
+    }
     else {
         di as err "model(`model') not allowed; specify {cmd:var}, {cmd:tvpvar}, {cmd:qvar}, " ///
-            "{cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet} or {cmd:dccgarch}"
+            "{cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:dccgarch} or {cmd:bekk}"
         exit 198
     }
 
@@ -182,6 +186,67 @@ program define Estimate, eclass
     }
 
     // DCC-GARCH: full-sample estimation, time-domain volatility FEVD (as in R)
+    // BEKK(1,1) spot variance spillovers (Fengler and Herwartz 2018)
+    local bekkm = ("`model'" == "bekk")
+    local btype 1
+    local bkurt 0
+    local bchol 0
+    if !`bekkm' & ("`bekk'`kurtosis'`bekkid'`bekkparams'" != "") {
+        di as err "options bekk(), kurtosis(), bekkid() and bekkparams() are allowed only with model(bekk)"
+        exit 198
+    }
+    if `bekkm' {
+        local bekk = lower(strtrim("`bekk'"))
+        if inlist("`bekk'", "", "full") local btype 1
+        else if inlist("`bekk'", "diagonal", "diag") local btype 2
+        else if inlist("`bekk'", "scalar") local btype 3
+        else {
+            di as err "bekk() must be full, diagonal or scalar"
+            exit 198
+        }
+        local bekk = word("full diagonal scalar", `btype')
+        local kurtosis = lower(strtrim("`kurtosis'"))
+        if inlist("`kurtosis'", "", "gaussian", "normal") local kurtosis gaussian
+        else if inlist("`kurtosis'", "empirical", "emp") local kurtosis empirical
+        else {
+            di as err "kurtosis() must be gaussian or empirical"
+            exit 198
+        }
+        local bkurt = ("`kurtosis'" == "empirical")
+        local bekkid = lower(strtrim("`bekkid'"))
+        if inlist("`bekkid'", "", "symmetric", "sym") local bekkid symmetric
+        else if inlist("`bekkid'", "cholesky", "chol") local bekkid cholesky
+        else {
+            di as err "bekkid() must be symmetric or cholesky"
+            exit 198
+        }
+        local bchol = ("`bekkid'" == "cholesky")
+        if "`approach'" != "time" {
+            di as err "model(bekk) is available with approach(time) only"
+            exit 198
+        }
+        if `window' != 0 {
+            di as err "model(bekk) is estimated on the full sample; option window() not allowed"
+            exit 198
+        }
+        if "`orthogonalized'" != "" | "`asymmetric'" != "" | "`positive'`negative'" != "" {
+            di as err "options orthogonalized, asymmetric, positive() and negative() are not allowed with model(bekk)"
+            exit 198
+        }
+        if `"`clusters'`clcontrols'"' != "" | !inlist("`normalize'", "", "row") {
+            di as err "options clusters(), clcontrols() and normalize() are not allowed with model(bekk)"
+            exit 198
+        }
+        if `k' < 2 {
+            di as err "model(bekk) requires at least two variables"
+            exit 102
+        }
+        if `T' < 100 {
+            di as err "model(bekk) requires at least 100 observations"
+            exit 2001
+        }
+        if "`bekkparams'" != "" confirm matrix `bekkparams'
+    }
     local dcc = ("`model'" == "dccgarch")
     if !`dcc' & ("`standardize'" != "" | "`dccparams'" != "") {
         di as err "options standardize and dccparams() are allowed only with model(dccgarch)"
@@ -591,7 +656,7 @@ program define Estimate, eclass
             exit 2001
         }
     }
-    else if `dcc' {
+    else if `dcc' | `bekkm' {
         // no VAR: the lags() option is not used
     }
     else if `nreg' <= `k'*`lags' + 1 {
@@ -611,6 +676,11 @@ program define Estimate, eclass
     local nvars = cond("`approach'" == "joint", 1 + 3*`k', 2 + 4*`k' + 3*`np')
     if "`fevd'" == "" local nvars = `nvars' + `k'*`k'
     local savecov = ("`covariance'" == "" & (!inlist("`approach'", "r2", "modelfree") | `dcc'))
+    // BEKK: the decomposition is of the k(k+1)/2 variances and covariances
+    if `bekkm' {
+        local kb = `k'*(`k'+1)/2
+        local nvars = cond("`fevd'" == "", `kb'*`kb', 0) + 2 + 4*`kb' + 3*`kb'*(`kb'-1)/2 + 2 + 5
+    }
     local nvars = (`nvars')*(`ncomp' + 1) + 2
     if "`asymmetric'" != "" local nvars = `nvars' + 1 + 3*`k'
     if `ncl' local nvars = `nvars' + (5*`ncl' + 3 + `ncl'*(`ncl'-1) + 2 + 2*`ncl' + ///
@@ -724,13 +794,34 @@ program define Estimate, eclass
             "`approach'", strtoreal(tokens("`partstr'")), "`scenario'", "`blabels'", ///
             strtoreal(tokens("`taus'")), "`csufs'", "`cormethod'",                ///
             strtoreal(tokens("`alphas'")), `nfolds', "`loss'", "`folds'",         ///
-            ("`standardize'" != ""), "`dccparams'", ("`adaptive'" != ""))
+            ("`standardize'" != ""), "`dccparams'", ("`adaptive'" != ""),         ///
+            `btype', `bkurt', `bchol', "`bekkparams'")
+        // BEKK: the k(k+1)/2 variances and covariances take the place of the variables
+        local cnames `names'
+        if `bekkm' & `i' == 1 {
+            local onames `names'
+            local ok `k'
+            local names `bekknames'
+            local k : word count `names'
+            local cnames `onames'
+        }
+        else if `bekkm' local cnames `onames'
         capture frame drop `f'
         frame create `f'
         frame `f' {
-            local covlab = cond("`model'" == "dccgarch", "Conditional", "Residual")
+            local covlab = cond(inlist("`model'", "dccgarch", "bekk"), "Conditional", "Residual")
             mata: cn_postframe("`timevar'", "`tfmt'", `savef', "`datevar'", "`dfmt'", ///
-                `savecov', "`names'", "`covlab'")
+                `savecov', "`cnames'", "`covlab'")
+            if `bekkm' {
+                // sub-indices of Fengler and Herwartz (2018), percent
+                local bsn bekk_ovar bekk_ocov bekk_ccov bekk_cvar bekk_ncross
+                mata: st_store(., st_addvar("double", tokens("`bsn'")), cn__BKS)
+                label variable bekk_ovar "Part of the TCI: among the variances"
+                label variable bekk_ocov "Part of the TCI: among the covariances"
+                label variable bekk_ccov "Part of the TCI: from covariances to variances"
+                label variable bekk_cvar "Part of the TCI: from variances to covariances"
+                label variable bekk_ncross "Net cross spillovers: covariances to variances minus the reverse"
+            }
             quietly tsset `timevar', delta(`delta')
             label data "connectedness results (`part')"
             char _dta[cn_kind]      "main"
@@ -895,13 +986,83 @@ program define Estimate, eclass
     ereturn local depvar   "`varlist'"
     ereturn local corrected "`corrected'"
     ereturn local fevdtype = cond(`gen', "generalized", "orthogonalized")
-    if `gen' & "`approach'" == "time" & !`dcc' ereturn local normalize "`normalize'"
+    if `gen' & "`approach'" == "time" & !`dcc' & !`bekkm' ereturn local normalize "`normalize'"
     if `gen' > 1 ereturn local fevdtype = "generalized, " + cond(`gen' == 2, "max row sum", ///
         cond(`gen' == 3, "max column sum", "spectral radius"))
     if "`approach'" == "r2" ereturn local fevdtype = cond(`dccr2', ///
         "R2 decomposition (DCC correlations)", "R2 decomposition (`cormethod')")
     if "`approach'" == "modelfree" ereturn local fevdtype "squared correlations (`cormethod')"
     if inlist("`approach'", "r2", "modelfree") ereturn scalar horizon = .
+    if `bekkm' {
+        // BEKK(1,1): parameters as in BEKKs (vech(C) by columns, A, G), OPG standard
+        // errors, C, A and G, and the time averages of the sub-indices
+        tempname bt bs bC bA bG bS bk
+        mata: cn__th = st_matrix("`tab1'_g"); st_matrix("`bt'", cn__th[1, .]); st_matrix("`bs'", cn__th[2, .])
+        mata: cn__C = .; cn__A = .; cn__G = .
+        mata: cn_bekkunpack(cn__th[1, .], `ok', `btype', cn__C, cn__A, cn__G); st_matrix("`bC'", cn__C); st_matrix("`bA'", cn__A); st_matrix("`bG'", cn__G)
+        mata: cn__d = st_matrix("`tab1'_d"); st_matrix("`bS'", mean(cn__BKS)); st_matrix("`bk'", cn__d[(4..3+`ok')])
+        mata: mata drop cn__th cn__C cn__A cn__G cn__d cn__BKS
+        local pn
+        forvalues i = 1/`ok' {
+            forvalues j = `i'/`ok' {
+                local pn `pn' c`j'`i'
+            }
+        }
+        if `btype' == 1 {
+            forvalues j = 1/`ok' {
+                forvalues i = 1/`ok' {
+                    local pn `pn' a`i'`j'
+                }
+            }
+            forvalues j = 1/`ok' {
+                forvalues i = 1/`ok' {
+                    local pn `pn' g`i'`j'
+                }
+            }
+        }
+        else if `btype' == 2 {
+            forvalues i = 1/`ok' {
+                local pn `pn' a`i'`i'
+            }
+            forvalues i = 1/`ok' {
+                local pn `pn' g`i'`i'
+            }
+        }
+        else local pn `pn' a g
+        matrix colnames `bt' = `pn'
+        matrix colnames `bs' = `pn'
+        foreach M in bC bA bG {
+            matrix rownames ``M'' = `onames'
+            matrix colnames ``M'' = `onames'
+        }
+        matrix colnames `bS' = ovar ocov ccov cvar ncross
+        matrix colnames `bk' = `onames'
+        ereturn scalar ll        = `tab1'_d[1, 1]
+        ereturn scalar converged = `tab1'_d[1, 2]
+        ereturn scalar iterations = `tab1'_d[1, 3]
+        tempname bI
+        matrix `bI' = `tab1'_d[1, 4+`ok'..6+`ok']
+        matrix colnames `bI' = bhhh bfgs newton
+        ereturn scalar bekk_rho  = `tab1'_d[1, 7+`ok']
+        ereturn scalar bekk_hmax = `tab1'_d[1, 8+`ok']
+        ereturn matrix bekk_iter = `bI'
+        ereturn matrix bekk      = `bt'
+        ereturn matrix bekk_se   = `bs'
+        ereturn matrix bekk_C    = `bC'
+        ereturn matrix bekk_A    = `bA'
+        ereturn matrix bekk_G    = `bG'
+        ereturn matrix bekk_sub  = `bS'
+        ereturn matrix bekk_kurt = `bk'
+        ereturn scalar lags      = .
+        ereturn scalar nseries   = `ok'
+        ereturn local bekktype   "`bekk'"
+        ereturn local kurtosis   "`kurtosis'"
+        ereturn local bekkid     "`bekkid'"
+        ereturn local bekkparams "`bekkparams'"
+        ereturn local series     "`onames'"
+        ereturn local fevdtype = "spot variance FEVD (" + cond(`bchol', "Cholesky", "symmetric root") + ")"
+        matrix drop `tab1'_g `tab1'_d
+    }
     if `dcc' {
         tempname gp dp
         matrix `gp' = `tab1'_g
@@ -973,6 +1134,13 @@ program define Estimate, eclass
     if `dcc' & e(converged) == 0 {
         di as txt "{p 0 6 2}note: the maximum likelihood optimization did not report convergence; " ///
             "check the estimates in {cmd:e(garch)} and {cmd:e(dcc)}{p_end}"
+    }
+    if `bekkm' & e(converged) == 0 {
+        di as txt "{p 0 6 2}note: no maximum of the likelihood was confirmed (scaled gradient below " ///
+            "tolerance with a negative definite Hessian); check the estimates in {cmd:e(bekk)}" _c
+        if e(bekk_rho) > 0.999 di as txt "; the largest eigenvalue modulus of (A#A)'+(G#G)' is " ///
+            %8.6f e(bekk_rho) ", at the stationarity boundary: the likelihood may have no interior maximum" _c
+        di as txt "{p_end}"
     }
     if "`r2fallback'" != "" {
         if `r2fallback' > 0 {
@@ -1053,11 +1221,13 @@ program define Display
     else if "`approach'" == "modelfree" local mdesc "model-free, `wdesc'"
     else if "`e(model)'" == "tvpvar" local mdesc "TVP-VAR(`e(lags)'), `e(prior)' prior"
     else if "`e(model)'" == "dccgarch" local mdesc "DCC-GARCH(1,1), full sample"
+    else if "`e(model)'" == "bekk" local mdesc "BEKK(1,1), full sample"
     else if e(window) > 0      local mdesc "`mname'(`e(lags)'), rolling window"
     else                       local mdesc "`mname'(`e(lags)'), static"
     if length("`mdesc'") > 39 local mdesc : subinstr local mdesc ", rolling window" ", rolling"
 
-    di _n as txt "`e(title)'" _col(49) "Number of variables = " as res %8.0g e(k)
+    if "`e(model)'" == "bekk" di _n as txt "`e(title)'" _col(49) "Number of series    = " as res %8.0g e(nseries)
+    else di _n as txt "`e(title)'" _col(49) "Number of variables = " as res %8.0g e(k)
     if "`approach'" == "r2" & "`e(model)'" == "dccgarch" {
         di as txt "Model:  " as res "`mdesc'" _col(49) as txt "Lags                = " as res %8.0g 0
     }
@@ -1085,6 +1255,10 @@ program define Display
     else if "`e(model)'" == "dccgarch" {
         di as txt "DCC(1,1): a = " as res %6.4f el(e(dcc), 1, 1) as txt ", b = " ///
             as res %6.4f el(e(dcc), 1, 2) _col(49) as txt "Log likelihood = " as res %11.3f e(ll)
+    }
+    else if "`e(model)'" == "bekk" {
+        di as txt "BEKK(1,1): " as res "`e(bekktype)'" as txt ", " as res e(nseries) as txt " series" ///
+            _col(49) as txt "Log likelihood = " as res %11.3f e(ll)
     }
     else if inlist("`e(model)'", "lasso", "ridge", "elasticnet") {
         local na : word count `e(alphas)'

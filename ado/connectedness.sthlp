@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.5  25oct2026}{...}
+{* *! version 0.10.0  25oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -12,7 +12,7 @@
 {title:Title}
 
 {phang}
-{bf:connectedness} {hline 2} Connectedness measures from VAR-type, TVP-VAR and DCC-GARCH models
+{bf:connectedness} {hline 2} Connectedness measures from VAR-type, TVP-VAR, DCC-GARCH and BEKK models
 
 
 {marker syntax}{...}
@@ -25,7 +25,7 @@
 {synopthdr}
 {synoptline}
 {syntab:Model}
-{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:tvpvar} or {cmd:dccgarch}{p_end}
+{synopt:{opt m:odel(model)}}{cmd:var} (default), {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:tvpvar}, {cmd:dccgarch} or {cmd:bekk}{p_end}
 {synopt:{opt l:ags(#)}}VAR lag order; default is {cmd:lags(1)}{p_end}
 {synopt:{opt w:indow(#)}}rolling-window size ({cmd:var}, {cmd:qvar}, {cmd:lad}) or prior training sample ({cmd:tvpvar}); default 0{p_end}
 {synopt:{opt quant:ile(numlist)}}quantile tau for {cmd:qvar}, one value or one per variable; default {cmd:0.5}{p_end}
@@ -48,6 +48,12 @@
 {syntab:DCC-GARCH}
 {synopt:{opt stand:ardize}}subtract the response without the shock (standardized volatility impulse responses){p_end}
 {synopt:{opt dccp:arams(matname)}}use the given 4k+2 parameters instead of estimating them{p_end}
+
+{syntab:BEKK}
+{synopt:{opt bekk(type)}}{cmd:full} (default), {cmd:diagonal} or {cmd:scalar} BEKK(1,1){p_end}
+{synopt:{opt kurt:osis(kurt)}}fourth moments of the shocks: {cmd:gaussian} (default) or {cmd:empirical}{p_end}
+{synopt:{opt bekkid(id)}}identification of the variance shocks: {cmd:symmetric} (default) or {cmd:cholesky}{p_end}
+{synopt:{opt bekkp:arams(matname)}}use the given parameters instead of estimating them{p_end}
 
 {syntab:Connectedness}
 {synopt:{opt app:roach(approach)}}{cmd:time} (default), {cmd:frequency}, {cmd:joint}, {cmd:extjoint}, {cmd:r2} or {cmd:modelfree}{p_end}
@@ -202,6 +208,27 @@ with one lag uses 199 rows of data. With {cmd:model(tvpvar)} and {cmd:prior(baye
 the prior is an OLS VAR on the first {it:#} - {it:p} observations;
 {cmd:window(0)} uses the whole sample.
 
+{phang}
+{cmd:bekk} fits a BEKK(1,1) multivariate GARCH model (Engle and Kroner 1995) and gives
+the spot variance spillovers of Fengler and Herwartz (2018). The returns are demeaned,
+and {bf:H}_t = {bf:C}{bf:C}' + {bf:A}'{bf:e}_t-1 {bf:e}_t-1'{bf:A} +
+{bf:G}'{bf:H}_t-1 {bf:G} is estimated by Gaussian maximum likelihood on the full
+sample, with the starting values, the first covariance ({bf:H}_1 = {bf:e}'{bf:e}/T)
+and the sign normalization of the R package BEKKs. The maximization uses analytic
+scores in three stages: the BHHH steps of BEKKs (at most 200), then BFGS, then
+Newton steps with a numerical Hessian until the scaled gradient is below 1e-10 and
+the Hessian is negative definite ({cmd:e(converged)} = 1). See {it:Remarks on the
+estimation} below for how the estimates relate to those of BEKKs. The
+decomposition is of the k(k+1)/2 conditional variances and covariances, which
+take the place of the variables: the table, the frame and {helpb cngraph} and
+{helpb cnnetwork} use names such as {cmd:var_EUR} and {cmd:cov_EUR_GBP}. It is
+computed at every date from the information of that date,
+so {opt window()} is not allowed and {opt lags()} is not used; {opt orthogonalized},
+{opt asymmetric}, {opt clusters()} and {opt normalize()} are not allowed. At least 100
+observations are required. Fengler and Herwartz use {cmd:horizon(5)}. See
+{it:Methods and formulas}, and {helpb connectedness_postestimation##virf:estat virf}
+for volatility impulse responses.
+
 {dlgtab:DCC-GARCH}
 
 {phang}
@@ -232,6 +259,55 @@ with variance 4.
 
 {phang}
 {opt gamma(#)} sets the Minnesota prior tightness.
+
+{dlgtab:BEKK}
+
+{phang}
+{opt bekk(type)} sets the BEKK(1,1): {cmd:full} matrices {bf:A} and {bf:G}
+(2k^2 + k(k+1)/2 parameters), {cmd:diagonal} ones (2k + k(k+1)/2), or {cmd:scalar},
+{bf:H}_t = {bf:C}{bf:C}' + a {bf:e}_t-1 {bf:e}_t-1' + g {bf:H}_t-1 (2 + k(k+1)/2), as
+the types {cmd:bekk}, {cmd:dbekk} and {cmd:sbekk} of BEKKs.
+
+{phang}
+{opt kurtosis(kurt)} sets the fourth moments of the standardized shocks in the
+covariance of the variance innovations: 3, as for normal shocks (the default), or the
+sample fourth moments of the standardized residuals {bf:H}_t^(-1/2) {bf:e}_t
+({cmd:empirical}), as in the sensitivity check of Fengler and Herwartz.
+
+{phang}
+{opt bekkid(id)} identifies the variance shocks by the symmetric square root of their
+covariance (the default, as Fengler and Herwartz) or by its Cholesky factor, which
+depends on the order of the variances and covariances (Diebold and Yilmaz 2014).
+
+{phang}
+{opt bekkparams(matname)} skips the estimation and uses the parameters in the Stata
+matrix {it:matname}, a row vector in the order of BEKKs: vech({bf:C}) by columns, then
+vec({bf:A}) and vec({bf:G}) (full), their diagonals (diagonal), or a and g (scalar).
+The signs are normalized first (positive diagonal of {bf:C}, {bf:A}[1,1] > 0 and
+{bf:G}[1,1] > 0; the likelihood does not change), and the parameters must then define
+a stationary model. With the estimates of BEKKs, {opt bekkparams()} reproduces its
+conditional covariances and its volatility impulse responses.
+
+{pstd}
+{it:Remarks on the estimation.} Two features of BEKKs (version 1.4.7) mean that its
+estimates can differ from the maximum likelihood estimates of {cmd:connectedness}.
+First, its scores include a derivative of {bf:H}_1 with respect to {bf:C}, although
+{bf:H}_1 = {bf:e}'{bf:e}/T does not depend on the parameters; its steps and its
+standard errors therefore differ slightly (by up to about 3e-4 relative in the
+certification cases). Second, it requires a positive diagonal of {bf:C} during the
+iterations. When a diagonal element of {bf:C} tends to zero at the maximum, as
+often happens, its steps are cut at that boundary and it stops before the maximum.
+The likelihood does not depend on the signs of the columns of {bf:C}, so
+{cmd:connectedness} imposes no sign restriction during the search and normalizes
+the signs at the end. In the certification cases its log likelihood is higher than
+that of BEKKs by 13.3 (full BEKK of {cmd:cn_cgp2024}) and 1.9 (diagonal BEKK of
+{cmd:cn_g2020}), and by 0.0004 for the scalar BEKK. For some data the likelihood
+has no interior maximum: for the full BEKK of the four exchange rates in
+{cmd:cn_g2020} (EUR and CHF are almost collinear under the EUR/CHF floor of 2011 to
+2015), it rises towards the boundary of the stationary region. {cmd:connectedness}
+then reports {cmd:e(converged)} = 0 with a note, and {cmd:e(bekk_rho)}, the largest
+eigenvalue modulus of ({bf:A}#{bf:A})' + ({bf:G}#{bf:G})', is close to one. Standard
+errors come from the outer product of the exact scores.
 
 {dlgtab:Connectedness}
 
@@ -543,6 +619,18 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. cngraph tci}{p_end}
 {phang2}{cmd:. estat correlation}{p_end}
 
+{pstd}Fengler and Herwartz (2018): BEKK spot variance spillovers{p_end}
+{phang2}{cmd:. use cn_cgp2024, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness GRE SOL WIN GEO, model(bekk) horizon(5) datevar(date) replace}{p_end}
+{phang2}{cmd:. matrix list e(bekk_iter)}{p_end}
+{phang2}{cmd:. frame cn_results: tsline tci bekk_ovar bekk_ccov}{p_end}
+{phang2}{cmd:. estat virf, time(16mar2020) shock(SOL) quantile(0.05)}{p_end}
+{phang2}{cmd:. use cn_g2020, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness EUR GBP CHF JPY, model(bekk) bekk(diagonal) horizon(10) kurtosis(empirical) datevar(date) replace}{p_end}
+{phang2}{cmd:. cnnetwork}{p_end}
+
 {pstd}Cocca, Gabauer and Pomberger (2024): DCC-GARCH R2 decomposed connectedness{p_end}
 {phang2}{cmd:. use cn_cgp2024, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -632,13 +720,16 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
 {synopt:{cmd:e(TCI_c)}, {cmd:e(TCI_l)}}TCI of the contemporaneous and lagged components ({cmd:r2} with lags); also {cmd:e(cTCI_c)}, {cmd:e(cTCI_l)}{p_end}
 {synopt:{cmd:e(TCI_f}{it:b}{cmd:)}, {cmd:e(cTCI_f}{it:b}{cmd:)}}TCI and corrected TCI of band {it:b} ({cmd:frequency}){p_end}
-{synopt:{cmd:e(ll)}}log likelihood of the DCC-GARCH model ({cmd:dccgarch}){p_end}
-{synopt:{cmd:e(converged)}}1 if the optimizations converged, 0 otherwise ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(ll)}}log likelihood of the DCC-GARCH or BEKK model ({cmd:dccgarch}, {cmd:bekk}){p_end}
+{synopt:{cmd:e(converged)}}1 if the optimizations converged, 0 otherwise ({cmd:dccgarch}, {cmd:bekk}: 1 if a maximum was confirmed){p_end}
+{synopt:{cmd:e(bekk_rho)}}largest eigenvalue modulus of ({bf:A}#{bf:A})' + ({bf:G}#{bf:G})' ({cmd:bekk}){p_end}
+{synopt:{cmd:e(bekk_hmax)}}largest eigenvalue of the Hessian at the estimates ({cmd:bekk}){p_end}
+{synopt:{cmd:e(nseries)}}number of series ({cmd:bekk}; {cmd:e(k)} is then the number of variances and covariances){p_end}
 {synopt:{cmd:e(covariance)}}1 if the covariances are stored in the results frame, 0 otherwise{p_end}
 
 {p2col 5 18 22 2: Macros}{p_end}
 {synopt:{cmd:e(cmd)}}{cmd:connectedness}{p_end}
-{synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:tvpvar} or {cmd:dccgarch}{p_end}
+{synopt:{cmd:e(model)}}{cmd:var}, {cmd:qvar}, {cmd:lad}, {cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}, {cmd:tvpvar}, {cmd:dccgarch} or {cmd:bekk}{p_end}
 {synopt:{cmd:e(quantiles)}}quantile of each equation ({cmd:qvar}){p_end}
 {synopt:{cmd:e(alphas)}}alpha values considered ({cmd:lasso}, {cmd:ridge}, {cmd:elasticnet}){p_end}
 {synopt:{cmd:e(loss)}, {cmd:e(folds)}, {cmd:e(seed)}}cross-validation settings{p_end}
@@ -652,6 +743,8 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(normalize)}}{cmd:row}, {cmd:maxrow}, {cmd:maxcol} or {cmd:spectral} (generalized FEVD, {cmd:approach(time)}){p_end}
 {synopt:{cmd:e(standardize)}}{cmd:standardize} or empty ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(dccparams)}}name of the matrix in {opt dccparams()} ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(bekktype)}, {cmd:e(kurtosis)}, {cmd:e(bekkid)}}{opt bekk()}, {opt kurtosis()} and {opt bekkid()} ({cmd:bekk}){p_end}
+{synopt:{cmd:e(series)}}names of the series ({cmd:bekk}){p_end}
 {synopt:{cmd:e(corrected)}}{cmd:corrected} or empty{p_end}
 {synopt:{cmd:e(prior)}}prior ({cmd:tvpvar}){p_end}
 {synopt:{cmd:e(names)}}variable names{p_end}
@@ -681,6 +774,11 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(cl_id)}}cluster of each variable, 1 x k{p_end}
 {synopt:{cmd:e(garch)}}GARCH(1,1) parameters mu, omega, alpha and beta, k x 4 ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(dcc)}}DCC(1,1) parameters a and b, 1 x 2 ({cmd:dccgarch}){p_end}
+{synopt:{cmd:e(bekk)}}BEKK parameters in the order of BEKKs, with OPG standard errors in {cmd:e(bekk_se)} ({cmd:bekk}){p_end}
+{synopt:{cmd:e(bekk_C)}, {cmd:e(bekk_A)}, {cmd:e(bekk_G)}}the BEKK matrices, k x k ({cmd:bekk}){p_end}
+{synopt:{cmd:e(bekk_iter)}}iterations of the BHHH, BFGS and Newton stages ({cmd:bekk}){p_end}
+{synopt:{cmd:e(bekk_sub)}}time averages of the sub-indices ovar, ocov, ccov, cvar and ncross ({cmd:bekk}){p_end}
+{synopt:{cmd:e(bekk_kurt)}}fourth moments of the standardized shocks used, 1 x k ({cmd:bekk}){p_end}
 
 {p2col 5 18 22 2: Functions}{p_end}
 {synopt:{cmd:e(sample)}}marks estimation sample{p_end}
@@ -894,6 +992,29 @@ a diag(h_1) + b {bf:H}_t and {bf:Q}_j+1 = (1-a-b) {bf:Qbar} + (a+b) {bf:Q}_j. Wi
 each row divided by its sum.
 
 {pstd}
+{it:BEKK spot variance spillovers.} With {bf:h}_t = vech({bf:H}_t) and
+{bf:eta}_t = vech({bf:e}_t {bf:e}_t'), the BEKK(1,1) is {bf:h}_t = {bf:c} +
+{bf:A}~ {bf:eta}_t-1 + {bf:B}~ {bf:h}_t-1 with {bf:A}~ = {bf:D}+ ({bf:A} # {bf:A})'
+{bf:D} and {bf:B}~ = {bf:D}+ ({bf:G} # {bf:G})' {bf:D} ({bf:D} the duplication
+matrix), so that {bf:eta}_t = const + {bf:Theta}(L) {bf:u}_t with {bf:u}_t =
+{bf:eta}_t - {bf:h}_t, {bf:Theta}_0 = {bf:I}, {bf:Theta}_1 = {bf:A}~ and
+{bf:Theta}_m = ({bf:A}~ + {bf:B}~) {bf:Theta}_m-1. The covariance of {bf:u}_t given
+{bf:H} is {bf:Sigma}({bf:H}) = {bf:L} ({bf:H}^(1/2) # {bf:H}^(1/2)) {bf:Omega}
+({bf:H}^(1/2) # {bf:H}^(1/2))' {bf:L}' - {bf:h}{bf:h}' (Fengler and Herwartz 2018,
+Proposition 1), with {bf:L} the elimination matrix and {bf:Omega} the fourth moments of
+the standardized shocks. At date t, with {bf:H}_t+1|t = {bf:C}{bf:C}' +
+{bf:A}'{bf:e}_t {bf:e}_t'{bf:A} + {bf:G}'{bf:H}_t {bf:G} and {bf:H}_t+m|t =
+{bf:C}{bf:C}' + {bf:A}'{bf:H}_t+m-1|t {bf:A} + {bf:G}'{bf:H}_t+m-1|t {bf:G}, the
+forecast errors at horizon M load on the shocks with {bf:Psi}_m = {bf:Theta}_m
+{bf:Sigma}({bf:H}_t+M-m|t)^(1/2), m = 0, ..., M-1, and the share of element i due to
+element j is sum_m psi_ij^2 / sum_m sum_j psi_ij^2. TCI, TO, FROM and NET are computed
+from these shares as usual; the indices of Fengler and Herwartz divide TO and FROM by
+k(k+1)/2. The frame also holds their sub-indices {cmd:bekk_ovar}, {cmd:bekk_ocov},
+{cmd:bekk_ccov} and {cmd:bekk_cvar}, the parts of the TCI among the variances, among
+the covariances, from covariances to variances and from variances to covariances,
+which sum to the TCI, and {cmd:bekk_ncross} = {cmd:bekk_ccov} - {cmd:bekk_cvar}.
+
+{pstd}
 {it:DCC-GARCH R2 decomposition.} With {cmd:approach(r2)}, the conditional correlation
 matrix {bf:R}_t of each period is decomposed as in {cmd:R2Correlations()}: row {it:i}
 of the table holds the relative-weight shares of the R2 of variable {it:i} regressed
@@ -1020,8 +1141,27 @@ generalized linear models via coordinate descent. {it:Journal of Statistical Sof
 33(1): 1-22.
 
 {phang}
+Diebold, F. X., and K. Yilmaz. 2014. On the network topology of variance
+decompositions: Measuring the connectedness of financial firms. {it:Journal of
+Econometrics} 182: 119-134.
+
+{phang}
+Engle, R. F., and K. F. Kroner. 1995. Multivariate simultaneous generalized ARCH.
+{it:Econometric Theory} 11: 122-150.
+
+{phang}
+Fengler, M. R., and H. Herwartz. 2018. Measuring spot variance spillovers when
+(co)variances are time-varying: The case of multivariate GARCH models.
+{it:Oxford Bulletin of Economics and Statistics} 80: 135-159.
+
+{phang}
 Francis, N., P. R. Hansen, and C. Tong. 2026. Principled identification of structural
 dynamic models. NBER Working Paper 34623.
+
+{phang}
+Fülle, M. J., A. Lange, C. M. Hafner, and H. Herwartz. 2024. BEKKs: An R package for
+estimation of conditional volatility of multivariate time series. {it:Journal of
+Statistical Software} 111(4).
 
 {phang}
 Gabauer, D. 2020. Volatility impulse response analysis for DCC-GARCH models: The role

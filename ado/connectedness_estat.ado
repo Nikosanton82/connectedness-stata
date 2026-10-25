@@ -1,4 +1,4 @@
-*! version 0.9.5  25oct2026
+*! version 0.10.0  25oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -19,6 +19,9 @@ program define connectedness_estat
     }
     else if `lsub' >= 4 & "`sub'" == substr("clorder", 1, `lsub') {
         Clorder `rest'
+    }
+    else if "`sub'" == "virf" {
+        Virf `rest'
     }
     else {
         estat_default `0'
@@ -1189,6 +1192,148 @@ program define Clorder, rclass
     }
     return scalar norderings = e(norderings)
     return scalar ncontrols = `nfix'
+end
+
+// Volatility impulse responses of a BEKK(1,1) (Hafner and Herwartz 2006), as the R
+// package BEKKs: the response of vech(H) at horizons 1, ..., n to a shock at a date,
+// by default the q-quantile of the standardized residuals of one series (the others
+// zero), or the standardized residuals of the date, or a given vector
+program define Virf, rclass
+    syntax , Time(string) [ SHock(string) Quantile(real 0.05) RESidual SHOCKs(numlist) ///
+        Horizon(integer 10) FRame(name) REPLACE DIGits(integer 4) ]
+
+    if "`e(model)'" != "bekk" {
+        di as err "estat virf requires results of {cmd:connectedness} with model(bekk)"
+        exit 198
+    }
+    if `horizon' < 1 {
+        di as err "horizon() must be a positive integer"
+        exit 198
+    }
+    if `quantile' <= 0 | `quantile' >= 1 {
+        di as err "quantile() must be between 0 and 1"
+        exit 198
+    }
+    local ns = ("`shock'" != "") + ("`residual'" != "") + ("`shocks'" != "")
+    if `ns' != 1 {
+        di as err "specify one of shock(), residual or shocks()"
+        exit 198
+    }
+    quietly count if e(sample)
+    if r(N) != e(N) {
+        di as err "the estimation sample is not in memory; restore the data used by {cmd:connectedness}"
+        exit 498
+    }
+    capture mata: mata describe cn_bekkvirf()
+    if _rc {
+        quietly findfile cn_core.mata
+        quietly do `"`r(fn)'"'
+    }
+    local k = e(nseries)
+    local onames `e(series)'
+    local type = cond("`e(bekktype)'" == "full", 1, cond("`e(bekktype)'" == "diagonal", 2, 3))
+    tsrevar `e(depvar)'
+    local vars `r(varlist)'
+    tempvar touse
+    quietly generate byte `touse' = e(sample)
+    local tv `e(timevar)'
+    local dv `e(datevar)'
+    // the date: a value of the time variable or a date such as 15sep2008
+    local val = real("`time'")
+    local tvar `tv'
+    if missing(`val') {
+        local val = date("`time'", "DMY")
+        if "`dv'" != "" local tvar `dv'
+        if missing(`val') {
+            di as err "time(): `time' is neither a number nor a date such as 15sep2008"
+            exit 198
+        }
+    }
+    mata: cn__vt = st_data(., "`tvar'", "`touse'")
+    mata: st_local("row", strofreal(min(selectindex(cn__vt :>= `val'))))
+    if "`row'" == "." | "`row'" == "" {
+        di as err "time(): `time' is after the estimation sample"
+        exit 198
+    }
+    tempname th A G V sh
+    matrix `th' = e(bekk)
+    matrix `A' = e(bekk_A)
+    matrix `G' = e(bekk_G)
+    mata: cn__ve = st_data(., "`vars'", "`touse'"); cn__ve = cn__ve :- mean(cn__ve)
+    mata: cn__vll = .; cn__vS = .; cn__vl = .
+    mata: cn__vH = cn_bekkfilter(st_matrix("`th'"), cn__ve, `type', cn__vll, 0, cn__vS, cn__vl)
+    mata: cn__vr = cn_bekkres(cn__ve, cn__vH)
+    if "`shocks'" != "" {
+        if `: word count `shocks'' != `k' {
+            di as err "shocks() must contain `k' numbers"
+            exit 198
+        }
+        mata: cn__vs = strtoreal(tokens("`shocks'"))'
+        local stxt "the shocks given"
+    }
+    else if "`residual'" != "" {
+        mata: cn__vs = cn__vr[`row', .]'
+        local stxt "the standardized residuals of the date"
+    }
+    else {
+        local j : list posof "`shock'" in onames
+        if `j' == 0 {
+            di as err "shock(): `shock' is not one of the series (`onames')"
+            exit 198
+        }
+        mata: cn__vs = J(`k', 1, 0); cn__vs[`j'] = cn_q7(cn__vr[., `j'], `quantile')
+        local stxt "the `quantile' quantile of the standardized residuals of `shock'"
+    }
+    mata: st_matrix("`V'", cn_bekkvirf(rowshape(cn__vH[`row', .], `k')', st_matrix("`A'"), st_matrix("`G'"), cn__vs, `horizon'))
+    mata: st_matrix("`sh'", cn__vs')
+    mata: st_local("tval", strofreal(cn__vt[`row']))
+    local tfmt : format `tvar'
+    local tdisp : display `tfmt' `tval'
+    local tdisp = strtrim("`tdisp'")
+    local rn
+    forvalues h = 1/`horizon' {
+        local rn `rn' h`h'
+    }
+    matrix rownames `V' = `rn'
+    matrix colnames `V' = `e(names)'
+    matrix colnames `sh' = `onames'
+    tempname Vt
+    matrix `Vt' = `V''
+    local w2 = `digits' + 8
+    di _n as txt "{p 0 0 2}Volatility impulse responses (Hafner and Herwartz 2006) of the " ///
+        "conditional variances and covariances to `stxt', at `tdisp' (horizons in columns){p_end}"
+    matlist `Vt', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(16)
+    if "`frame'" != "" {
+        if "`frame'" == "`c(frame)'" | "`frame'" == "`e(frame)'" {
+            di as err "frame(`frame') may not be the current or the results frame"
+            exit 498
+        }
+        mata: st_local("bexist", strofreal(st_frameexists("`frame'")))
+        if `bexist' & "`replace'" == "" {
+            di as err "frame {bf:`frame'} already exists; specify {cmd:replace} or another {cmd:frame()}"
+            exit 110
+        }
+        capture frame drop `frame'
+        frame create `frame'
+        frame `frame' {
+            quietly set obs `horizon'
+            quietly generate int h = _n
+            label variable h "horizon"
+            local nv : word count `e(names)'
+            mata: st_store(., st_addvar("double", "virf_" :+ strofreal(1..`nv')), st_matrix("`V'"))
+            forvalues j = 1/`nv' {
+                label variable virf_`j' "VIRF of `: word `j' of `e(names)''"
+            }
+            label data "connectedness: BEKK volatility impulse responses"
+        }
+        di as txt "Responses saved in frame " as res "`frame'"
+        return local frame "`frame'"
+    }
+    capture mata: mata drop cn__vt cn__ve cn__vH cn__vll cn__vS cn__vl cn__vs cn__vr
+    return scalar time = `tval'
+    return scalar row = `row'
+    return matrix shock = `sh'
+    return matrix virf = `V'
 end
 
 // k x k matrix bc with a star where the interval (lo, hi) excludes zero; diagonal

@@ -1,4 +1,4 @@
-*! version 0.9.5  25oct2026
+*! version 0.10.0  25oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -2392,6 +2392,694 @@ void cn_dccgarch(real matrix x, real scalar nf, real scalar stdz, string scalar 
 }
 
 // =============================================================================
+// BEKK(1,1) multivariate GARCH and spot variance spillovers (Fengler and Herwartz
+// 2018); volatility impulse responses (Hafner and Herwartz 2006)
+// =============================================================================
+
+// Duplication matrix D (k^2 x k(k+1)/2): vec(X) = D vech(X), vech by columns
+real matrix cn_dupmat(real scalar k)
+{
+    real scalar i, j, c
+    real matrix D
+
+    D = J(k*k, k*(k+1)/2, 0)
+    c = 0
+    for (j=1; j<=k; j++) {
+        for (i=j; i<=k; i++) {
+            c++
+            D[(j-1)*k + i, c] = 1
+            D[(i-1)*k + j, c] = 1
+        }
+    }
+    return(D)
+}
+
+// Elimination matrix L (k(k+1)/2 x k^2): vech(X) = L vec(X)
+real matrix cn_elimmat(real scalar k)
+{
+    real scalar i, j, c
+    real matrix L
+
+    L = J(k*(k+1)/2, k*k, 0)
+    c = 0
+    for (j=1; j<=k; j++) {
+        for (i=j; i<=k; i++) {
+            c++
+            L[c, (j-1)*k + i] = 1
+        }
+    }
+    return(L)
+}
+
+// Commutation matrix K (k^2 x k^2): vec(X') = K vec(X)
+real matrix cn_commat(real scalar k)
+{
+    real scalar i, j
+    real matrix K
+
+    K = J(k*k, k*k, 0)
+    for (i=1; i<=k; i++) {
+        for (j=1; j<=k; j++) K[(i-1)*k + j, (j-1)*k + i] = 1
+    }
+    return(K)
+}
+
+// Number of parameters of a BEKK(1,1): type 1 full, 2 diagonal, 3 scalar
+real scalar cn_bekknp(real scalar k, real scalar type)
+{
+    return(k*(k+1)/2 + (type == 1 ? 2*k*k : (type == 2 ? 2*k : 2)))
+}
+
+// C (lower triangular), A and G of the parameter vector th, ordered as in the R
+// package BEKKs: vech(C) by columns, then vec(A) and vec(G) (full), diag(A) and
+// diag(G) (diagonal), or a and g (scalar: H_t = CC' + a e e' + g H_t-1, so that
+// A = sqrt(a) I and G = sqrt(g) I)
+void cn_bekkunpack(real rowvector th, real scalar k, real scalar type, real matrix C,
+                   real matrix A, real matrix G)
+{
+    real scalar i, j, c, m
+
+    C = J(k, k, 0)
+    c = 0
+    for (i=1; i<=k; i++) {
+        for (j=i; j<=k; j++) C[j, i] = th[++c]
+    }
+    m = k*(k+1)/2
+    if (type == 1) {
+        A = colshape(th[|m+1 \ m+k*k|], k)'
+        G = colshape(th[|m+k*k+1 \ m+2*k*k|], k)'
+    }
+    else if (type == 2) {
+        A = diag(th[|m+1 \ m+k|])
+        G = diag(th[|m+k+1 \ m+2*k|])
+    }
+    else {
+        A = sqrt(max((th[m+1], 0)))*I(k)
+        G = sqrt(max((th[m+2], 0)))*I(k)
+    }
+}
+
+// Largest eigenvalue modulus of (A # A)' + (G # G)'
+real scalar cn_bekkrho(real matrix A, real matrix G)
+{
+    return(max(abs(eigenvalues((A#A)' + (G#G)'))))
+}
+
+// Valid parameters: a stationary process (cn_bekkrho() below one); scalar: a, g > 0
+// and a + g < 1. The likelihood does not change with the signs of the columns of C
+// or with the sign of A or of G, so no sign restrictions apply during the estimation
+// (cn_bekknorm() afterwards; BEKKs instead requires a positive diagonal of C, which
+// stops its iterations when a diagonal element of C tends to zero at the maximum)
+real scalar cn_bekkvalid(real rowvector th, real scalar k, real scalar type)
+{
+    real matrix C, A, G
+    real scalar m
+
+    if (type == 3) {
+        m = k*(k+1)/2
+        if (th[m+1] <= 0 | th[m+2] <= 0 | th[m+1] + th[m+2] >= 1) return(0)
+        return(1)
+    }
+    cn_bekkunpack(th, k, type, C, A, G)
+    return(cn_bekkrho(A, G) < 1)
+}
+
+// Conditional covariances (T x k^2, each row vec(H_t)) of the BEKK with parameters
+// th for the residuals e: H_1 = e'e/T, H_t = CC' + A'e_t-1 e_t-1'A + G'H_t-1 G, as
+// in BEKKs; the log likelihood (with the constant) in ll and, with sc != 0, the
+// scores (T x parameters) in S
+real matrix cn_bekkfilter(real rowvector th, real matrix e, real scalar type,
+                          real scalar ll, real scalar sc, real matrix S, real colvector llt)
+{
+    real scalar    T, k, t, np, m, k2, ld, dt, i, j, c
+    real matrix    C, A, G, CC, H, Hp, Hi, X, Ht, K, Ik, SC, JC, dH, dHp, GG, Ja, Jg
+    real colvector u
+    real rowvector dg
+
+    T  = rows(e)
+    k  = cols(e)
+    k2 = k*k
+    np = cols(th)
+    m  = k*(k+1)/2
+    cn_bekkunpack(th, k, type, C, A, G)
+    CC  = C*C'
+    GG  = (G#G)'
+    Ht  = J(T, k2, .)
+    llt = J(T, 1, .)
+    ll  = 0
+    H   = cross(e, e)/T
+    if (sc) {
+        S  = J(T, np, 0)
+        K  = cn_commat(k)
+        Ik = I(k)
+        // vec(dC) = SC dtheta_C; vec(d(CC')) = (I + K)(C # I) vec(dC)
+        SC = J(k2, m, 0)
+        c  = 0
+        for (i=1; i<=k; i++) {
+            for (j=i; j<=k; j++) SC[(i-1)*k + j, ++c] = 1
+        }
+        JC = (I(k2) + K)*(C#Ik)*SC
+        dH = J(k2, np, 0)
+        dg = (1..k):*(k+1) :- k
+    }
+    for (t=1; t<=T; t++) {
+        if (t > 1) {
+            Hp = H
+            X  = e[t-1, .]'*e[t-1, .]
+            H  = CC + A'*X*A + G'*Hp*G
+            if (sc) {
+                dHp = dH
+                if (type == 3) dH = (JC, vec(X), vec(Hp)) + th[m+2]*dHp
+                else {
+                    Ja = (Ik#(A'*X)) + ((A'*X)#Ik)*K
+                    Jg = (Ik#(G'*Hp)) + ((G'*Hp)#Ik)*K
+                    if (type == 2) {
+                        Ja = Ja[., dg]
+                        Jg = Jg[., dg]
+                    }
+                    dH = (JC, Ja, Jg) + GG*dHp
+                }
+            }
+        }
+        H  = (H + H')/2
+        dt = det(H)
+        if (missing(dt) | dt <= 0) {
+            ll = .
+            return(J(0, 0, .))
+        }
+        ld = ln(dt)
+        Hi = invsym(H)
+        u      = Hi*e[t, .]'
+        llt[t] = -0.5*(k*ln(2*pi()) + ld + e[t, .]*u)
+        Ht[t, .] = vec(H)'
+        if (sc) S[t, .] = -0.5*(vec(Hi) - vec(u*u'))'*dH
+    }
+    ll = sum(llt)
+    return(Ht)
+}
+
+// Log likelihood of the parameters th, -1e25 for parameters that are not valid
+// (as loglike_bekk() of BEKKs)
+real scalar cn_bekkll(real rowvector th, real matrix e, real scalar type)
+{
+    real scalar    T, k, t, m, a, g, ll
+    real matrix    C, A, G, CC, H, L, Et, At, Gt
+    real colvector v, z
+
+    if (!cn_bekkvalid(th, cols(e), type)) return(-1e25)
+    T  = rows(e)
+    k  = cols(e)
+    m  = k*(k+1)/2
+    cn_bekkunpack(th, k, type, C, A, G)
+    CC = C*C'
+    At = A'
+    Gt = G'
+    Et = e'
+    if (type == 3) {
+        a = th[m+1]
+        g = th[m+2]
+    }
+    H  = cross(e, e)/T
+    ll = 0
+    for (t=1; t<=T; t++) {
+        if (t > 1) {
+            if (type == 3) H = CC + a*(Et[., t-1]*e[t-1, .]) + g*H
+            else {
+                v = At*Et[., t-1]
+                H = CC + v*v' + Gt*H*G
+            }
+        }
+        L = cholesky(H)
+        if (missing(L)) return(-1e25)
+        z  = solvelower(L, Et[., t])
+        ll = ll + 2*sum(ln(diagonal(L))) + z'*z
+    }
+    return(-0.5*(T*k*ln(2*pi()) + ll))
+}
+
+// Inverse of a symmetric matrix, the generalized inverse when it is not positive
+// definite (inv_gen() of BEKKs)
+real matrix cn_bekkinv(real matrix M)
+{
+    real colvector ev
+    real matrix    X
+
+    ev = symeigenvalues(M)'
+    if (min(ev) > 0) {
+        X = cholinv(M)
+        if (!missing(X)) return(X)
+    }
+    return(pinv(M))
+}
+
+// optimize() evaluator (d1): log likelihood and gradient (exact scores)
+void cn_bekk_d1(real scalar todo, real rowvector th, real matrix e, real scalar type,
+                real scalar v, real rowvector g, real matrix H)
+{
+    real scalar    ll
+    real matrix    S, Ht
+    real colvector llt
+
+    if (todo == 0) {
+        v = cn_bekkll(th, e, type)
+        if (v <= -1e25) v = .
+        return
+    }
+    if (!cn_bekkvalid(th, cols(e), type)) {
+        v = .
+        return
+    }
+    Ht = cn_bekkfilter(th, e, type, ll, 1, S, llt)
+    v  = ll
+    if (!missing(ll)) g = colsum(S)
+}
+
+// Gradient (exact scores), missing if the parameters are not valid
+real rowvector cn_bekkgrad(real rowvector th, real matrix e, real scalar type)
+{
+    real scalar    ll
+    real matrix    S, Ht
+    real colvector llt
+
+    if (!cn_bekkvalid(th, cols(e), type)) return(J(1, cols(th), .))
+    Ht = cn_bekkfilter(th, e, type, ll, 1, S, llt)
+    if (missing(ll)) return(J(1, cols(th), .))
+    return(colsum(S))
+}
+
+// Hessian by central differences of the exact gradient
+real matrix cn_bekkhess(real rowvector th, real matrix e, real scalar type)
+{
+    real scalar    np, j, h
+    real rowvector tp, tm
+    real matrix    Hs
+
+    np = cols(th)
+    Hs = J(np, np, .)
+    for (j=1; j<=np; j++) {
+        h  = 1e-5*max((abs(th[j]), 1e-2))
+        tp = th
+        tp[j] = tp[j] + h
+        tm = th
+        tm[j] = tm[j] - h
+        Hs[., j] = (cn_bekkgrad(tp, e, type) - cn_bekkgrad(tm, e, type))'/(2*h)
+    }
+    return((Hs + Hs')/2)
+}
+
+// Starting values as the "simple" option of BEKKs: C from 0.05 times the
+// unconditional covariance (correlations kept), diag(A) = 0.3, diag(G) = 0.92;
+// scalar a = 0.05, g = 0.9
+real rowvector cn_bekkstart(real matrix e, real scalar type)
+{
+    real scalar    k, i, j
+    real matrix    U, C0, L
+    real rowvector th
+
+    k  = cols(e)
+    U  = cross(e, e)/rows(e)
+    C0 = 0.05*diag(diagonal(U))
+    for (i=1; i<=k; i++) {
+        for (j=1; j<=k; j++) {
+            if (i != j) C0[i, j] = U[i, j]/sqrt(U[i, i]*U[j, j])*sqrt(C0[i, i]*C0[j, j])
+        }
+    }
+    L  = cholesky(C0)
+    th = J(1, 0, .)
+    for (i=1; i<=k; i++) {
+        for (j=i; j<=k; j++) th = th, L[j, i]
+    }
+    if (type == 1) th = th, vec(0.3*I(k))', vec(0.92*I(k))'
+    else if (type == 2) th = th, J(1, k, 0.3), J(1, k, 0.92)
+    else th = th, 0.05, 0.9
+    return(th)
+}
+
+// Sign normalization (the likelihood does not change): A[1,1] > 0, G[1,1] > 0 and a
+// positive diagonal of C
+real rowvector cn_bekknorm(real rowvector th, real scalar k, real scalar type)
+{
+    real scalar    i, j, c, m
+    real rowvector t2
+    real matrix    C, A, G
+
+    t2 = th
+    cn_bekkunpack(th, k, type, C, A, G)
+    for (i=1; i<=k; i++) {
+        if (C[i, i] < 0) C[., i] = -C[., i]
+    }
+    c = 0
+    for (i=1; i<=k; i++) {
+        for (j=i; j<=k; j++) t2[++c] = C[j, i]
+    }
+    m = k*(k+1)/2
+    if (type == 1) {
+        if (th[m+1] < 0) t2[|m+1 \ m+k*k|] = -th[|m+1 \ m+k*k|]
+        if (th[m+k*k+1] < 0) t2[|m+k*k+1 \ m+2*k*k|] = -th[|m+k*k+1 \ m+2*k*k|]
+    }
+    else if (type == 2) {
+        if (th[m+1] < 0) t2[|m+1 \ m+k|] = -th[|m+1 \ m+k|]
+        if (th[m+k+1] < 0) t2[|m+k+1 \ m+2*k|] = -th[|m+k+1 \ m+2*k|]
+    }
+    return(t2)
+}
+
+// Maximum likelihood estimation, or the parameters fixed at th0 (fix = 1). Three
+// stages, all with the exact scores: (1) BHHH as bhh_bekk() of BEKKs (direction
+// inv(S'S) S'1, the step the best of 0.1 times (9.9, 9, ..., 0.00001, 0), stop when
+// (ll_best - ll)^2/|ll| < 1e-14, at most 200 steps, where BEKKs allows 1,000, as
+// BHHH can crawl near a boundary); (2) BFGS (optimize()); (3)
+// Newton steps with the Hessian from central differences of the gradient (the
+// absolute values of its eigenvalues, so that every step ascends; step halving),
+// until g'|H|^-1 g < 1e-10 with a negative definite Hessian (converged), at most 20.
+// Returns the parameters; se (OPG standard errors), ll, conv, iter (total), info
+// (iterations of the three stages, cn_bekkrho(), largest eigenvalue of the Hessian)
+real rowvector cn_bekkfit(real matrix e, real scalar type, real rowvector th0,
+                          real scalar fix, real rowvector se, real scalar ll,
+                          real scalar conv, real scalar iter, real rowvector info)
+{
+    transmorphic   O
+    real rowvector th, steps, d, lc, g, L, aL, t1, kp
+    real matrix    Sc, V, Ht, w, Hs, X, C, A, G
+    real colvector llt, bi
+    real scalar    k, j, lik, best, it1, it2, it3, cr, sl, l1, hmax, f, rc
+
+    k = cols(e)
+    hmax = .
+    if (fix) {
+        th = cn_bekknorm(th0, k, type)
+        if (!cn_bekkvalid(th, k, type)) {
+            errprintf("bekkparams(): the parameters do not define a stationary BEKK model\n")
+            exit(error(498))
+        }
+        conv = 1
+        it1 = 0
+        it2 = 0
+        it3 = 0
+    }
+    else {
+        steps = (9.9, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5, 0.25, 0.1, 0.01, 0.005)
+        steps = steps, (0.001, 0.0005, 0.0001, 0.00005, 0.00001, 0)
+        th   = th0
+        lik  = cn_bekkll(th, e, type)
+        it1  = 0
+        conv = 0
+        while (it1 < 200 & !conv) {
+            Ht = cn_bekkfilter(th, e, type, ll, 1, Sc, llt)
+            if (missing(ll)) break
+            d  = (cn_bekkinv(cross(Sc, Sc))*colsum(Sc)')'
+            lc = J(1, cols(steps), .)
+            lc[cols(steps)] = lik
+            for (j=1; j<cols(steps); j++) lc[j] = cn_bekkll(th + 0.1*steps[j]*d, e, type)
+            best = max(lc)
+            maxindex(lc, 1, bi, w)
+            bi = bi[1]
+            it1++
+            if ((best - lik)^2/abs(lik) < 1e-14) conv = 1
+            th  = th + 0.1*steps[bi]*d
+            lik = best
+        }
+        // (2) BFGS
+        O = optimize_init()
+        optimize_init_evaluator(O, &cn_bekk_d1())
+        optimize_init_evaluatortype(O, "d1")
+        optimize_init_technique(O, "bfgs")
+        optimize_init_argument(O, 1, e)
+        optimize_init_argument(O, 2, type)
+        optimize_init_params(O, th)
+        optimize_init_conv_maxiter(O, 1000)
+        optimize_init_conv_ptol(O, 1e-10)
+        optimize_init_conv_vtol(O, 1e-12)
+        optimize_init_conv_nrtol(O, 1e-8)
+        optimize_init_tracelevel(O, "none")
+        optimize_init_verbose(O, 0)
+        rc = _optimize(O)
+        t1 = optimize_result_params(O)
+        it2 = optimize_result_iterations(O)
+        l1 = cn_bekkll(t1, e, type)
+        if (l1 > lik) {
+            th  = t1
+            lik = l1
+        }
+        // (3) Newton
+        conv = 0
+        it3  = 0
+        while (it3 < 20) {
+            g  = cn_bekkgrad(th, e, type)
+            Hs = cn_bekkhess(th, e, type)
+            if (missing(g) | missing(Hs)) break
+            symeigensystem(Hs, X, L)
+            hmax = max(L)
+            aL = abs(L)
+            f  = 1e-12*max(aL)
+            aL = aL:*(aL :>= f) + f*(aL :< f)
+            d  = (X*((X'*g') :/ aL'))'
+            cr = g*d'
+            if (cr < 1e-10 & hmax < 0) {
+                conv = 1
+                break
+            }
+            sl = 1
+            l1 = cn_bekkll(th + d, e, type)
+            while (l1 < lik & sl > 1e-10) {
+                sl = sl/2
+                l1 = cn_bekkll(th + sl*d, e, type)
+            }
+            if (l1 < lik) break
+            th  = th + sl*d
+            lik = l1
+            it3++
+        }
+        th = cn_bekknorm(th, k, type)
+    }
+    Ht = cn_bekkfilter(th, e, type, ll, 1, Sc, llt)
+    // OPG standard errors; a parameter whose scores vanish (a diagonal element of C
+    // at zero, where the likelihood is flat in it to first order) gets a missing
+    // standard error, and the others come from the rest of the matrix
+    V  = cross(Sc, Sc)
+    kp = selectindex(diagonal(V)' :> 1e-10*max(diagonal(V)))
+    se = J(1, cols(th), .)
+    se[kp] = sqrt(diagonal(cn_bekkinv(V[kp, kp])))'
+    iter = it1 + it2 + it3
+    cn_bekkunpack(th, k, type, C, A, G)
+    info = it1, it2, it3, cn_bekkrho(A, G), hmax
+    return(th)
+}
+
+// E[vec(xi xi') vec(xi xi')'] for independent symmetric shocks with fourth moments
+// kap: element ((b-1)k+a, (d-1)k+c) = E[xi_a xi_b xi_c xi_d]
+real matrix cn_bekkfourth(real colvector kap)
+{
+    real scalar k, a, b, c, d, v
+    real matrix W
+
+    k = rows(kap)
+    W = J(k*k, k*k, 0)
+    for (a=1; a<=k; a++) {
+        for (b=1; b<=k; b++) {
+            for (c=1; c<=k; c++) {
+                for (d=1; d<=k; d++) {
+                    if (a == b & b == c & c == d) v = kap[a]
+                    else if ((a == b & c == d) | (a == c & b == d) | (a == d & b == c)) v = 1
+                    else v = 0
+                    W[(b-1)*k + a, (d-1)*k + c] = v
+                }
+            }
+        }
+    }
+    return(W)
+}
+
+// symmetric square root of a symmetric positive semidefinite matrix
+real matrix cn_symsqrt(real matrix X)
+{
+    real matrix    V
+    real rowvector L
+
+    symeigensystem((X + X')/2, V, L)
+    return((V :* sqrt(L :* (L :> 0))) * V')
+}
+
+// Covariance of the innovations u_t = vech(e_t e_t') - vech(H_t) given H
+// (Fengler and Herwartz 2018, Proposition 1)
+real matrix cn_bekksigma(real matrix H, real matrix L, real matrix W)
+{
+    real matrix    Hh, Kh
+    real colvector h
+
+    Hh = cn_symsqrt(H)
+    Kh = Hh#Hh
+    h  = L*vec(H)
+    return(L*Kh*W*Kh'*L' - h*h')
+}
+
+// Spot variance spillovers (Fengler and Herwartz 2018): for each date t, the
+// decomposition (percent) at horizon M of the forecast errors of vech(e e') from the
+// information at t, with Psi_m = Theta_m Sigma_(t+M-m|t)^(1/2) (symmetric root, or
+// Cholesky with chol = 1), Theta_0 = I, Theta_1 = A~, Theta_m = (A~ + B~) Theta_m-1,
+// A~ = D+ (A # A)' D, B~ = D+ (G # G)' D, and the covariances forecast by H_t+1|t =
+// CC' + A'e_t e_t'A + G'H_t G, H_t+m|t = CC' + A'H_t+m-1|t A + G'H_t+m-1|t G. Rows of
+// the result: the decomposition of each date by rows (vech order); S5: the
+// sub-indices ovar, ocov, ccov, cvar (percent of N*) and the net cross index
+real matrix cn_bekkfh(real matrix e, real matrix Ht, real matrix C, real matrix A,
+                      real matrix G, real scalar M, real colvector kap, real scalar chol,
+                      real matrix S5)
+{
+    real scalar    T, k, ns, t, m, i, j, cvi
+    real matrix    D, Dp, L, Aa, As, W, CC, Hf, Sg, R, num, lam, F, Th, Rt
+    real colvector isv
+
+    T  = rows(e)
+    k  = cols(e)
+    ns = k*(k+1)/2
+    D  = cn_dupmat(k)
+    Dp = invsym(D'*D)*D'
+    L  = cn_elimmat(k)
+    Aa = Dp*(A#A)'*D
+    As = Aa + Dp*(G#G)'*D
+    // Theta_0, ..., Theta_M-1 side by side
+    Th = J(ns, ns*M, .)
+    Th[|1, 1 \ ns, ns|] = I(ns)
+    if (M > 1) Th[|1, ns+1 \ ns, 2*ns|] = Aa
+    for (m=3; m<=M; m++) Th[|1, (m-1)*ns+1 \ ns, m*ns|] = As*Th[|1, (m-2)*ns+1 \ ns, (m-1)*ns|]
+    W  = cn_bekkfourth(kap)
+    CC = C*C'
+    // variances in vech order
+    isv = J(ns, 1, 0)
+    cvi = 0
+    for (j=1; j<=k; j++) {
+        for (i=j; i<=k; i++) isv[++cvi] = (i == j)
+    }
+    F  = J(T, ns*ns, .)
+    S5 = J(T, 5, .)
+    Rt = J(ns, ns*M, .)
+    for (t=1; t<=T; t++) {
+        Hf = CC + A'*(e[t, .]'*e[t, .])*A + G'*rowshape(Ht[t, .], k)'*G
+        for (m=1; m<=M; m++) {
+            if (m > 1) Hf = CC + A'*Hf*A + G'*Hf*G
+            Sg = cn_bekksigma(Hf, L, W)
+            Sg = (Sg + Sg')/2
+            if (chol) R = cholesky(Sg)
+            else R = cn_symsqrt(Sg)
+            Rt[|1, (m-1)*ns+1 \ ns, m*ns|] = R
+        }
+        // Psi_m = Theta_m Sigma_(t+M-m|t)^(1/2), m = 0, ..., M-1
+        num = J(ns, ns, 0)
+        for (m=0; m<M; m++) {
+            num = num + (Th[|1, m*ns+1 \ ns, (m+1)*ns|]*Rt[|1, (M-m-1)*ns+1 \ ns, (M-m)*ns|]):^2
+        }
+        lam = num :/ rowsum(num)
+        F[t, .] = 100*rowshape(lam, 1)
+        S5[t, 1] = 100*sum(select(select(lam, isv), isv') - diag(diagonal(select(select(lam, isv), isv'))))/ns
+        S5[t, 2] = 100*sum(select(select(lam, !isv), !isv') - diag(diagonal(select(select(lam, !isv), !isv'))))/ns
+        S5[t, 3] = 100*sum(select(select(lam, isv), !isv'))/ns
+        S5[t, 4] = 100*sum(select(select(lam, !isv), isv'))/ns
+        S5[t, 5] = S5[t, 3] - S5[t, 4]
+    }
+    return(F)
+}
+
+// fourth moments of the standardized residuals xi_t = H_t^(-1/2) e_t (symmetric
+// root), for kurtosis(empirical)
+real colvector cn_bekkkurt(real matrix e, real matrix Ht)
+{
+    real scalar    T, k, t
+    real matrix    X
+
+    T = rows(e)
+    k = cols(e)
+    X = J(T, k, .)
+    for (t=1; t<=T; t++) X[t, .] = (luinv(cn_symsqrt(rowshape(Ht[t, .], k)'))*e[t, .]')'
+    return(colsum(X:^4)'/T)
+}
+
+// Volatility impulse responses (Hafner and Herwartz 2006) as BEKKs: V_1 = A~
+// vech(H^(1/2) (s s' - I) H^(1/2)), V_i = (A~ + B~) V_i-1, i = 2, ..., n, for the shock
+// s at the date with conditional covariance H
+real matrix cn_bekkvirf(real matrix H, real matrix A, real matrix G, real colvector s,
+                        real scalar n)
+{
+    real scalar k, i
+    real matrix D, Dp, L, Aa, As, Hh, V
+
+    k  = rows(H)
+    D  = cn_dupmat(k)
+    Dp = invsym(D'*D)*D'
+    L  = cn_elimmat(k)
+    Aa = Dp*(A#A)'*D
+    As = Aa + Dp*(G#G)'*D
+    Hh = cn_symsqrt(H)
+    V  = J(n, k*(k+1)/2, .)
+    V[1, .] = (Aa*L*vec(Hh*(s*s' - I(k))*Hh))'
+    for (i=2; i<=n; i++) V[i, .] = (As*V[i-1, .]')'
+    return(V)
+}
+
+// Cholesky-standardized residuals of BEKKs (the first row zero): L_t^-1 e_t
+real matrix cn_bekkres(real matrix e, real matrix Ht)
+{
+    real scalar T, k, t
+    real matrix X
+
+    T = rows(e)
+    k = cols(e)
+    X = J(T, k, 0)
+    for (t=2; t<=T; t++) X[t, .] = (luinv(cholesky(rowshape(Ht[t, .], k)'))*e[t, .]')'
+    return(X)
+}
+
+// Names of vech(e e') in vech order: var_<i> and cov_<i>_<j>
+string rowvector cn_bekknames(string rowvector nm)
+{
+    real scalar      k, i, j
+    string rowvector out
+    string scalar    s
+
+    k   = cols(nm)
+    out = J(1, 0, "")
+    for (j=1; j<=k; j++) {
+        for (i=j; i<=k; i++) {
+            if (i == j) s = "var_" + nm[i]
+            else s = "cov_" + nm[j] + "_" + nm[i]
+            if (strlen(s) > 32) s = (i == j ? "var_" + strofreal(i) : "cov_" + strofreal(j) + "_" + strofreal(i))
+            out = out, s
+        }
+    }
+    return(out)
+}
+
+// BEKK model and spot variance spillovers for connectedness: demeaned data x,
+// horizon M, type, kurtosis (0 Gaussian, 1 empirical), chol, fixname (a 1 x np
+// matrix of parameters, or ""). Results: F (decompositions), Th (theta, se), D (ll,
+// conv, iter, kurtosis of each variable), Ht (covariances), S5 (sub-indices)
+void cn_bekk(real matrix x, real scalar M, real scalar type, real scalar ekurt,
+             real scalar chol, string scalar fixname, real matrix F, real matrix Th,
+             real matrix D, real matrix Ht, real matrix S5)
+{
+    real scalar    k, ll, conv, iter, fix
+    real rowvector th0, th, se, info
+    real colvector kap, llt
+    real matrix    e, C, A, G, Sc
+
+    k   = cols(x)
+    e   = x :- mean(x)
+    fix = (fixname != "")
+    if (fix) th0 = st_matrix(fixname)
+    else th0 = cn_bekkstart(e, type)
+    if (cols(th0) != cn_bekknp(k, type)) {
+        errprintf("bekkparams() must have %g columns\n", cn_bekknp(k, type))
+        exit(error(503))
+    }
+    th = cn_bekkfit(e, type, th0, fix, se, ll, conv, iter, info)
+    Ht = cn_bekkfilter(th, e, type, ll, 0, Sc, llt)
+    cn_bekkunpack(th, k, type, C, A, G)
+    kap = (ekurt ? cn_bekkkurt(e, Ht) : J(k, 1, 3))
+    F   = cn_bekkfh(e, Ht, C, A, G, M, kap, chol, S5)
+    Th  = th \ se
+    D   = ll, conv, iter, kap', info
+}
+
+// =============================================================================
 // Driver called by connectedness.ado
 // =============================================================================
 
@@ -2405,9 +3093,10 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              real rowvector tau, string scalar csufs, string scalar r2m,
              real rowvector enalpha, real scalar nfolds, string scalar enloss,
              string scalar foldmode, real scalar stdz, string scalar dccfix,
-             real scalar adapt)
+             real scalar adapt, | real scalar btype, real scalar bkurt, real scalar bchol,
+             string scalar bfix)
 {
-    external real matrix   cn__M, cn__CT, cn__Q, cn__CLS, cn__clpairs, cn__clperm
+    external real matrix   cn__M, cn__CT, cn__Q, cn__CLS, cn__clpairs, cn__clperm, cn__BKS
     external real colvector cn__tv, cn__dv
     external string rowvector cn__mn, cn__ml, cn__fn, cn__fl
     struct cn_prior scalar pr
@@ -2417,8 +3106,9 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     real rowvector ma, m, cv, sc
     string rowvector nm, bl, fn, fl, mn0, ml0, cs
     real matrix    Z, Cc, Cl, Ft, G, Ht
-    real scalar    wr, nfb
+    real scalar    wr, nfb, k0
     real rowvector D
+    string rowvector nm0
 
     x  = st_data(., tokens(vars), touse)
     tv = st_data(., tvar, touse)
@@ -2442,6 +3132,20 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
         Z  = (approach=="r2" ? cn_embed(x, p+1) : x)
         wr = (window==0 ? rows(Z) : window - (approach=="r2" ? 2*p : 0))
         nT = rows(Z) - wr + 1
+    }
+    else if (model=="bekk") {
+        // spot variance spillovers of a BEKK(1,1): the decomposition is of the
+        // k(k+1)/2 variances and covariances, which take the place of the variables
+        cn_bekk(x, H, btype, bkurt, bchol, bfix, Ft, G, D, Ht, cn__BKS)
+        st_matrix(tabname + "_g", G)
+        st_matrix(tabname + "_d", D)
+        nT  = T
+        k0  = k
+        nm0 = nm
+        nm  = cn_bekknames(nm)
+        k   = cols(nm)
+        kk  = k*k
+        st_local("bekknames", invtokens(nm))
     }
     else if (model=="dccgarch") {
         cn_dccgarch(x, (approach=="r2" ? 0 : H), stdz, dccfix, Ft, G, D, Ht)
@@ -2515,6 +3219,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
     // residual covariance of each VAR window or TVP-VAR period, or the DCC-GARCH
     // conditional covariance; none for the R2 and model-free approaches
     if (model=="dccgarch")                           cn__Q = cn_vechu(Ht, k)
+    else if (model=="bekk")                          cn__Q = cn_vechu(Ht, k0)
     else if (approach=="r2" | approach=="modelfree") cn__Q = J(nT, 0, .)
     else                                        cn__Q = cn_vechu(Qt, k)
     if (rows(cn__Q) != nT & cols(cn__Q) > 0) cn__Q = cn__Q[|rows(cn__Q)-nT+1, 1 \ rows(cn__Q), cols(cn__Q)|]
@@ -2541,8 +3246,8 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
             m  = cn_measures(ct)
             cv = rowshape(ct, 1)
         }
-        else if (model=="dccgarch") {
-            ct = 100*rowshape(Ft[t, .], k)
+        else if (model=="dccgarch" | model=="bekk") {
+            ct = (model=="bekk" ? 1 : 100)*rowshape(Ft[t, .], k)
             m  = cn_measures(ct)
             cv = rowshape(ct, 1)
         }

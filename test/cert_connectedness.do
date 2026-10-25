@@ -1927,6 +1927,176 @@ cn_expect 198 estat clorder, digits(9)
 connectedness EUR GBP CHF JPY in 1/600, `opt'
 cn_expect 198 estat clorder
 
+di _n as txt "{hline 78}" _n "23. BEKK spot variance spillovers and volatility impulse responses (0.10.0)" _n "{hline 78}"
+* Against test/r/make_fixtures_0100.R: BEKK(1,1) estimates of the R package BEKKs,
+* spot variance spillovers (Fengler and Herwartz 2018) computed independently in R from
+* those estimates, and BEKKs' VIRFs (Hafner and Herwartz 2006). With bekkparams() set to
+* BEKKs' estimates the comparison is exact. Standard errors use exact scores (BEKKs'
+* scores carry a derivative of H_1 = e'e/T, which does not depend on the parameters),
+* and Stata's own estimates are compared with the maximum of the likelihood found
+* independently in R (BHHH, BFGS and Newton stages; BEKKs' iterations stop before the
+* maximum when a diagonal element of C tends to zero).
+capture program drop cn_bk
+program define cn_bk
+    syntax , case(string) tol(real)
+    local f "fixtures/R_bekk_`case'"
+    tempname RT A B
+    cn_loadfx "`f'_theta.csv" `RT'
+    local np = colsof(`RT')
+    matrix `B' = `RT'[2, 1..`np']
+    matrix `A' = e(bekk_se)
+    local d1 = mreldif(`A', `B')
+    local d1 = max(`d1', reldif(e(ll), `RT'[3, 1]))
+    cn_loadfx "`f'_subavg.csv" `B'
+    matrix `A' = e(bekk_sub)
+    local d1 = max(`d1', mreldif(`A', `B'))
+    cn_loadfx "`f'_kurt.csv" `B'
+    matrix `A' = e(bekk_kurt)
+    local d1 = max(`d1', mreldif(`A', `B'))
+    capture frame drop __fx
+    frame create __fx
+    frame __fx: quietly import delimited using "`f'_H.csv", clear varnames(1) asdouble
+    mata: st_local("d2", strofreal(cn_tsdiff("`e(frame)'", "__fx"), "%12.0g"))
+    frame __fx: quietly import delimited using "`f'_sub.csv", clear varnames(1) asdouble
+    mata: st_local("d3", strofreal(cn_tsdiff("`e(frame)'", "__fx"), "%12.0g"))
+    frame drop __fx
+    local ok = (`d1' < `tol') & (`d2' < `tol') & (`d3' < `tol')
+    global cn_tests = $cn_tests + 1
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-26s "R_bekk_`case' fit" " se/ll/sub " as res %9.2e `d1' ///
+        as txt "  H " as res %9.2e `d2' as txt "  sub " as res %9.2e `d3' as txt "  " cond(`ok', "pass", "FAIL")
+end
+capture program drop cn_bkmle
+program define cn_bkmle
+    * Stata's own estimates (e()) against the maximum found in R (exact-gradient BHHH
+    * from the same starting values): parameters, log likelihood, standard errors
+    syntax , case(string) tol(real) label(string)
+    tempname M B A E S
+    cn_loadfx "fixtures/R_bekk_`case'_mle.csv" `M'
+    cn_loadfx "fixtures/R_bekk_`case'_theta.csv" `B'
+    local np = colsof(`M')
+    matrix `E' = e(bekk)
+    matrix `S' = e(bekk_se)
+    matrix `A' = `M'[1, 1..`np']
+    local d1 = mreldif(`E', `A')
+    matrix `A' = `M'[2, 1..`np']
+    local d1 = max(`d1', mreldif(`S', `A'))
+    local d2 = abs(e(ll) - `M'[3, 1])
+    local ok = (`d1' < `tol') & (`d2' < `tol') & (e(converged) == 1) & (`M'[3, 3] == 1)
+    global cn_tests = $cn_tests + 1
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-28s "`label'" " params/se " as res %9.2e `d1' as txt "  ll " as res %9.2e `d2' ///
+        as txt "  iter " as res e(iterations) as txt " (R " as res `M'[3, 2] as txt ")  " cond(`ok', "pass", "FAIL")
+    matrix `A' = `B'[1, 1..`np']
+    di as txt "    log likelihood above BEKKs' estimates by " as res %9.6f e(ll) - `B'[3, 1] ///
+        as txt "; largest parameter difference from BEKKs " as res %9.2e mreldif(`E', `A')
+end
+capture program drop cn_bkvirf
+program define cn_bkvirf
+    syntax , case(string) tol(real) [*]
+    tempname A R
+    quietly estat virf, `options'
+    matrix `A' = r(virf)
+    cn_loadfx "fixtures/R_bekk_`case'.csv" `R'
+    cn_assert "R_bekk_`case'" `=mreldif(`A', `R')' `tol'
+end
+
+capture confirm file "fixtures/R_bekk_g2020_full_theta.csv"
+if !_rc {
+    tempname RT TH A B S F1 F2
+    use ../data/cn_g2020, clear
+    tsset t
+    cn_loadfx "fixtures/R_bekk_g2020_full_theta.csv" `RT'
+    local np = colsof(`RT')
+    matrix `TH' = `RT'[1, 1..`np']
+    connectedness EUR GBP CHF JPY, model(bekk) horizon(5) bekkparams(`TH') `opt'
+    cn_assert "BEKK: 10 variances and covariances, 4 series" ///
+        `=(e(k) != 10) + (e(nseries) != 4) + ("`: word 2 of `e(names)''" != "cov_EUR_GBP")' 0.5
+    cn_check, case(bekk_g2020_full) tol(1e-8) prefix(R_)
+    cn_bk, case(g2020_full) tol(1e-8)
+    cn_bkvirf, case(g2020_full_virf_q) tol(1e-8) time(2000) shock(EUR) quantile(0.05) horizon(10)
+    cn_bkvirf, case(g2020_full_virf_res) tol(1e-8) time(2000) residual horizon(10)
+    * identities: rows sum to 100; the sub-indices add up to the TCI
+    matrix `A' = e(fevd)
+    mata: st_local("d1", strofreal(max(abs(rowsum(st_matrix("`A'")) :- 100)), "%12.0g"))
+    matrix `S' = e(bekk_sub)
+    local d2 = abs(`S'[1, 1] + `S'[1, 2] + `S'[1, 3] + `S'[1, 4] - e(TCI)) + abs(`S'[1, 5] - (`S'[1, 3] - `S'[1, 4]))
+    cn_assert "BEKK: rows sum to 100" `d1' 1e-10
+    cn_assert "BEKK: sub-indices sum to the TCI" `d2' 1e-10
+    frame `e(frame)' {
+        tempvar dd
+        quietly generate double `dd' = abs(bekk_ovar + bekk_ocov + bekk_ccov + bekk_cvar - tci)
+        quietly summarize `dd'
+        local d3 = r(max)
+    }
+    cn_assert "BEKK: sub-indices sum to the TCI, every date" `d3' 1e-10
+    * Stata's own estimates against BEKKs'
+    * own estimation: for these returns the likelihood of the full BEKK has no interior
+    * maximum (it rises towards the stationarity boundary); reported as not converged
+    timer on 20
+    connectedness EUR GBP CHF JPY, model(bekk) horizon(5) `opt'
+    timer off 20
+    di as txt "  own estimates: log likelihood " %12.4f e(ll) " (BEKKs " %12.4f `RT'[3, 1] "), rho " %9.6f e(bekk_rho) ", converged " e(converged)
+    cn_assert "BEKK full g2020: no interior maximum reported" `=(e(converged) != 0) + (e(bekk_rho) < 0.999) + (e(ll) < `RT'[3, 1])' 0.5
+    * scalar BEKK = full BEKK with A = sqrt(a) I and G = sqrt(g) I (C of BEKKs' full
+    * BEKK, a = 0.05, g = 0.93)
+    mata: cn__a = st_matrix("`TH'"); st_matrix("`A'", (cn__a[(1..10)], 0.05, 0.93))
+    connectedness EUR GBP CHF JPY, model(bekk) bekk(scalar) horizon(5) bekkparams(`A') `opt'
+    matrix `F1' = e(fevd)
+    mata: cn__a = st_matrix("`A'"); cn__f = cn__a[(1..10)], vec(sqrt(cn__a[11])*I(4))', vec(sqrt(cn__a[12])*I(4))'; st_matrix("`B'", cn__f)
+    mata: mata drop cn__a cn__f
+    connectedness EUR GBP CHF JPY, model(bekk) horizon(5) bekkparams(`B') `opt'
+    matrix `F2' = e(fevd)
+    cn_assert "BEKK: scalar = full with scaled identity" `=mreldif(`F1', `F2')' 1e-10
+    * errors
+    cn_expect 198 connectedness EUR GBP CHF JPY, model(bekk) window(500) `opt'
+    cn_expect 198 connectedness EUR GBP CHF JPY, model(bekk) approach(frequency) `opt'
+    cn_expect 198 connectedness EUR GBP CHF JPY, model(bekk) bekk(triangular) `opt'
+    cn_expect 198 connectedness EUR GBP CHF JPY, model(bekk) kurtosis(t) `opt'
+    cn_expect 198 connectedness EUR GBP CHF JPY, model(bekk) bekkid(qr) `opt'
+    cn_expect 198 connectedness EUR GBP CHF JPY, bekk(diagonal) `opt'
+    cn_expect 503 connectedness EUR GBP CHF JPY, model(bekk) bekkparams(`S') `opt'
+    cn_expect 198 estat virf, time(2000)
+    cn_expect 198 estat virf, time(2000) shock(XYZ)
+    connectedness EUR GBP CHF JPY in 1/500, `opt'
+    cn_expect 198 estat virf, time(200) shock(EUR)
+
+    * diagonal BEKK, horizon 10, empirical kurtosis
+    cn_loadfx "fixtures/R_bekk_g2020_diag_theta.csv" `RT'
+    local np = colsof(`RT')
+    matrix `TH' = `RT'[1, 1..`np']
+    connectedness EUR GBP CHF JPY, model(bekk) bekk(diagonal) horizon(10) kurtosis(empirical) bekkparams(`TH') `opt'
+    cn_check, case(bekk_g2020_diag) tol(1e-8) prefix(R_)
+    cn_bk, case(g2020_diag) tol(1e-8)
+    cn_bkvirf, case(g2020_diag_virf_q) tol(1e-8) time(3000) shock(CHF) quantile(0.95) horizon(12)
+    connectedness EUR GBP CHF JPY, model(bekk) bekk(diagonal) horizon(10) kurtosis(empirical) `opt'
+    cn_bkmle, case(g2020_diag) tol(1e-6) label("BEKK diagonal: own est.")
+
+    * cgp2024: scalar BEKK with the Cholesky identification; full BEKK, horizon 10
+    use ../data/cn_cgp2024, clear
+    tsset t
+    cn_loadfx "fixtures/R_bekk_cgp2024_scalar_theta.csv" `RT'
+    local np = colsof(`RT')
+    matrix `TH' = `RT'[1, 1..`np']
+    connectedness GRE SOL WIN GEO, model(bekk) bekk(scalar) horizon(5) bekkid(cholesky) bekkparams(`TH') `opt'
+    cn_check, case(bekk_cgp2024_scalar) tol(1e-8) prefix(R_)
+    cn_bk, case(cgp2024_scalar) tol(1e-8)
+    cn_bkvirf, case(cgp2024_scalar_virf_q) tol(1e-8) time(1500) shock(SOL) quantile(0.05) horizon(10)
+    connectedness GRE SOL WIN GEO, model(bekk) bekk(scalar) horizon(5) bekkid(cholesky) `opt'
+    cn_bkmle, case(cgp2024_scalar) tol(1e-6) label("BEKK scalar cgp2024: own est.")
+    cn_loadfx "fixtures/R_bekk_cgp2024_full_theta.csv" `RT'
+    local np = colsof(`RT')
+    matrix `TH' = `RT'[1, 1..`np']
+    connectedness GRE SOL WIN GEO, model(bekk) horizon(10) bekkparams(`TH') `opt'
+    cn_check, case(bekk_cgp2024_full) tol(1e-8) prefix(R_)
+    cn_bk, case(cgp2024_full) tol(1e-8)
+    timer on 21
+    connectedness GRE SOL WIN GEO, model(bekk) horizon(10) `opt'
+    timer off 21
+    cn_bkmle, case(cgp2024_full) tol(1e-6) label("BEKK full cgp2024: own est.")
+}
+else di as txt "  R_bekk: no fixture, skipped"
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -1948,6 +2118,8 @@ di as txt "Timing: bootstrap, static, 80 draws:        " as res %6.1f r(t16) as 
 di as txt "Timing: bootstrap, 4 events, k = 19:        " as res %6.1f r(t17) as txt " s"
 di as txt "Timing: bootstrap of SAM, static, 80 draws: " as res %6.1f r(t18) as txt " s"
 di as txt "Timing: clusters, k = 19, 5,040 orderings: " as res %6.1f r(t19) as txt " s"
+di as txt "Timing: BEKK, full, k = 4, T = 4,200 (no maximum): " as res %6.1f r(t20) as txt " s"
+di as txt "Timing: BEKK, full, k = 4, T = 3,152:       " as res %6.1f r(t21) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

@@ -1,11 +1,12 @@
 {smcl}
-{* *! version 0.9.5  25oct2026}{...}
+{* *! version 0.10.0  25oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
 {viewerjumpto "estat correlation" "connectedness_postestimation##correlation"}{...}
 {viewerjumpto "estat bootstrap" "connectedness_postestimation##bootstrap"}{...}
 {viewerjumpto "estat clorder" "connectedness_postestimation##clorder"}{...}
+{viewerjumpto "estat virf" "connectedness_postestimation##virf"}{...}
 {viewerjumpto "Examples" "connectedness_postestimation##examples"}{...}
 {viewerjumpto "Stored results" "connectedness_postestimation##results"}{...}
 {viewerjumpto "References" "connectedness_postestimation##references"}{...}
@@ -31,6 +32,7 @@ internal and external connectedness{p_end}
 {synopt:{cmd:estat bootstrap}}bootstrap standard errors and bands, event probabilities and
 detection of significant rises (VAR models){p_end}
 {synopt:{cmd:estat clorder}}sensitivity of clustered connectedness to the cluster ordering{p_end}
+{synopt:{cmd:estat virf}}volatility impulse responses of a BEKK model{p_end}
 {synopt:{helpb cngraph}}graph the time-varying measures{p_end}
 {synopt:{helpb cnnetwork}}network plot of pairwise connectedness{p_end}
 {synopt:{helpb estimates}}cataloging estimation results{p_end}
@@ -334,6 +336,32 @@ Figures 12 to 14); {cmd:estat clorder} summarizes them over time ({cmd:r(time)})
 gives the period of the largest difference of each cluster.
 
 
+{marker virf}{...}
+{title:Syntax for estat virf}
+
+{p 8 16 2}
+{cmd:estat virf}{cmd:,} {opt t:ime(date)} {c -(}{opt sh:ock(series)} [{opt q:uantile(#)}] | {opt res:idual} | {opt shocks(numlist)}{c )-} [{opt h:orizon(#)} {opt fr:ame(name)} {opt replace} {opt dig:its(#)}]
+
+{pstd}
+{cmd:estat virf} gives the volatility impulse responses of Hafner and Herwartz (2006)
+after {cmd:connectedness} with {cmd:model(bekk)}, as the {cmd:virf()} function of the R
+package BEKKs: the response of the conditional variances and covariances,
+vech({bf:H}), at horizons 1 to {opt horizon()} (default 10) to a shock {bf:s} at the
+date {opt time()}, V_1 = {bf:A}~ vech({bf:H}^(1/2) ({bf:s}{bf:s}' - {bf:I})
+{bf:H}^(1/2)) and V_i = ({bf:A}~ + {bf:B}~) V_i-1, with {bf:H} the conditional
+covariance of that date (see {help connectedness##methods:Methods and formulas}).
+{opt time()} is a value of the time variable or a date such as {cmd:15sep2008}.
+
+{pstd}
+{opt shock(series)} sets the shock of that series to the {opt quantile()} quantile
+(default 0.05) of its standardized residuals, and those of the other series to zero;
+the standardized residuals are Cholesky-standardized, with the first one zero, as in
+BEKKs. {opt residual} uses the standardized residuals of the date, and
+{opt shocks(numlist)} a vector of k shocks. The responses are displayed and stored in
+{cmd:r(virf)}; {opt frame()} saves them, one observation per horizon. The confidence
+bands of BEKKs are not computed.
+
+
 {marker examples}{...}
 {title:Examples}
 
@@ -381,6 +409,13 @@ gives the period of the largest difference of each cluster.
 {phang2}{cmd:. connectedness US-TUR, lags(2) window(104) clusters("Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") datevar(date) replace}{p_end}
 {phang2}{cmd:. estat clorder}{p_end}
 {phang2}{cmd:. frame cn_results: tsline cl_dfl_*}{p_end}
+
+{pstd}Hafner and Herwartz (2006): volatility impulse responses of a BEKK model{p_end}
+{phang2}{cmd:. use cn_cgp2024, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness GRE SOL WIN GEO, model(bekk) horizon(5) datevar(date) replace}{p_end}
+{phang2}{cmd:. estat virf, time(16mar2020) shock(SOL) quantile(0.05) frame(cn_virf) replace}{p_end}
+{phang2}{cmd:. frame cn_virf: line virf_1 virf_5 virf_8 virf_10 h}{p_end}
 
 {pstd}Bootstrap bands for the spillover asymmetry measure of Baruník, Kočenda and Vácha (2016){p_end}
 {phang2}{cmd:. use cn_g2020, clear}{p_end}
@@ -479,6 +514,20 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 {synopt:{cmd:r(dfl)}}paired first-versus-last difference: mean, standard deviation, minimum, maximum and number of pairs (static results){p_end}
 {synopt:{cmd:r(time)}}mean, minimum and maximum over time of {cmd:cl_dfl_}{it:c} and mean of {cmd:cl_nsd_}{it:c} (rolling and TVP-VAR results){p_end}
 
+{pstd}
+{cmd:estat virf} stores the following in {cmd:r()}:
+
+{p2col 5 16 20 2: Scalars}{p_end}
+{synopt:{cmd:r(time)}}date of the shock{p_end}
+{synopt:{cmd:r(row)}}its observation in the estimation sample{p_end}
+
+{p2col 5 16 20 2: Macros}{p_end}
+{synopt:{cmd:r(frame)}}frame of the responses ({opt frame()}){p_end}
+
+{p2col 5 16 20 2: Matrices}{p_end}
+{synopt:{cmd:r(virf)}}responses, horizons x k(k+1)/2{p_end}
+{synopt:{cmd:r(shock)}}the shock, 1 x k{p_end}
+
 
 {marker references}{...}
 {title:References}
@@ -511,6 +560,11 @@ decomposition approach. {it:Economics Letters} 171: 63-71.
 Greenwood-Nimmo, M., E. Kočenda, and V. H. Nguyen. 2024. Detecting statistically
 significant changes in connectedness: A bootstrap-based technique.
 {it:Economic Modelling} 140: 106843.
+
+{phang}
+Hafner, C. M., and H. Herwartz. 2006. Volatility impulse responses for multivariate
+GARCH models: An exchange rate illustration. {it:Journal of International Money and
+Finance} 25: 719-740.
 
 {phang}
 Stenfors, A., I. Chatziantoniou, and D. Gabauer. 2022. Independent policy, dependent
