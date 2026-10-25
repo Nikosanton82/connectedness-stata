@@ -1512,6 +1512,157 @@ cn_assert "one cluster: cross = 0, within = TCI" `=abs(e(cl_cross)) + abs(e(cl_w
 connectedness SP500 R_10Y DJUBSCOM USDX, lags(2) clusters("a: SP500" "b: R_10Y" "c: DJUBSCOM" "d: USDX") `opt'
 cn_assert "singletons: within = 0, cross = TCI" `=abs(e(cl_within)) + abs(e(cl_cross) - e(TCI))' 1e-10
 
+di _n as txt "{hline 78}" _n "21. Bootstrap of the spillover asymmetry measure (0.9.4)" _n "{hline 78}"
+* Exact checks against the independent R implementation in test/r/make_fixtures_094.R,
+* which bootstraps the total, positive and negative VARs jointly (the same resampled
+* rows in every system, a draw discarded if any VAR is unstable): static SAM table,
+* rolling bands with positive() and negative(), event and detection probabilities of
+* SAM measures. Identities: point estimates against connectedness, bias correction of
+* the difference, the total system unchanged by the joint draws, and an exact mirror
+* case (negative = - positive), where every draw of the SAM is zero.
+capture confirm file "fixtures/R_sam_static_sam.csv"
+if !_rc {
+    use ../data/cn_g2020, clear
+    tsset t
+    local v EUR GBP CHF JPY
+    tempname IDX RT A Tb Sm Sp E E2
+    cn_loadidx "fixtures/R_boot_idx_sam_static.csv" `IDX'
+    connectedness `v' in 1/600, lags(2) horizon(10) asymmetric `opt'
+    local esam = e(SAM)
+    local etp  = e(TCI_pos)
+    local etn  = e(TCI_neg)
+    local etci = e(TCI)
+    timer on 18
+    quietly estat bootstrap, sam reps(40) level(90) testindices(`IDX') nodots
+    timer off 18
+    matrix `Tb' = r(table)
+    matrix `Sm' = r(sam)
+    matrix `Sp' = r(tci_parts)
+    local sp = r(sam_prob)
+    local nd = r(ndiscard)
+    cn_loadfx "fixtures/R_sam_static_tot.csv" `RT'
+    cn_assert "R_sam static, total system" `=mreldif(`Tb', `RT')' 1e-8
+    cn_loadfx "fixtures/R_sam_static_sam.csv" `RT'
+    cn_assert "R_sam static, SAM table" `=mreldif(`Sm', `RT')' 1e-8
+    cn_loadfx "fixtures/R_sam_static_parts.csv" `RT'
+    cn_assert "R_sam static, TCI of each part" `=mreldif(`Sp', `RT')' 1e-8
+    cn_assert "estimates = connectedness (SAM, TCI+, TCI-, TCI)" ///
+        `=abs(`Sm'[1, 1] - `esam') + abs(`Sp'[1, 1] - `etp') + abs(`Sp'[2, 1] - `etn') + abs(`Tb'[1, 1] - `etci')' 1e-10
+    cn_assert "bias and corrected SAM = differences of the parts" ///
+        `=abs(`Sm'[1, 2] - (`Sp'[1, 2] - `Sp'[2, 2])) + abs(`Sm'[1, 3] - (`Sp'[1, 3] - `Sp'[2, 3]))' 1e-10
+    mata: cn__S = st_matrix("`Sm'")
+    mata: st_local("d1", strofreal(abs(sum(cn__S[(2..5), 3]) - 4*cn__S[1, 3]) + abs(sum(cn__S[(6..9), 3]) - 4*cn__S[1, 3]) + abs(sum(cn__S[(10..13), 3])), "%12.0g"))
+    mata: st_local("d2", strofreal(max(abs(cn__S[(10..13), 3] - (cn__S[(2..5), 3] - cn__S[(6..9), 3]))), "%12.0g"))
+    mata: mata drop cn__S
+    cn_assert "SAM TO and FROM sum to k SAM; NET to zero" `d1' 1e-10
+    cn_assert "SAM NET = SAM TO - SAM FROM" `d2' 1e-10
+    cn_assert "r(sam_prob)" `=abs(`sp' - `Sm'[1, 7])' 1e-12
+    * the total system from the joint draws = its own bootstrap on the same rows (no
+    * draw discarded)
+    quietly estat bootstrap, reps(40) level(90) testindices(`IDX') nodots
+    matrix `A' = r(table)
+    cn_assert "total system: joint = alone (no discards)" `=cond(`nd' == 0 & r(ndiscard) == 0, mreldif(`A', `Tb'), 1)' 1e-12
+    * the same with positive() and negative() given as the parts
+    foreach x of local v {
+        quietly generate double p_`x' = max(`x', 0)
+        quietly generate double n_`x' = min(`x', 0)
+        quietly generate double m_`x' = -p_`x'
+    }
+    connectedness `v' in 1/600, lags(2) horizon(10) positive(p_*) negative(n_*) `opt'
+    quietly estat bootstrap, sam reps(40) level(90) testindices(`IDX') nodots
+    matrix `A' = r(sam)
+    cn_assert "positive()/negative() = asymmetric" `=mreldif(`A', `Sm')' 1e-12
+
+    * mirror case: the negative series is minus the positive series, so the two systems
+    * coincide up to sign and every draw of SAM and its TO, FROM and NET is zero
+    connectedness `v' in 1/400, lags(1) horizon(10) positive(p_*) negative(m_*) `opt'
+    quietly estat bootstrap, sam reps(30) seed(4) nodots
+    matrix `A' = r(sam)
+    matrix `A' = `A'[1..., 1..6]
+    mata: st_local("d1", strofreal(max(abs(st_matrix("`A'"))), "%12.0g"))
+    cn_assert "mirror: SAM bands exactly zero" `d1' 1e-10
+    matrix `A' = r(tci_parts)
+    matrix `E' = `A'[1, 1..6]
+    matrix `E2' = `A'[2, 1..6]
+    cn_assert "mirror: TCI+ = TCI-" `=mreldif(`E', `E2')' 1e-12
+    connectedness `v' in 1/500, lags(1) horizon(10) window(301) positive(p_*) negative(m_*) `opt'
+    quietly estat bootstrap, sam all reps(20) every(50) seed(4) frame(cn_btest) replace nodots
+    local ns = r(nsam)
+    frame cn_btest {
+        tempvar dd
+        quietly generate double `dd' = max(abs(sam), abs(sam_bc), abs(sam_lo), abs(sam_hi), ///
+            abs(sam_net_2_lo), abs(sam_to_4_hi), abs(sam_prob))
+        quietly summarize `dd'
+        local d1 = r(max)
+    }
+    cn_assert "mirror, rolling: SAM bands exactly zero" `d1' 1e-10
+    cn_assert "mirror, rolling: r(nsam)" `ns' 0.5
+
+    * rolling, positive() and negative(): squared returns and squared positive and
+    * negative returns
+    foreach x of local v {
+        quietly generate double rv_`x' = `x'^2
+        quietly generate double rp_`x' = cond(`x' > 0, `x'^2, 0)
+        quietly generate double rn_`x' = cond(`x' < 0, `x'^2, 0)
+    }
+    cn_loadidx "fixtures/R_boot_idx_sam_roll.csv" `IDX'
+    connectedness rv_* in 1/240, lags(1) horizon(10) window(201) positive(rp_*) negative(rn_*) `opt'
+    quietly estat bootstrap, sam all reps(25) testindices(`IDX') frame(cn_btest) replace nodots
+    frame cn_btest: mkmat tci-tci_hi sam-tci_neg_hi ndiscard stable, matrix(`A')
+    cn_loadfx "fixtures/R_sam_roll.csv" `RT'
+    cn_assert "R_sam rolling bands" `=mreldif(`A', `RT')' 1e-8
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) stat(sam) nodots
+    matrix `E' = r(prob)
+    local st `r(stat)'
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) ///
+        stat(sam net rv_CHF) reference(3) decrease nodots
+    matrix `E' = `E' \ r(prob)
+    local st2 `r(stat)'
+    quietly estat bootstrap, reps(25) testindices(`IDX') event(209) leads(0 1 5) ///
+        stat(sam to rv_EUR) nodots
+    matrix `E' = `E' \ r(prob)
+    cn_loadfx "fixtures/R_sam_roll_event.csv" `RT'
+    cn_assert "R_sam events, stat(sam)" `=mreldif(`E', `RT')' 1e-8
+    cn_assert "r(stat) with sam" `=("`st'" != "sam") + ("`st2'" != "sam net rv_CHF")' 0.5
+    quietly estat bootstrap, reps(25) testindices(`IDX') detect(0) stat(sam) ///
+        frame(cn_btest) replace nodots
+    frame cn_btest: mkmat prob, matrix(`E')
+    quietly estat bootstrap, reps(25) testindices(`IDX') detect(0) stat(sam from rv_GBP) ///
+        frame(cn_btest) replace nodots
+    frame cn_btest: mkmat prob, matrix(`E2')
+    matrix `E' = `E', `E2'
+    cn_loadfx "fixtures/R_sam_roll_detect.csv" `RT'
+    cn_assert "R_sam detect, stat(sam)" `=mreldif(`E', `RT')' 1e-8
+
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(sam) threshold(2)
+    cn_expect 198 estat bootstrap, reps(5) detect(2) stat(sam)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(sam level rv_EUR)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(sam net XYZ)
+    cn_expect 198 estat bootstrap, reps(5) event(209) stat(sam net)
+    capture frame drop cn_btest
+
+    * clustered and orthogonalized decompositions: estimates as connectedness, bias of
+    * the difference
+    foreach o in `"clusters("E: EUR GBP CHF" "J: JPY")"' orthogonalized {
+        connectedness `v' in 1/600, lags(2) asymmetric `o' `opt'
+        local esam = e(SAM)
+        capture noisily estat bootstrap, sam reps(10) seed(5) nodots
+        if !_rc {
+            matrix `Sm' = r(sam)
+            matrix `Sp' = r(tci_parts)
+            local d1 = abs(`Sm'[1, 1] - `esam') + abs(`Sm'[1, 3] - (`Sp'[1, 3] - `Sp'[2, 3]))
+        }
+        else local d1 = 1
+        gettoken o1 : o, parse("(")
+        cn_assert "`o1': SAM estimate and bias" `d1' 1e-10
+    }
+    use ../data/cn_dy2012, clear
+    tsset t
+    connectedness SP500 R_10Y DJUBSCOM USDX in 1/300, lags(2) `opt'
+    cn_expect 198 estat bootstrap, reps(5) sam
+}
+else di as txt "  R_sam: no fixture, skipped"
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -1531,6 +1682,7 @@ di as txt "Timing: adaptive LASSO, k = 4, 2 lags:      " as res %6.1f r(t14) as 
 di as txt "Timing: clusters, k = 18, 720 orderings:   " as res %6.1f r(t15) as txt " s"
 di as txt "Timing: bootstrap, static, 80 draws:        " as res %6.1f r(t16) as txt " s"
 di as txt "Timing: bootstrap, 4 events, k = 19:        " as res %6.1f r(t17) as txt " s"
+di as txt "Timing: bootstrap of SAM, static, 80 draws: " as res %6.1f r(t18) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

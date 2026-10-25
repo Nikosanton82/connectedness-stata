@@ -1,4 +1,4 @@
-*! version 0.9.2  24oct2026
+*! version 0.9.4  25oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -329,7 +329,7 @@ program define Bootstrap, rclass
         EVERY(integer 1) ALL EVENt(string) LEADs(numlist integer >=0) REFerence(integer 1) ///
         THReshold(real 0) DECrease DETect(real -1) CUToff(real 90) noDOTs ///
         DIGits(integer 2) TESTINDices(name) PAIRwise NPDC STat(string) PWFRame(name) ///
-        noTABle ]
+        noTABle SAM ]
 
     if "`e(model)'" != "var" | !inlist("`e(approach)'", "", "time") {
         di as err "estat bootstrap requires results of {cmd:connectedness} with model(var) and approach(time)"
@@ -403,13 +403,18 @@ program define Bootstrap, rclass
     local k   = e(k)
     local names `e(names)'
 
-    // measure tested by event() and detect(): stat(tci), stat(to|from|net name) or
-    // stat(pairwise|npdc name1 name2), from name1 to name2. Indices into
-    // cn_bootfull(): TCI, TO, FROM, NET, pairwise table and NPDC matrix by rows
+    // measure tested by event() and detect(): stat(tci), stat(to|from|net name),
+    // stat(pairwise|npdc name1 name2), from name1 to name2, or stat(sam) and
+    // stat(sam to|from|net name). Indices into cn_bootext(): TCI, TO, FROM, NET,
+    // pairwise table and NPDC matrix by rows (cn_bootfull(), lsam elements), then SAM,
+    // its TO, FROM and NET, and the TCI of the positive and of the negative system
+    local k2 = `k'*`k'
+    local lsam = 1 + 3*`k' + 2*`k2'
     local sidx 1
     local slab TCI
     local stype tci
     local snames
+    local ssam 0
     if `"`stat'"' != "" {
         if !`isev' & !`isdet' {
             di as err "stat() requires event() or detect()"
@@ -419,6 +424,18 @@ program define Bootstrap, rclass
         local snames : list retokenize snames
         local stype = lower("`stype'")
         if "`stype'" == "pw" local stype pairwise
+        // stat(sam [to|from|net name]): the measure of the spillover asymmetry
+        if "`stype'" == "sam" {
+            local ssam 1
+            gettoken stype snames : snames
+            local snames : list retokenize snames
+            local stype = lower("`stype'")
+            if "`stype'" == "" local stype tci
+            else if !inlist("`stype'", "to", "from", "net") {
+                di as err "stat(sam `stype'): only stat(sam) and stat(sam to|from|net name) are allowed"
+                exit 198
+            }
+        }
         local nn : word count `snames'
         local need = cond("`stype'" == "tci", 0, cond(inlist("`stype'", "to", "from", "net"), 1, ///
             cond(inlist("`stype'", "pairwise", "npdc"), 2, -1)))
@@ -467,12 +484,49 @@ program define Bootstrap, rclass
                 local slab "net spillover from `na' to `nb'"
             }
         }
-        if inlist("`stype'", "net", "npdc") & (`threshold' > 0 | `detect' > 0) {
+        if `ssam' {
+            local sidx = `lsam' + `sidx'
+            local slab = cond("`stype'" == "tci", "SAM", "SAM `slab'")
+            local stype sam `stype'
+            if "`stype'" == "sam tci" local stype sam
+        }
+        if (inlist("`stype'", "net", "npdc") | `ssam') & (`threshold' > 0 | `detect' > 0) {
             di as err "{p 0 0 2}threshold() and detect(#) with # > 0 are rises in percent, " ///
                 "not defined for stat(`stype'), which may be zero or negative; " ///
                 "use detect(0) for the probability of any rise{p_end}"
             exit 198
         }
+    }
+    // spillover asymmetry measure: the total, positive and negative systems are
+    // bootstrapped jointly, with the same resampled rows
+    local dosam = ("`sam'" != "" | `ssam')
+    if `dosam' & "`e(asymmetric)'" == "" {
+        di as err "{p 0 0 2}option sam and stat(sam) require results of {cmd:connectedness} " ///
+            "with asymmetric or positive() and negative(){p_end}"
+        exit 198
+    }
+    local nsys 1
+    if `dosam' {
+        if "`e(positive)'" != "" {
+            tsrevar `e(positive)'
+            local posvars `r(varlist)'
+            tsrevar `e(negative)'
+            local negvars `r(varlist)'
+        }
+        else {
+            // positive and negative parts of each series, as in connectedness
+            local posvars
+            local negvars
+            foreach v of local vars {
+                tempvar pv nv
+                quietly generate double `pv' = cond(missing(`v'), ., max(`v', 0)) if `touse'
+                quietly generate double `nv' = cond(missing(`v'), ., min(`v', 0)) if `touse'
+                local posvars `posvars' `pv'
+                local negvars `negvars' `nv'
+            }
+        }
+        local vars `vars' `posvars' `negvars'
+        local nsys 3
     }
 
     // decomposition: generalized (1), its scalar normalizations (2-4), clustered
@@ -585,14 +639,24 @@ program define Bootstrap, rclass
         mata: st_local("onp", strofreal(cols(cn__bsel) + 1))
         mata: cn__bsel = cn__bsel, (`=2+3*`k'+`k2''..`=1+3*`k'+2*`k2'')
     }
+    // SAM (offset osam), optionally its TO, FROM and NET, then the TCI of the positive
+    // and of the negative system
+    local osam 0
+    if `dosam' {
+        mata: st_local("osam", strofreal(cols(cn__bsel) + 1))
+        mata: cn__bsel = cn__bsel, `=`lsam'+1'
+        if `doall' mata: cn__bsel = cn__bsel, (`=`lsam'+2'..`=`lsam'+1+3*`k'')
+        mata: cn__bsel = cn__bsel, `=`lsam'+2+3*`k'', `=`lsam'+3+3*`k''
+    }
     mata: st_local("has", strofreal(anyof(cn__bsel, `sidx')))
     if !`has' mata: cn__bsel = cn__bsel, `sidx'
     mata: st_local("scol", strofreal(selectindex(cn__bsel :== `sidx')[1]))
     di as txt _n "Bootstrap of `nw' window(s), `reps' draws" ///
         cond(`dobias', " per round, two rounds (bias correction)", ", no bias correction") ///
+        cond(`dosam', ", total, positive and negative systems jointly", "") ///
         cond("`dots'" == "", ":", "")
     capture noisily mata: cn_bootstrap("`vars'", "`touse'", `p', `H', `w', `gen', `reps', ///
-        `dobias', cn__bsel, `scol', cn__bw, `level', ("`dots'" == ""))
+        `dobias', cn__bsel, `scol', cn__bw, `level', ("`dots'" == ""), `nsys')
     local rc = _rc
     capture mata: mata drop cn__bidx
     if `gen' == 5 capture mata: mata drop cn__clid cn__clperm
@@ -708,6 +772,48 @@ program define Bootstrap, rclass
                 return matrix `blk'_`s' = ``blk'_`s''
             }
         }
+        // spillover asymmetry measure: SAM, its TO, FROM and NET, with the
+        // probability that the measure is above zero; TCI of each part
+        if `osam' {
+            tempname Sm Sp
+            local o1 = `osam'
+            local o2 = `osam' + 3*`k'
+            mata: st_matrix("`Sm'", (cn__BP[1, (`o1'..`o2')]', cn__BB[1, (`o1'..`o2')]', ///
+                cn__BC[1, (`o1'..`o2')]', cn__BS[1, (`o1'..`o2')]', cn__BL[1, (`o1'..`o2')]', ///
+                cn__BU[1, (`o1'..`o2')]', cn__BZ[1, (`o1'..`o2')]'))
+            local o1 = `o2' + 1
+            local o2 = `o2' + 2
+            mata: st_matrix("`Sp'", (cn__BP[1, (`o1'..`o2')]', cn__BB[1, (`o1'..`o2')]', ///
+                cn__BC[1, (`o1'..`o2')]', cn__BS[1, (`o1'..`o2')]', cn__BL[1, (`o1'..`o2')]', ///
+                cn__BU[1, (`o1'..`o2')]'))
+            local rn SAM
+            foreach s in TO FROM NET {
+                forvalues i = 1/`k' {
+                    local nm : word `i' of `names'
+                    local nm = strtoname("`nm'")
+                    local rn `rn' `s':`nm'
+                }
+            }
+            matrix rownames `Sm' = `rn'
+            matrix colnames `Sm' = estimate bias corrected se lower upper prob
+            matrix rownames `Sp' = TCI_pos TCI_neg
+            matrix colnames `Sp' = estimate bias corrected se lower upper
+            di _n as txt "{p 0 0 2}Spillover asymmetry measure (percent): SAM = TCI of the positive " ///
+                "minus TCI of the negative system, and its TO, FROM and NET; prob: " ///
+                "probability (percent) that the measure is above zero{p_end}"
+            matlist `Sm', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(12)
+            forvalues r = 1/2 {
+                local pl = cond(`r' == 1, "positive", "negative")
+                local e1 = strtrim(string(`Sp'[`r', 3], "%`w2'.`digits'f"))
+                local e2 = strtrim(string(`Sp'[`r', 5], "%`w2'.`digits'f"))
+                local e3 = strtrim(string(`Sp'[`r', 6], "%`w2'.`digits'f"))
+                di as txt "TCI of the `pl' system, bias-corrected: " as res "`e1'" ///
+                    as txt ", `level'% interval [" as res "`e2'" as txt ", " as res "`e3'" as txt "]"
+            }
+            return scalar sam_prob = `Sm'[1, 7]
+            return matrix tci_parts = `Sp'
+            return matrix sam = `Sm'
+        }
     }
     // ------------------------------------------------------------ bands frame
     else {
@@ -750,6 +856,54 @@ program define Bootstrap, rclass
                 local ++j
                 mata: st_store(., st_addvar("double", ("`m'", "`m'_bias", "`m'_bc", "`m'_se", "`m'_lo", "`m'_hi")), (cn__BP[., `j'], cn__BB[., `j'], cn__BC[., `j'], cn__BS[., `j'], cn__BL[., `j'], cn__BU[., `j']))
             }
+            // spillover asymmetry measure, with the probability that it is above zero,
+            // and the TCI of each part
+            if `osam' {
+                local samn sam
+                if `doall' {
+                    foreach s in to from net {
+                        forvalues i = 1/`k' {
+                            local samn `samn' sam_`s'_`i'
+                        }
+                    }
+                }
+                local samn `samn' tci_pos tci_neg
+                local j = `osam' - 1
+                foreach m of local samn {
+                    local ++j
+                    mata: st_store(., st_addvar("double", ("`m'", "`m'_bias", "`m'_bc", "`m'_se", "`m'_lo", "`m'_hi")), (cn__BP[., `j'], cn__BB[., `j'], cn__BC[., `j'], cn__BS[., `j'], cn__BL[., `j'], cn__BU[., `j']))
+                    if substr("`m'", 1, 3) == "sam" mata: st_store(., st_addvar("double", "`m'_prob"), cn__BZ[., `j'])
+                }
+                local ml sam
+                if `doall' {
+                    forvalues i = 1/`k' {
+                        local nj : word `i' of `names'
+                        local ml `ml' sam_to_`i' sam_from_`i' sam_net_`i'
+                        local lb_sam_to_`i' "SAM: TO, `nj'"
+                        local lb_sam_from_`i' "SAM: FROM, `nj'"
+                        local lb_sam_net_`i' "SAM: NET, `nj'"
+                    }
+                }
+                local lb_sam "SAM"
+                foreach m of local ml {
+                    label variable `m' "`lb_`m'', estimate"
+                    label variable `m'_bias "`lb_`m'', bootstrap bias"
+                    label variable `m'_bc "`lb_`m'', bias-corrected"
+                    label variable `m'_se "`lb_`m'', bootstrap standard error"
+                    label variable `m'_lo "`lb_`m'', lower `level'% limit"
+                    label variable `m'_hi "`lb_`m'', upper `level'% limit"
+                    label variable `m'_prob "`lb_`m'', probability (%) above zero"
+                }
+                foreach m in pos neg {
+                    local pl = cond("`m'" == "pos", "positive", "negative")
+                    label variable tci_`m' "TCI of the `pl' system, estimate"
+                    label variable tci_`m'_bias "TCI of the `pl' system, bootstrap bias"
+                    label variable tci_`m'_bc "TCI of the `pl' system, bias-corrected"
+                    label variable tci_`m'_se "TCI of the `pl' system, bootstrap standard error"
+                    label variable tci_`m'_lo "TCI of the `pl' system, lower `level'% limit"
+                    label variable tci_`m'_hi "TCI of the `pl' system, upper `level'% limit"
+                }
+            }
             mata: st_store(., st_addvar("double", "ndiscard"), cn__BN)
             mata: st_store(., st_addvar("byte", "stable"), cn__BST)
             label variable stable "VAR of the window stable (0: estimates of the last stable window)"
@@ -782,6 +936,13 @@ program define Bootstrap, rclass
         di _n as txt "Bias-corrected TCI and `level'% bands saved in frame " as res "`frame'" ///
             as txt " (`nw' windows)"
         di as txt "Mean bootstrap bias of the TCI: " as res %6.`digits'f `mb'
+        if `osam' {
+            quietly frame `frame': count if (sam_lo > 0 & sam_lo < .) | sam_hi < 0
+            local nsam = r(N)
+            di as txt "{p 0 0 2}Windows whose `level'% interval of the SAM excludes zero: " ///
+                as res `nsam' as txt " of `nw'{p_end}"
+            return scalar nsam = `nsam'
+        }
         if `isdet' {
             local ofs = cond("`stype'" == "tci", "", " of the `slab'")
             di as txt "{p 0 0 2}Windows with a probability of at least `cutoff'% of a rise" ///
@@ -849,7 +1010,7 @@ program define Bootstrap, rclass
     return local bias = cond(`dobias', "corrected", "none")
     if `isev' | `isdet' return local stat = strtrim("`stype' `snames'")
     capture mata: mata drop cn__bsel
-    capture mata: mata drop cn__BP cn__BB cn__BC cn__BS cn__BL cn__BU cn__BD cn__BN cn__BST cn__btv cn__bdv cn__bw
+    capture mata: mata drop cn__BP cn__BB cn__BC cn__BS cn__BL cn__BU cn__BZ cn__BD cn__BN cn__BST cn__btv cn__bdv cn__bw
     capture mata: mata drop cn__bev cn__bl cn__bpos cn__P cn__i
 end
 

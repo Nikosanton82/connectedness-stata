@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.2  24oct2026}{...}
+{* *! version 0.9.4  25oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
@@ -159,12 +159,13 @@ covariances are available. {opt digits(#)} sets the number of decimals, default
 {synopt:{opt thr:eshold(#)}}probability of a change of at least {it:#} percent{p_end}
 {synopt:{opt dec:rease}}probability of a fall instead of a rise{p_end}
 {synopt:{opt det:ect(#)}}probability, for every window, of a rise of at least {it:#} percent from the previous window{p_end}
-{synopt:{opt st:at(measure)}}measure tested by {opt event()} and {opt detect()}: {cmd:tci} (default), {cmd:to} {it:name}, {cmd:from} {it:name}, {cmd:net} {it:name}, {cmd:pairwise} {it:name1 name2} or {cmd:npdc} {it:name1 name2}{p_end}
+{synopt:{opt st:at(measure)}}measure tested by {opt event()} and {opt detect()}: {cmd:tci} (default), {cmd:to} {it:name}, {cmd:from} {it:name}, {cmd:net} {it:name}, {cmd:pairwise} {it:name1 name2}, {cmd:npdc} {it:name1 name2}, {cmd:sam} or {cmd:sam} {cmd:to}|{cmd:from}|{cmd:net} {it:name}{p_end}
 {synopt:{opt cut:off(#)}}probability marked as significant; default {cmd:cutoff(90)}{p_end}
 {synopt:{opt every(#)}}bootstrap every {it:#}th window for the bands; default 1{p_end}
 {synopt:{opt all}}bands for TO, FROM and NET as well as the TCI{p_end}
 {synopt:{opt pair:wise}}bands for the pairwise connectedness table{p_end}
 {synopt:{opt npdc}}bands for net pairwise directional connectedness{p_end}
+{synopt:{opt sam}}bands for the spillover asymmetry measure (asymmetric results){p_end}
 {synopt:{opt pwfr:ame(name)}}frame for the pairwise bands; default {it:frame}{cmd:_pw}{p_end}
 {synopt:{opt notab:le}}do not display the pairwise and NPDC tables (static results){p_end}
 {synopt:{opt fr:ame(name)}}frame for the bands; default {cmd:cn_boot}{p_end}
@@ -252,6 +253,43 @@ can be zero or negative, rises in percent, {opt threshold()} and {opt detect(#)}
 with {it:#} > 0, are not allowed for them; {cmd:detect(0)} gives the probability of
 any rise.
 
+{pstd}
+{opt sam} gives bootstrap inference for the spillover asymmetry measure of Baruník,
+Kočenda and Vácha (2016), SAM = TCI+ - TCI-, the TCI of the positive system minus
+that of the negative system, after {cmd:connectedness} with {opt asymmetric} or
+{opt positive()} and {opt negative()}. The total, positive and negative systems are
+bootstrapped jointly: every draw resamples the same rows of the residuals of the
+three VARs, so that the draws keep the dependence between the systems, which share
+their shocks, and each system is rebuilt from its own initial values. A draw is
+discarded if any of the three VARs is unstable, and a window whose VAR is unstable
+takes, system by system, the estimates of the most recent window with a stable VAR.
+The bias of the SAM is the bias of the difference, the mean draw of TCI+ - TCI- minus
+the estimate, and the bias correction, standard error and interval are those of the
+other measures. {cmd:prob} is the probability (percent) that the measure is above
+zero, the share of the corrected draws, recentred as the interval, above zero: the
+interval at level {it:l} excludes zero when {cmd:prob} is above 50 + {it:l}/2 or below
+50 - {it:l}/2. Static results display and store ({cmd:r(sam)}) the table of SAM and its
+TO, FROM and NET (the differences of TO, FROM and NET between the positive and
+negative systems), with {cmd:prob}, and the TCI of each system ({cmd:r(tci_parts)}).
+Rolling results add to the frame {cmd:sam}, {cmd:sam_bias}, {cmd:sam_bc},
+{cmd:sam_se}, {cmd:sam_lo}, {cmd:sam_hi} and {cmd:sam_prob} (the same for
+{cmd:sam_to_}{it:i}, {cmd:sam_from_}{it:i} and {cmd:sam_net_}{it:i} with {opt all}),
+and {cmd:tci_pos} and {cmd:tci_neg} with their bands. The measures of the total system
+come from the same draws. {cmd:stat(sam)}, or {cmd:stat(sam net} {it:name}{cmd:)} and
+so on, applies {opt event()} and {opt detect()} to the SAM; as for NET, only
+{cmd:detect(0)} and no {opt threshold()} are allowed.
+
+{pstd}
+The joint bootstrap extends the procedure of Greenwood-Nimmo, Kočenda and Nguyen (2024)
+to the SAM. Baruník, Kočenda and Vácha (2016) judge the SAM against bands simulated
+from a model without asymmetry; {opt sam} instead resamples the residuals of the data
+at hand, window by window. A Monte Carlo study under a symmetric data generating
+process, where the SAM is zero, is in {cmd:docs/sam-coverage-v0.9.4.txt} of the
+package repository: with 500 observations the intervals of the SAM cover zero about as
+often as the intervals of the TCI of a correctly specified VAR cover the true TCI,
+slightly less than their nominal level (0.86 and 0.90 for 90% and 95% intervals), and
+the coverage improves with 1,000 observations (0.88 and 0.92).
+
 
 {marker examples}{...}
 {title:Examples}
@@ -290,6 +328,16 @@ any rise.
 {phang2}{cmd:. estat bootstrap, event(17oct1997 11sep2001 09aug2007) seed(1357) stat(npdc US JPN)}{p_end}
 {phang2}{cmd:. estat bootstrap, reps(200) every(20) seed(1357) pairwise npdc replace}{p_end}
 {phang2}{cmd:. frame cn_boot_pw: twoway (rarea npdc_lo npdc_hi date) (line npdc_bc date) if from == "US" & to == "JPN"}{p_end}
+
+{pstd}Bootstrap bands for the spillover asymmetry measure of Baruník, Kočenda and Vácha (2016){p_end}
+{phang2}{cmd:. use cn_g2020, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness EUR GBP CHF JPY in 1/1000, asymmetric lags(1) horizon(10) replace}{p_end}
+{phang2}{cmd:. estat bootstrap, sam reps(500) seed(2094)}{p_end}
+{phang2}{cmd:. connectedness EUR GBP CHF JPY, asymmetric lags(1) horizon(10) window(500) datevar(date) replace}{p_end}
+{phang2}{cmd:. estat bootstrap, sam reps(100) every(100) seed(2094)}{p_end}
+{phang2}{cmd:. frame cn_boot: twoway rarea sam_lo sam_hi date || line sam_bc date, yline(0)}{p_end}
+{phang2}{cmd:. estat bootstrap, event(15sep2008) stat(sam) reps(500) seed(2094)}{p_end}
 
 
 {marker results}{...}
@@ -343,6 +391,8 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 {synopt:{cmd:r(reference)}}{opt reference()} ({opt event()}){p_end}
 {synopt:{cmd:r(threshold)}}{opt threshold()} ({opt event()}){p_end}
 {synopt:{cmd:r(nflag)}}windows flagged ({opt detect()}){p_end}
+{synopt:{cmd:r(sam_prob)}}probability (percent) that the SAM is above zero ({opt sam}, static results){p_end}
+{synopt:{cmd:r(nsam)}}windows whose interval of the SAM excludes zero ({opt sam}, rolling results){p_end}
 
 {p2col 5 16 20 2: Macros}{p_end}
 {synopt:{cmd:r(bias)}}{cmd:corrected} or {cmd:none}{p_end}
@@ -356,11 +406,18 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 {synopt:{cmd:r(table)}}estimate, bias, bias-corrected estimate, standard error and interval of TCI, TO, FROM and NET (static results){p_end}
 {synopt:{cmd:r(pw_b)}}pairwise table, estimate, k x k ({opt pairwise}, static results); also {cmd:r(pw_bias)}, {cmd:r(pw_bc)}, {cmd:r(pw_se)}, {cmd:r(pw_lo)} and {cmd:r(pw_hi)}{p_end}
 {synopt:{cmd:r(npdc_b)}}NPDC matrix, estimate, k x k ({opt npdc}, static results); also {cmd:r(npdc_bias)}, {cmd:r(npdc_bc)}, {cmd:r(npdc_se)}, {cmd:r(npdc_lo)} and {cmd:r(npdc_hi)}{p_end}
+{synopt:{cmd:r(sam)}}estimate, bias, bias-corrected estimate, standard error, interval and probability above zero of SAM and its TO, FROM and NET ({opt sam}, static results){p_end}
+{synopt:{cmd:r(tci_parts)}}estimate, bias, bias-corrected estimate, standard error and interval of the TCI of the positive and negative systems ({opt sam}, static results){p_end}
 {synopt:{cmd:r(prob)}}event probabilities (percent), events x leads ({opt event()}){p_end}
 
 
 {marker references}{...}
 {title:References}
+
+{phang}
+Baruník, J., E. Kočenda, and L. Vácha. 2016. Asymmetric connectedness on the U.S.
+stock market: Bad and good volatility spillovers. {it:Journal of Financial Markets}
+27: 55-78.
 
 {phang}
 Chatziantoniou, I., A. H. Elsayed, D. Gabauer, and G. Gozgor. 2023. Oil price shocks and

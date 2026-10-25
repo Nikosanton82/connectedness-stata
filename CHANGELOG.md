@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.9.4 (2026-10-25)
+- `estat bootstrap, sam`: bootstrap inference for the spillover asymmetry measure of
+  Baruník, Kočenda and Vácha (2016), SAM = TCI+ - TCI-, and its TO, FROM and NET,
+  after `connectedness` with `asymmetric` or `positive()` and `negative()` (VAR,
+  static or rolling, generalized or orthogonalized, with `normalize()` or
+  `clusters()`). The total, positive and negative systems are bootstrapped jointly,
+  extending Greenwood-Nimmo, Kočenda and Nguyen (2024): every draw resamples the same
+  rows of the residuals of the three VARs, each system is rebuilt from its own initial
+  values, and a draw is discarded if any of the three VARs is unstable; a window whose
+  VAR is unstable takes, system by system, the estimates of the last stable window.
+  The bias is that of the difference. Static results display and store `r(sam)`
+  (estimate, bias, bias-corrected estimate, standard error, interval and `prob`, the
+  probability that the measure is above zero) and `r(tci_parts)` (TCI of each
+  system), and `r(sam_prob)`; rolling results add `sam`, `sam_bias`, `sam_bc`,
+  `sam_se`, `sam_lo`, `sam_hi`, `sam_prob` (and the same for `sam_to_i`, `sam_from_i`
+  and `sam_net_i` with `all`) and `tci_pos` and `tci_neg` with their bands to the
+  bands frame, and `r(nsam)`, the windows whose interval excludes zero. The total
+  system's measures come from the same draws and equal its own bootstrap when no draw
+  is discarded.
+- `stat(sam)` and `stat(sam to|from|net name)` apply `event()` and `detect()` to the
+  SAM measures (as for NET, only `detect(0)` and no `threshold()`).
+- Baruník, Kočenda and Vácha (2016) judge the SAM against bands simulated from a
+  model without asymmetry; `sam` instead resamples the residuals of the data at hand.
+- Validation: `test/r/make_fixtures_094.R` extends the independent R bootstrap of
+  0.9.1 and 0.9.2 to three systems on shared resampled rows, with the measures of
+  ConnectednessApproach's TimeConnectedness() (and an own generalized decomposition,
+  equal to 4e-14). Stata agrees with R to 2e-13 for the static SAM table and the TCI
+  of each part, the rolling bands with `positive()` and `negative()`, and the event
+  and detection probabilities of `stat(sam ...)`. In a mirror case (negative =
+  - positive) every draw of the SAM is exactly zero, which checks that the systems
+  share their draws. A Monte Carlo study under a symmetric data generating process,
+  where the SAM is zero (`test/r/sam_coverage_094.R`,
+  `docs/sam-coverage-v0.9.4.txt`), gives coverage of zero by the 90% and 95% intervals
+  of the SAM of 0.86 and 0.90 with T = 500, close to that of the TCI intervals of the
+  correctly specified total system (0.85 and 0.91), and 0.88 and 0.92 with T = 1000
+  (TCI: 0.89 and 0.95). 319 of 319 certification tests pass in Stata 19
+  (`docs/certification-log-v0.9.4.txt`).
+
 ## 0.9.3 (2026-10-25)
 - Clustered connectedness aligned with the published version of Buchwalter, Diebold
   and Yilmaz (2026a, *Journal of Econometrics*, doi:10.1016/j.jeconom.2026.106243),

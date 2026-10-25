@@ -1,0 +1,61 @@
+Monte Carlo coverage of the bootstrap intervals of the spillover asymmetry measure
+(connectedness 0.9.4, estat bootstrap, sam). Produced by test/r/sam_coverage_094.R,
+an independent R implementation of the joint bootstrap (own generalized
+decomposition), on 25 October 2026:
+    Rscript sam_coverage_094.R 500 2 500
+    Rscript sam_coverage_094.R 300 2 1000
+
+Design. Gaussian VAR(1), k = 3, no intercept, B = 0.3 I + 0.1 (J - I), residual
+correlations 0.4. The positive and negative parts are max(x, 0) and min(x, 0). Since
+the process is symmetric, -min(x, 0) = max(-x, 0) has the distribution of max(x, 0),
+and connectedness is unchanged when every series changes sign, so the SAM and its
+TO, FROM and NET are zero. Bootstrap as in estat bootstrap: VAR(1) with intercept,
+horizon 10, 199 draws per round, two rounds (bias correction), percentile intervals
+recentred on the bias-corrected estimate. The last row (TCI) is a benchmark: the TCI
+of the total system, a correctly specified VAR, against its population value.
+
+Reading. With T = 500 the intervals of the SAM measures cover zero about as often as
+the TCI intervals of the correctly specified total system cover the true TCI (0.86
+against 0.85 at 90%, 0.90 against 0.91 at 95%): the joint bootstrap carries over the
+small-sample behaviour of the Greenwood-Nimmo, Kocenda and Nguyen (2024) procedure to
+the SAM, which slightly undercovers. With T = 1000 the TCI intervals reach their
+nominal levels (0.89 and 0.95) and those of the SAM improve (0.88 and 0.92), with a
+remaining shortfall of one to three points; the positive and negative parts are not
+linear VARs, so their iid residual resampling is an approximation. The estimates of
+the SAM measures centre on zero, as they should.
+
+=== T = 500, M = 500 ===
+SAM bootstrap coverage under a symmetric DGP: M = 500 samples, T = 500, k = 3, R = 199 per round
+measure    cover90   cover95    mean est     mean bc
+(TCI: the total system, against its population value 30.1775)
+SAM          0.860     0.902      0.0554      0.0837
+TO_1         0.868     0.908      0.2050      0.2115
+TO_2         0.864     0.914      0.1210      0.1881
+TO_3         0.878     0.930     -0.1597     -0.1484
+FROM_1       0.874     0.922      0.0448      0.0758
+FROM_2       0.846     0.898      0.0473      0.0655
+FROM_3       0.860     0.922      0.0742      0.1098
+NET_1        0.856     0.920      0.1602      0.1356
+NET_2        0.882     0.938      0.0736      0.1227
+NET_3        0.842     0.912     -0.2339     -0.2583
+TCI          0.854     0.910     29.9851     29.9145
+Monte Carlo standard error of a coverage of 0.90: 0.013; of 0.95: 0.010
+time: 12.21937 mins 
+
+=== T = 1000, M = 300 ===
+SAM bootstrap coverage under a symmetric DGP: M = 300 samples, T = 1000, k = 3, R = 199 per round
+measure    cover90   cover95    mean est     mean bc
+(TCI: the total system, against its population value 30.1775)
+SAM          0.877     0.917      0.1970      0.2024
+TO_1         0.863     0.933      0.1796      0.1753
+TO_2         0.877     0.917      0.1206      0.1267
+TO_3         0.863     0.913      0.2909      0.3052
+FROM_1       0.877     0.923      0.2076      0.2103
+FROM_2       0.883     0.913      0.2839      0.2884
+FROM_3       0.870     0.933      0.0997      0.1083
+NET_1        0.850     0.890     -0.0279     -0.0350
+NET_2        0.880     0.923     -0.1632     -0.1618
+NET_3        0.830     0.917      0.1911      0.1968
+TCI          0.890     0.950     30.2499     30.2223
+Monte Carlo standard error of a coverage of 0.90: 0.017; of 0.95: 0.013
+time: 12.13358 mins 

@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.3  25oct2026}{...}
+{* *! version 0.9.4  25oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -767,7 +767,9 @@ cluster (2026a, Fig. 6); the two can differ in sign when clusters differ in size
 {pstd}
 {it:Spillover asymmetry.} With TCI+ and TCI- the total connectedness of the
 positive and negative systems, SAM = TCI+ - TCI- (Baruník, Kočenda and Vácha 2016),
-and the directional versions are the differences of TO, FROM and NET.
+and the directional versions are the differences of TO, FROM and NET. With
+{cmd:model(var)}, {helpb connectedness_postestimation##bootstrap:estat bootstrap, sam}
+gives bootstrap bands for the SAM from a joint bootstrap of the three systems.
 
 {pstd}
 {it:Frequency.} Let {bf:Psi}(w) = sum_{h=0}^{H} {bf:A}_h exp(-i w h) at the
