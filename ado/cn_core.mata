@@ -1,4 +1,4 @@
-*! version 0.9.4  25oct2026
+*! version 0.9.5  25oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -758,20 +758,24 @@ real matrix cn_fevd(real matrix B, real matrix S, real scalar H, real scalar gen
     return(num :/ den)
 }
 
-// Clustered identification (Buchwalter, Diebold and Yilmaz 2025): shocks correlated
+// Clustered identification (Buchwalter, Diebold and Yilmaz 2026a): shocks correlated
 // within clusters and orthogonal across them. For each cluster ordering (rows of
 // cn__clperm; cn__clid gives the cluster of each variable), the residuals are
 // projected sequentially on the earlier clusters, u = Q eps with Q block unit lower
 // triangular and V(eps) = Omega block diagonal; the decomposition
 // omega_jj^-1 sum_h (A_h Q Omega)_ij^2 / sum_h (A_h Sigma A_h')_ii is normalized by
-// row and averaged over the orderings. PS holds A_0, ..., A_H-1 side by side.
+// row and averaged over the orderings. PS holds A_0, ..., A_H-1 side by side. The
+// net connectedness of every cluster in the cluster table of each ordering
+// (Buchwalter, Diebold and Yilmaz 2026b, eq. 2), in percent, is left in the external
+// cn__clnet (orderings x clusters). With cn__clsco = 1 the identification is instead
+// simultaneous (cn_scovd()).
 real matrix cn_clustvd(real matrix PS, real matrix S, real scalar H)
 {
     external real colvector cn__clid
-    external real matrix    cn__clperm
+    external real matrix    cn__clperm, cn__clsco, cn__clnet
     real scalar    k, np, C, r, c, h
     real colvector idx, pv, b, den, om
-    real matrix    F, Sp, Qi, Op, M, num, P, W
+    real matrix    F, Sp, Qi, Op, M, num, P, W, G
 
     k   = rows(S)
     C   = cols(cn__clperm)
@@ -781,6 +785,11 @@ real matrix cn_clustvd(real matrix PS, real matrix S, real scalar H)
         P   = PS[|1, h*k+1 \ k, (h+1)*k|]
         den = den + diagonal(P*S*P')
     }
+    if (rows(cn__clsco) > 0) {
+        if (cn__clsco[1, 1] == 1) return(cn_scovd(PS, S, H, den))
+    }
+    G = J(k, 1, 1..C) :== J(1, C, cn__clid)
+    cn__clnet = J(np, C, .)
     F = J(k, k, 0)
     for (r=1; r<=np; r++) {
         idx = J(0, 1, .)
@@ -803,9 +812,120 @@ real matrix cn_clustvd(real matrix PS, real matrix S, real scalar H)
             num = num + (PS[|1, h*k+1 \ k, (h+1)*k|]*M):^2
         }
         W = (num :/ om') :/ den
-        F = F + W :/ rowsum(W)
+        W = W :/ rowsum(W)
+        F = F + W
+        cn__clnet[r, .] = cn_cltnet(100*W, G)
     }
     return(F / np)
+}
+
+// Net connectedness of each cluster in the cluster table of a decomposition ct
+// (percent), G the k x C indicator of the clusters: T[c,d] = (1/N_c) sum_{i in c}
+// sum_{j in d} ct_ij, NET_c = sum_{d != c} T[d,c] - sum_{d != c} T[c,d]
+real rowvector cn_cltnet(real matrix ct, real matrix G)
+{
+    real matrix    T
+    real rowvector dg
+
+    T  = (G'*ct*G) :/ colsum(G)'
+    dg = diagonal(T)'
+    return((colsum(T) - dg) - (rowsum(T)' - dg))
+}
+
+// Simultaneous clustered orthogonalization (Buchwalter, Diebold and Yilmaz 2026c):
+// Q^-1 = D_C R1^-1/2 (R1^1/2 R_C R1^1/2)^1/2 R1^-1/2 D1^-1, with R1 the correlation
+// matrix of the residuals, D1 their standard deviations and R_C the within-cluster
+// part of R1 (cross-cluster correlations set to zero). The scaling D_C cancels in the
+// decomposition, which is omega_jj^-1 sum_h (A_h Q Omega)_ij^2 / den_i =
+// sum_h (A_h D1 Z^-1 R_C)_ij^2 / den_i with Z^-1 = R1^1/2 (R1^1/2 R_C R1^1/2)^-1/2
+// R1^1/2, normalized by row. One cluster gives the generalized decomposition, one
+// variable per cluster the full simultaneous orthogonalization of Francis, Hansen and
+// Tong.
+real matrix cn_scovd(real matrix PS, real matrix S, real scalar H, real colvector den)
+{
+    external real colvector cn__clid
+    real scalar    k, h
+    real colvector d
+    real matrix    R1, RC, Zi, M, num, W
+
+    k   = rows(S)
+    d   = sqrt(diagonal(S))
+    R1  = S :/ (d*d')
+    RC  = R1 :* (J(1, k, cn__clid) :== J(k, 1, cn__clid'))
+    Zi  = cn_scozinv(R1, RC)
+    M   = (d :* Zi) * RC
+    num = J(k, k, 0)
+    for (h=0; h<H; h++) {
+        num = num + (PS[|1, h*k+1 \ k, (h+1)*k|]*M):^2
+    }
+    W = num :/ den
+    return(W :/ rowsum(W))
+}
+
+// Z^-1 of simultaneous clustered orthogonalization, with Z the symmetric positive
+// definite solution of Z R1 Z = RC
+real matrix cn_scozinv(real matrix R1, real matrix RC)
+{
+    real matrix    V, A, Rh, Mx
+    real rowvector L
+
+    symeigensystem((R1 + R1')/2, V, L)
+    Rh = (V :* sqrt(L)) * V'
+    Mx = Rh*RC*Rh
+    symeigensystem((Mx + Mx')/2, A, L)
+    return(Rh * ((A :* (1 :/ sqrt(L))) * A') * Rh)
+}
+
+// Pairs of orderings for the first-versus-last diagnostic of Buchwalter, Diebold and
+// Yilmaz (2026b, eq. 4): for each cluster c that is permuted (all but the first nfix
+// clusters of every ordering, the control cluster), the rows of perm with c in the
+// first permuted position and with c last, matched on the relative order of the other
+// clusters. Columns c and C + c hold the two rows of each pair (missing for clusters
+// that are not permuted); one row per pair, (C - nfix - 1)! rows.
+real matrix cn_clpairs(real matrix perm, real scalar nfix)
+{
+    real scalar    C, c, f, np
+    real colvector rf, rl, wf, wl
+    real rowvector w
+    real matrix    P
+
+    C  = cols(perm)
+    f  = nfix + 1
+    if (C - nfix < 2) return(J(0, 2*C, .))
+    np = round(exp(lnfactorial(C - nfix - 1)))
+    P  = J(np, 2*C, .)
+    w  = (C+1):^(0..(C - f - 1))
+    for (c=1; c<=C; c++) {
+        rf = selectindex(perm[., f] :== c)
+        rl = selectindex(perm[., C] :== c)
+        if (rows(rf) == 0) continue
+        wf = perm[rf, ((f+1)..C)] * w'
+        wl = perm[rl, (f..(C-1))] * w'
+        P[., c]     = rf[order(wf, 1)]
+        P[., C + c] = rl[order(wl, 1)]
+    }
+    return(P)
+}
+
+// Ordering diagnostics of a period from cn__clnet: for each cluster, the mean paired
+// first-versus-last difference in net connectedness and the standard deviation of net
+// connectedness over the orderings
+real rowvector cn_clordsum()
+{
+    external real matrix cn__clnet, cn__clpairs
+    real scalar    C, c
+    real rowvector dfl, nsd
+
+    C   = cols(cn__clnet)
+    dfl = J(1, C, .)
+    nsd = J(1, C, .)
+    for (c=1; c<=C; c++) {
+        if (!missing(cn__clpairs[1, c])) {
+            dfl[c] = mean(cn__clnet[cn__clpairs[., c], c] - cn__clnet[cn__clpairs[., C+c], c])
+        }
+        nsd[c] = sqrt(variance(cn__clnet[., c]))
+    }
+    return((dfl, nsd))
 }
 
 // All orderings of 1, ..., C, one per row
@@ -890,6 +1010,135 @@ string rowvector cn_clnames(real scalar C)
     }
     nm = nm, ("cl_within", "cl_cross"), ("cl_tto_" :+ s), ("cl_tnet_" :+ s)
     return(nm)
+}
+
+// Column means, each over the nonmissing values of its column (missing if none)
+real rowvector cn_colmeanm(real matrix X)
+{
+    real scalar    j
+    real rowvector m
+    real colvector x
+
+    m = J(1, cols(X), .)
+    for (j=1; j<=cols(X); j++) {
+        x = select(X[., j], X[., j] :< .)
+        if (rows(x) > 0) m[j] = mean(x)
+    }
+    return(m)
+}
+
+// Orderings (rows) from the positions of the clusters in each ordering
+real matrix cn_clpermof(real matrix pos)
+{
+    real scalar r, c
+    real matrix perm
+
+    perm = J(rows(pos), cols(pos), .)
+    for (r=1; r<=rows(pos); r++) {
+        for (c=1; c<=cols(pos); c++) perm[r, pos[r, c]] = c
+    }
+    return(perm)
+}
+
+// Ordering diagnostics of estat clorder from the positions (pos) and net connectedness
+// (net) of the clusters under every ordering, the first nfix clusters fixed: to Stata
+// matrices Nname (C x 4: mean, sd, min, max of net over the orderings), Pname
+// (permuted clusters x positions: mean net by position) and Dname (permuted clusters
+// x 5: mean, sd, min and max of the paired first-versus-last difference, pairs)
+void cn_clorddiag(real matrix pos, real matrix net, real scalar nfix, string scalar Nname,
+                  string scalar Pname, string scalar Dname)
+{
+    real scalar    C, Cp, c, p
+    real matrix    pairs, P, D
+    real colvector d
+
+    C  = cols(net)
+    Cp = C - nfix
+    pairs = cn_clpairs(cn_clpermof(pos), nfix)
+    P = J(Cp, Cp, .)
+    D = J(Cp, 5, .)
+    for (c=nfix+1; c<=C; c++) {
+        for (p=1; p<=Cp; p++) P[c-nfix, p] = mean(select(net[., c], pos[., c] :== nfix + p))
+        d = net[pairs[., c], c] - net[pairs[., C+c], c]
+        D[c-nfix, .] = (mean(d), (rows(d) > 1 ? sqrt(variance(d)) : .), min(d), max(d), rows(d))
+    }
+    st_matrix(Nname, (mean(net)', sqrt(diagonal(variance(net))), colmin(net)', colmax(net)'))
+    st_matrix(Pname, P)
+    st_matrix(Dname, D)
+}
+
+// Long frame of estat clorder, frame(): one observation per ordering and cluster with
+// the position, the net connectedness and, on the observations with the cluster in
+// the first permuted position, the paired first-versus-last difference
+void cn_clordlong(real matrix pos, real matrix net, real scalar nfix, string rowvector names)
+{
+    real scalar    np, C, c
+    real matrix    pairs, dfl
+    real colvector o, cc
+
+    np = rows(net)
+    C  = cols(net)
+    pairs = cn_clpairs(cn_clpermof(pos), nfix)
+    dfl = J(np, C, .)
+    for (c=nfix+1; c<=C; c++) {
+        dfl[pairs[., c], c] = net[pairs[., c], c] - net[pairs[., C+c], c]
+    }
+    o  = (1::np) # J(C, 1, 1)
+    cc = J(np, 1, (1::C))
+    st_addobs(np*C)
+    st_store(., st_addvar("long", "ordering"), o)
+    (void) st_addvar(max(strlen(names)), "cluster")
+    st_sstore(., "cluster", (names')[cc])
+    st_store(., st_addvar("byte", "position"), vec(pos'))
+    st_store(., st_addvar("double", ("net", "dfl")), (vec(net'), vec(dfl')))
+}
+
+// Adds the ordering diagnostics of every period (cn__CLS) to the current frame:
+// cl_dfl_c, the mean paired first-versus-last difference in net connectedness, and
+// cl_nsd_c, the standard deviation of net connectedness over the orderings
+void cn_postclord(string scalar cnames)
+{
+    external real matrix cn__CLS
+    real scalar      C, c
+    string rowvector cn, nm, s
+
+    cn = tokens(cnames)
+    C  = cols(cn)
+    s  = strofreal(1..C)
+    nm = ("cl_dfl_" :+ s), ("cl_nsd_" :+ s)
+    (void) st_addvar("double", nm)
+    st_store(., nm, cn__CLS)
+    for (c=1; c<=C; c++) {
+        st_varlabel(nm[c], substr("First-vs-last net difference, " + cn[c], 1, 80))
+        st_varlabel(nm[C+c], substr("Net, s.d. over orderings, " + cn[c], 1, 80))
+    }
+}
+
+// Fills the current (empty) frame with the net connectedness of each cluster under
+// every ordering (cn__clnet, cn__clperm): ordering, pos_c (position of cluster c in
+// the ordering) and net_c
+void cn_postclordframe(string scalar cnames)
+{
+    external real matrix cn__clnet, cn__clperm
+    real scalar      C, c, np
+    real matrix      pos
+    string rowvector cn, s
+
+    cn = tokens(cnames)
+    C  = cols(cn)
+    np = rows(cn__clperm)
+    s  = strofreal(1..C)
+    pos = J(np, C, .)
+    for (c=1; c<=C; c++) pos[., c] = rowsum((cn__clperm :== c) :* (1..C))
+    st_addobs(np)
+    st_store(., st_addvar("long", "ordering"), (1::np))
+    st_store(., st_addvar("byte", "pos_" :+ s), pos)
+    st_store(., st_addvar("double", "net_" :+ s), cn__clnet)
+    st_varlabel("ordering", "cluster ordering")
+    for (c=1; c<=C; c++) {
+        st_varlabel("pos_" + s[c], substr("Position in the ordering, " + cn[c], 1, 80))
+        st_varlabel("net_" + s[c], substr("Net connectedness (cluster table), " + cn[c], 1, 80))
+    }
 }
 
 // Adds the cluster measures of every period (rows of cn__CT) to the current frame
@@ -2158,7 +2407,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
              string scalar foldmode, real scalar stdz, string scalar dccfix,
              real scalar adapt)
 {
-    external real matrix   cn__M, cn__CT, cn__Q
+    external real matrix   cn__M, cn__CT, cn__Q, cn__CLS, cn__clpairs, cn__clperm
     external real colvector cn__tv, cn__dv
     external string rowvector cn__mn, cn__ml, cn__fn, cn__fl
     struct cn_prior scalar pr
@@ -2272,6 +2521,9 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
 
     cn__CT = J(nT, kk*(nb+1), .)
     cn__M  = J(nT, cols(cn__mn), .)
+    // ordering diagnostics of clustered identification averaged over orderings
+    if (gen == 5 & rows(cn__clpairs) > 0) cn__CLS = J(nT, 2*cols(cn__clperm), .)
+    else cn__CLS = J(0, 0, .)
     tabsum = J(k+3, k+1, 0)
     for (t=1; t<=nT; t++) {
         if (approach=="r2" & model!="dccgarch") {
@@ -2319,6 +2571,7 @@ void cn_main(string scalar vars, string scalar touse, string scalar tvar,
                 else                      ct = 100 * cn_fevd(B, Q, H, gen)
                 m  = cn_measures(ct)
                 cv = rowshape(ct, 1)
+                if (rows(cn__CLS) > 0) cn__CLS[t, .] = cn_clordsum()
             }
         }
         // pairwise influence is undefined (missing) when both shares of a pair are zero

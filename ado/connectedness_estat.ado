@@ -1,4 +1,4 @@
-*! version 0.9.4  25oct2026
+*! version 0.9.5  25oct2026
 *! postestimation statistics after -connectedness-
 program define connectedness_estat
     version 16.1
@@ -16,6 +16,9 @@ program define connectedness_estat
     }
     else if `lsub' >= 4 & "`sub'" == substr("bootstrap", 1, `lsub') {
         Bootstrap `rest'
+    }
+    else if `lsub' >= 4 & "`sub'" == substr("clorder", 1, `lsub') {
+        Clorder `rest'
     }
     else {
         estat_default `0'
@@ -540,8 +543,15 @@ program define Bootstrap, rclass
         tempname cid
         matrix `cid' = e(cl_id)
         mata: cn__clid = st_matrix("`cid'")'
-        if "`e(clorder)'" == "average" mata: cn__clperm = cn_perms(`=e(nclusters)')
-        else mata: cn__clperm = (1..`=e(nclusters)')
+        local ncl = e(nclusters)
+        local nctl = (e(cl_ncontrols) == 1)
+        if "`e(clorder)'" == "average" {
+            if `nctl' mata: cn__clperm = J(round(exp(lnfactorial(`ncl' - 1))), 1, 1), (cn_perms(`ncl' - 1) :+ 1)
+            else mata: cn__clperm = cn_perms(`ncl')
+        }
+        else mata: cn__clperm = (1..`ncl')
+        mata: cn__clsco = J(1, 1, ("`e(clorder)'" == "simultaneous"))
+        mata: cn__clpairs = J(0, 0, .)
     }
     capture mata: mata describe cn_bootstrap()
     if _rc {
@@ -659,7 +669,7 @@ program define Bootstrap, rclass
         `dobias', cn__bsel, `scol', cn__bw, `level', ("`dots'" == ""), `nsys')
     local rc = _rc
     capture mata: mata drop cn__bidx
-    if `gen' == 5 capture mata: mata drop cn__clid cn__clperm
+    if `gen' == 5 capture mata: mata drop cn__clid cn__clperm cn__clsco cn__clpairs cn__clnet
     if `rc' exit `rc'
     mata: st_local("ndisc", strofreal(sum(cn__BN)))
     mata: st_local("ncarry", strofreal(sum(cn__BST :== 0)))
@@ -1012,6 +1022,173 @@ program define Bootstrap, rclass
     capture mata: mata drop cn__bsel
     capture mata: mata drop cn__BP cn__BB cn__BC cn__BS cn__BL cn__BU cn__BZ cn__BD cn__BN cn__BST cn__btv cn__bdv cn__bw
     capture mata: mata drop cn__bev cn__bl cn__bpos cn__P cn__i
+end
+
+// Ordering sensitivity of clustered identification (Buchwalter, Diebold and Yilmaz
+// 2026b, Section 2.5): distribution of the net connectedness of each cluster (cluster
+// table, eq. 2) over the orderings, its mean by position, and the paired
+// first-versus-last difference (eq. 4), holding the relative order of the other
+// clusters fixed; for rolling and TVP-VAR results, the series of the mean paired
+// difference and of the dispersion over the orderings
+program define Clorder, rclass
+    syntax [, FRame(name) REPLACE DIGits(integer 2) ]
+
+    if "`e(clusters)'" == "" {
+        di as err "estat clorder requires results of {cmd:connectedness} with clusters()"
+        exit 198
+    }
+    if "`e(clorder)'" == "simultaneous" {
+        di as err "{p 0 0 2}clorder(simultaneous) does not depend on the cluster ordering; " ///
+            "there is no ordering sensitivity to diagnose{p_end}"
+        exit 198
+    }
+    if "`e(clorder)'" != "average" {
+        di as err "estat clorder requires results with clorder(average)"
+        exit 198
+    }
+    local nfix = (e(cl_ncontrols) == 1)
+    local C = e(nclusters)
+    local Cp = `C' - `nfix'
+    if `Cp' < 2 {
+        di as err "estat clorder requires at least two clusters to order"
+        exit 198
+    }
+    if `digits' < 0 | `digits' > 8 {
+        di as err "digits() must be between 0 and 8"
+        exit 198
+    }
+    capture mata: mata describe cn_clpairs()
+    if _rc {
+        quietly findfile cn_core.mata
+        quietly do `"`r(fn)'"'
+    }
+    local cl `e(clusters)'
+    local rn
+    forvalues c = 1/`C' {
+        local rn `rn' `=strtoname("`: word `c' of `cl''")'
+    }
+    local pn
+    forvalues c = `=`nfix'+1'/`C' {
+        local pn `pn' `: word `c' of `rn''
+    }
+    local w2 = `digits' + 8
+    local ptxt = cond(`nfix', " (positions among the clusters after the control cluster)", "")
+    local fo `e(frame_clord)'
+    local static = ("`fo'" != "")
+    if `static' {
+        mata: st_local("fexist", strofreal(st_frameexists("`fo'")))
+        if !`fexist' {
+            di as err "frame {bf:`fo'} not found; rerun {cmd:connectedness}"
+            exit 111
+        }
+        frame `fo': local frc : char _dta[cn_clusters]
+        if "`frc'" != "`cl'" {
+            di as err "frame {bf:`fo'} does not hold the orderings of the current results; rerun {cmd:connectedness}"
+            exit 498
+        }
+        tempname N P D A
+        frame `fo' {
+            mata: cn__opos = st_data(., "pos_*"); cn__onet = st_data(., "net_*")
+        }
+        mata: cn_clorddiag(cn__opos, cn__onet, `nfix', "`N'", "`P'", "`D'")
+        matrix `A' = e(cl_table)
+        matrix `A' = `A'[`=`C'+2', 1..`C']'
+        matrix `N' = `A', `N'
+        matrix rownames `N' = `rn'
+        matrix colnames `N' = averaged mean sd min max
+        matrix rownames `P' = `pn'
+        local cp
+        forvalues p = 1/`Cp' {
+            local cp `cp' pos`p'
+        }
+        matrix colnames `P' = `cp'
+        matrix rownames `D' = `pn'
+        matrix colnames `D' = mean sd min max pairs
+        di _n as txt "{p 0 0 2}Net connectedness of each cluster (cluster table, percent) over the " ///
+            as res e(norderings) as txt " orderings: estimate averaged over orderings, mean, " ///
+            "standard deviation, minimum and maximum{p_end}"
+        matlist `N', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(14)
+        di _n as txt "{p 0 0 2}Mean net connectedness by position in the ordering`ptxt'{p_end}"
+        matlist `P', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(14)
+        di _n as txt "{p 0 0 2}Paired first-versus-last difference in net connectedness, the cluster " ///
+            "first minus the cluster last with the relative order of the other clusters held fixed " ///
+            "(Buchwalter, Diebold and Yilmaz 2026b, eq. 4){p_end}"
+        matlist `D', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(14)
+        if "`frame'" != "" {
+            if "`frame'" == "`c(frame)'" | "`frame'" == "`fo'" | "`frame'" == "`e(frame)'" {
+                di as err "frame(`frame') may not be the current, results or orderings frame"
+                exit 498
+            }
+            mata: st_local("bexist", strofreal(st_frameexists("`frame'")))
+            if `bexist' & "`replace'" == "" {
+                di as err "frame {bf:`frame'} already exists; specify {cmd:replace} or another {cmd:frame()}"
+                exit 110
+            }
+            capture frame drop `frame'
+            frame create `frame'
+            frame `frame' {
+                mata: cn_clordlong(cn__opos, cn__onet, `nfix', tokens("`cl'"))
+                label variable ordering "cluster ordering"
+                label variable cluster "cluster"
+                label variable position "position in the ordering`=cond(`nfix', " (after the control cluster)", "")'"
+                label variable net "net connectedness (cluster table, percent)"
+                label variable dfl "first minus last, paired (rows with the cluster first)"
+                label data "connectedness: net connectedness by cluster and ordering"
+                char _dta[cn_kind] "clorder_long"
+            }
+            di _n as txt "One observation per ordering and cluster saved in frame " as res "`frame'"
+            return local frame "`frame'"
+        }
+        capture mata: mata drop cn__opos cn__onet
+        return matrix dfl = `D'
+        return matrix bypos = `P'
+        return matrix net = `N'
+    }
+    else {
+        local fr `e(frame)'
+        mata: st_local("fexist", strofreal(st_frameexists("`fr'")))
+        if !`fexist' {
+            di as err "results frame {bf:`fr'} not found; rerun {cmd:connectedness}"
+            exit 111
+        }
+        capture frame `fr': confirm variable cl_dfl_1 cl_nsd_1
+        if _rc {
+            di as err "the results frame has no ordering diagnostics; rerun {cmd:connectedness}"
+            exit 111
+        }
+        local tv `e(timevar)'
+        local dv `e(datevar)'
+        if "`dv'" == "" local dv `tv'
+        tempname S
+        frame `fr' {
+            local dfmt : format `dv'
+            mata: cn__ot = st_data(., "`dv'"); cn__od = st_data(., "cl_dfl_*"); cn__os = st_data(., "cl_nsd_*")
+        }
+        mata: cn__oi = J(1, `C', .); for (cn__c=1; cn__c<=`C'; cn__c++) cn__oi[cn__c] = (allof(cn__od[., cn__c], .) ? . : selectindex(cn__od[., cn__c] :== max(cn__od[., cn__c]))[1])
+        mata: st_matrix("`S'", (cn_colmeanm(cn__od)', colmin(cn__od)', colmax(cn__od)', cn_colmeanm(cn__os)'))
+        matrix rownames `S' = `rn'
+        matrix colnames `S' = dfl_mean dfl_min dfl_max nsd_mean
+        di _n as txt "{p 0 0 2}Ordering sensitivity over the " as res e(T0) as txt " periods: mean, " ///
+            "minimum and maximum over time of the mean paired first-versus-last difference in net " ///
+            "connectedness (cl_dfl_c), and mean over time of its standard deviation over the " ///
+            as res e(norderings) as txt " orderings (cl_nsd_c)`ptxt'{p_end}"
+        matlist `S', format(%`w2'.`digits'f) border(rows) lines(oneline) rowtitle(" ") twidth(14) nodotz
+        forvalues c = `=`nfix'+1'/`C' {
+            mata: st_local("ix", strofreal(cn__oi[`c']))
+            if "`ix'" != "." {
+                mata: st_local("dmax", strofreal(cn__ot[`ix']))
+                local dmx : display `dfmt' `dmax'
+                local nm : word `c' of `cl'
+                di as txt "  largest difference for " as res "`nm'" as txt " in period " as res strtrim("`dmx'")
+            }
+        }
+        di as txt "{p 0 0 2}The series are cl_dfl_c and cl_nsd_c in frame " as res "`fr'" ///
+            as txt "; for example, {cmd:frame `fr': tsline cl_dfl_*}.{p_end}"
+        capture mata: mata drop cn__ot cn__od cn__os cn__oi cn__c
+        return matrix time = `S'
+    }
+    return scalar norderings = e(norderings)
+    return scalar ncontrols = `nfix'
 end
 
 // k x k matrix bc with a star where the interval (lo, hi) excludes zero; diagonal

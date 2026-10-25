@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.9.4, 25 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.9.5, 25 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -35,6 +35,7 @@ Commands
   estat correlation  conditional or partial correlations of each period
   estat bootstrap    bootstrap bands (also of the spillover asymmetry measure),
                      event probabilities and detection of changes
+  estat clorder      sensitivity of clustered connectedness to the cluster ordering
   cngraph         graphs of TCI, TO, FROM, NET, NPT, NPDC, PCI, influence, group TCIs
   cnnetwork       network plots of pairwise connectedness
   cnportfolio     portfolio weights, hedge ratios and hedging effectiveness (minimum
@@ -76,4 +77,6 @@ Reproducing the checks
   within/cross split of the TCI (version 0.9.3) against test/r/make_fixtures_093.R
   (test/r/run_r_093.bat); the bootstrap of the spillover asymmetry measure (version
   0.9.4) against test/r/make_fixtures_094.R (test/r/run_r_094.bat), with a Monte Carlo
-  study of its coverage in test/r/sam_coverage_094.R.
+  study of its coverage in test/r/sam_coverage_094.R; the control cluster, the
+  ordering diagnostic and simultaneous clustered orthogonalization (version 0.9.5)
+  against test/r/make_fixtures_095.R (test/r/run_r_095.bat).

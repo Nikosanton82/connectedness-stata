@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.4  25oct2026}{...}
+{* *! version 0.9.5  25oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -55,7 +55,8 @@
 {synopt:{opt gen:eralized}}generalized FEVD; the default{p_end}
 {synopt:{opt orth:ogonalized}}Cholesky (orthogonalized) FEVD{p_end}
 {synopt:{opt clus:ters(clusters)}}clustered identification: shocks correlated within clusters, orthogonal across them{p_end}
-{synopt:{opt clord:er(order)}}{cmd:average} (default) over all orderings of the clusters, or {cmd:given}{p_end}
+{synopt:{opt clord:er(order)}}{cmd:average} (default) over all orderings of the clusters, {cmd:given} or {cmd:simultaneous}{p_end}
+{synopt:{opt clcon:trols(controls)}}a cluster of control variables, first in every ordering{p_end}
 {synopt:{opt norm:alize(norm)}}normalization of the generalized FEVD: {cmd:row} (default), {cmd:maxrow}, {cmd:maxcol} or {cmd:spectral}{p_end}
 {synopt:{opt corr:ected}}report the corrected total connectedness index{p_end}
 {synopt:{opt asym:metric}}also estimate the systems of positive and negative changes{p_end}
@@ -269,9 +270,35 @@ may not be combined with {opt orthogonalized} or {opt normalize()}.
 {opt clorder(order)} sets how the ordering of the clusters is handled. Only the
 ordering across clusters matters, not the order within them. {cmd:clorder(average)},
 the default, averages the row-normalized decompositions over all orderings of the
-clusters, as the paper does; this allows up to 6 clusters (720 orderings).
-{cmd:clorder(given)} uses the clusters in the order listed, followed by the clusters
-of the variables not listed, in {it:varlist} order.
+clusters, as the paper does; this allows up to 8 clusters to order (40,320
+orderings), and with 7 or 8 a rolling or TVP-VAR estimation takes some time, since
+every period is decomposed under every ordering. {cmd:clorder(given)} uses the
+clusters in the order listed, followed by the clusters of the variables not listed,
+in {it:varlist} order. {cmd:clorder(simultaneous)} gives the simultaneous clustered
+orthogonalization of Buchwalter, Diebold and Yilmaz (2026c): instead of projecting
+the clusters one after another, it finds the identification, orthogonal across
+clusters and with the within-cluster correlations of the residuals, whose shocks are
+most correlated with the residuals, in closed form. It does not depend on any
+ordering, so there is nothing to average, and it applies to any number of clusters.
+One cluster gives the generalized decomposition, and one variable per cluster the
+full simultaneous orthogonalization of Francis, Hansen and Tong (2026). With
+{cmd:clorder(average)}, {helpb connectedness_postestimation##clorder:estat clorder}
+shows how much the results depend on the ordering.
+
+{phang}
+{opt clcontrols(controls)} adds a cluster of control variables, such as volatility
+indices that proxy for common shocks, ordered first in every ordering (Buchwalter,
+Diebold and Yilmaz 2026b): the other variables' residuals are first purged of the
+contemporaneous variation associated with the controls, and the other clusters are
+then orthogonalized as usual. The control cluster adds no orderings: with
+{cmd:clorder(average)} only the other clusters are permuted, and with
+{cmd:clorder(given)} the control cluster comes first. The controls are variables of
+{it:varlist}, listed as one cluster, optionally named, for example
+{cmd:clcontrols("CTL: VIX VSTOXX")} (the default name is {cmd:Controls}); they may
+not appear in {opt clusters()}. The control cluster is cluster 1 of the results, with
+its own row and column in the cluster table, and is usually a large net transmitter,
+since the common variation is attributed to it. {opt clcontrols()} may not be
+combined with {cmd:clorder(simultaneous)}.
 
 {phang}
 {opt normalize(norm)} sets how the generalized FEVD is normalized.
@@ -559,6 +586,12 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. matrix list e(cl_table)}{p_end}
 {phang2}{cmd:. frame cn_results: tsline cl_within cl_cross}{p_end}
 
+{pstd}Buchwalter, Diebold and Yilmaz (2026b, 2026c): a control cluster, ordering sensitivity and simultaneous orthogonalization (the US stands in for a cluster of common-factor proxies){p_end}
+{phang2}{cmd:. connectedness US-TUR, lags(2) clcontrols("World: US") clusters("Americas: ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") replace}{p_end}
+{phang2}{cmd:. estat clorder, frame(cn_ord) replace}{p_end}
+{phang2}{cmd:. frame cn_ord: graph box net, over(cluster)}{p_end}
+{phang2}{cmd:. connectedness US-TUR, lags(2) clusters("Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") clorder(simultaneous) replace}{p_end}
+
 {pstd}Caloia, Cipollini and Muzzioli (2019): scalar normalization of the Diebold and Yilmaz (2012) table{p_end}
 {phang2}{cmd:. use cn_dy2012, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
@@ -593,6 +626,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(nclusters)}}number of clusters ({opt clusters()}){p_end}
 {synopt:{cmd:e(norderings)}}number of cluster orderings averaged ({opt clusters()}){p_end}
+{synopt:{cmd:e(cl_ncontrols)}}1 with a control cluster, 0 otherwise ({opt clusters()}){p_end}
 {synopt:{cmd:e(cl_within)}, {cmd:e(cl_cross)}}within-cluster and cross-cluster parts of the TCI, which sum to {cmd:e(TCI)} ({opt clusters()}){p_end}
 {synopt:{cmd:e(SAM)}}spillover asymmetry measure, {cmd:e(TCI_pos)} - {cmd:e(TCI_neg)} ({cmd:asymmetric}, {opt positive()}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
@@ -628,7 +662,9 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(asymmetric)}}{cmd:asymmetric} or empty{p_end}
 {synopt:{cmd:e(frame_pos)}, {cmd:e(frame_neg)}}results frames of positive and negative changes{p_end}
 {synopt:{cmd:e(clusters)}}cluster names ({opt clusters()}){p_end}
-{synopt:{cmd:e(clorder)}}{cmd:average} or {cmd:given} ({opt clusters()}){p_end}
+{synopt:{cmd:e(clorder)}}{cmd:average}, {cmd:given} or {cmd:simultaneous} ({opt clusters()}){p_end}
+{synopt:{cmd:e(clcontrols)}}control variables ({opt clcontrols()}){p_end}
+{synopt:{cmd:e(frame_clord)}}frame of the net connectedness of each cluster under every ordering ({cmd:clorder(average)}, static results){p_end}
 {synopt:{cmd:e(positive)}, {cmd:e(negative)}}the variables in {opt positive()} and {opt negative()}{p_end}
 
 {p2col 5 18 22 2: Matrices}{p_end}
@@ -693,7 +729,15 @@ other clusters and its net value, {cmd:cl_own}, {cmd:cl_comove} and {cmd:cl_cont
 their averages over clusters, {cmd:cl_}{it:c}{cmd:_}{it:d}, the contagion to
 cluster {it:c} from cluster {it:d}, {cmd:cl_within} and {cmd:cl_cross}, the
 within-cluster and cross-cluster parts of the TCI, and {cmd:cl_tto_}{it:c} and
-{cmd:cl_tnet_}{it:c}, the TO and NET rows of the cluster table.
+{cmd:cl_tnet_}{it:c}, the TO and NET rows of the cluster table. With
+{cmd:clorder(average)} it also holds {cmd:cl_dfl_}{it:c}, the mean paired
+first-versus-last difference in the net connectedness of cluster {it:c} (missing for
+the control cluster), and {cmd:cl_nsd_}{it:c}, the standard deviation of its net
+connectedness over the orderings; see {helpb connectedness_postestimation##clorder:estat clorder}.
+Static results with {cmd:clorder(average)} also save a frame {it:frame}{cmd:_clord}
+({cmd:e(frame_clord)}) with one observation per ordering: {cmd:ordering},
+{cmd:pos_}{it:c}, the position of cluster {it:c} in the ordering, and {cmd:net_}{it:c},
+its net connectedness in the cluster table of that ordering.
 
 
 {marker methods}{...}
@@ -763,6 +807,38 @@ TO_c = sum_{d!=c} T[d,c] and NET_c = TO_c - FROM_c (2026b, eq. 2). This NET adds
 the shares of the receiving clusters, each on its own scale, while NET_c of
 {cmd:e(cl_shares)} divides the contagion transmitted by the size of the transmitting
 cluster (2026a, Fig. 6); the two can differ in sign when clusters differ in size.
+
+{pstd}
+{it:Control cluster.} With the control cluster 1 and the other variables B,
+{bf:Sigma}_(BB.1) = {bf:Sigma}_BB - {bf:Sigma}_B1 {bf:Sigma}_11^(-1) {bf:Sigma}_1B is
+the covariance of their residuals purged of the controls, and for an ordering of the
+other clusters {bf:Q} = [{bf:I} 0; {bf:Sigma}_B1 {bf:Sigma}_11^(-1) {bf:Q}_B] and
+{bf:Omega} = diag({bf:Sigma}_11, {bf:Omega}_B), with {bf:Q}_B and {bf:Omega}_B the
+clustered identification of {bf:Sigma}_(BB.1) (Buchwalter, Diebold and Yilmaz 2026b,
+eqs. 5 to 7). This is the clustered identification with the control cluster first.
+
+{pstd}
+{it:Ordering sensitivity.} For cluster c and a relative order pi of the other
+clusters, Net_(c,pi)^(p) is the net connectedness of c, from the cluster table of the
+decomposition of that ordering, when c is in position p; the paired first-versus-last
+difference is Delta_(c,pi) = Net_(c,pi)^(1) - Net_(c,pi)^(C), and its mean over the
+(C-1)! relative orders pi summarizes how much the measured role of c depends on its
+position (2026b, Section 2.5, eqs. 3 and 4). With a control cluster, positions are
+those among the other clusters.
+
+{pstd}
+{it:Simultaneous clustered orthogonalization.} With {bf:Sigma} = {bf:D}_1 {bf:R}_1
+{bf:D}_1, {bf:D}_1 the standard deviations and {bf:R}_1 the correlations of the
+residuals, and {bf:R}_C equal to {bf:R}_1 within clusters and zero across them, the
+identification maximizes sum_i corr(u_i, epsilon_i) subject to
+{bf:Q}^(-1) {bf:Sigma} {bf:Q}^(-1)' = {bf:D}_C {bf:R}_C {bf:D}_C and is
+{bf:Q}^(-1) = {bf:D}_C {bf:R}_1^(-1/2) ({bf:R}_1^(1/2) {bf:R}_C {bf:R}_1^(1/2))^(1/2)
+{bf:R}_1^(-1/2) {bf:D}_1^(-1) (Buchwalter, Diebold and Yilmaz 2026c, eq. 24). The
+scaling {bf:D}_C, which the paper leaves open, cancels in the decomposition, which is
+sum_{h=0}^{H-1} (e_i' {bf:A}_h {bf:D}_1 {bf:Z}^(-1) {bf:R}_C e_j)^2 /
+sum_{h=0}^{H-1} e_i' {bf:A}_h {bf:Sigma} {bf:A}_h' e_i, normalized by row, with
+{bf:Z} = {bf:R}_1^(-1/2) ({bf:R}_1^(1/2) {bf:R}_C {bf:R}_1^(1/2))^(1/2)
+{bf:R}_1^(-1/2).
 
 {pstd}
 {it:Spillover asymmetry.} With TCI+ and TCI- the total connectedness of the
@@ -887,6 +963,10 @@ connectedness with control variables: Theory and application to global banking.
 arXiv:2609.05792.
 
 {phang}
+Buchwalter, B., F. X. Diebold, and K. Yilmaz. 2026c. Simultaneous clustered
+orthogonalization. arXiv:2609.12280.
+
+{phang}
 Caloia, F. G., A. Cipollini, and S. Muzzioli. 2019. How do normalization schemes
 affect net spillovers? A replication of the Diebold and Yilmaz (2012) study.
 {it:Energy Economics} 84: 104536.
@@ -938,6 +1018,10 @@ generalized autoregressive conditional heteroskedasticity models.
 Friedman, J., T. Hastie, and R. Tibshirani. 2010. Regularization paths for
 generalized linear models via coordinate descent. {it:Journal of Statistical Software}
 33(1): 1-22.
+
+{phang}
+Francis, N., P. R. Hansen, and C. Tong. 2026. Principled identification of structural
+dynamic models. NBER Working Paper 34623.
 
 {phang}
 Gabauer, D. 2020. Volatility impulse response analysis for DCC-GARCH models: The role

@@ -1,4 +1,4 @@
-*! version 0.9.3  25oct2026
+*! version 0.9.5  25oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -26,7 +26,7 @@ program define Estimate, eclass
         STANDardize DCCParams(name) noCOVariance                  ///
         NORMalize(string) ADAPTive                                ///
         POSitive(varlist numeric ts) NEGative(varlist numeric ts) ///
-        CLUSters(string asis) CLORDer(string) ]
+        CLUSters(string asis) CLORDer(string) CLCONtrols(string asis) ]
 
     // ---------------------------------------------------------- time series
     quietly tsset
@@ -410,14 +410,19 @@ program define Estimate, eclass
 
     // clustered identification (Buchwalter, Diebold and Yilmaz 2026a): clusters listed
     // as in estat group, "name: var var ..."; variables not listed form clusters of
-    // their own
+    // their own. clcontrols(): a cluster of control variables, ordered first in every
+    // ordering (Buchwalter, Diebold and Yilmaz 2026b). clorder(simultaneous):
+    // simultaneous clustered orthogonalization (Buchwalter, Diebold and Yilmaz 2026c)
     local clorder = lower(strtrim("`clorder'"))
+    if "`clorder'" == "sim" | "`clorder'" == "simul" local clorder simultaneous
     local ncl 0
-    if `"`clusters'"' == "" & "`clorder'" != "" {
+    local nctl 0
+    local nperm 0
+    if `"`clusters'`clcontrols'"' == "" & "`clorder'" != "" {
         di as err "option clorder() requires clusters()"
         exit 198
     }
-    if `"`clusters'"' != "" {
+    if `"`clusters'`clcontrols'"' != "" {
         if "`approach'" != "time" | `dcc' {
             di as err "clusters() requires approach(time) and a VAR-type or TVP-VAR model"
             exit 198
@@ -431,22 +436,63 @@ program define Estimate, eclass
             exit 198
         }
         if "`clorder'" == "" local clorder average
-        if !inlist("`clorder'", "average", "given") {
-            di as err "clorder() must be average or given"
+        if !inlist("`clorder'", "average", "given", "simultaneous") {
+            di as err "clorder() must be average, given or simultaneous"
             exit 198
         }
         tempname CLID
         matrix `CLID' = J(`k', 1, 0)
         local clnames
-        local m : word count `clusters'
-        forvalues g = 1/`m' {
-            local spec : word `g' of `clusters'
-            local gname "C`g'"
+        // control cluster: cluster 1
+        if `"`clcontrols'"' != "" {
+            if "`clorder'" == "simultaneous" {
+                di as err "{p 0 0 2}clcontrols() fixes the control cluster first in a sequential " ///
+                    "ordering and may not be combined with clorder(simultaneous){p_end}"
+                exit 198
+            }
+            local spec `clcontrols'
+            local gname "Controls"
             local pos = strpos(`"`spec'"', ":")
             if `pos' {
                 local gname = strtrim(substr(`"`spec'"', 1, `pos' - 1))
                 local spec  = substr(`"`spec'"', `pos' + 1, .)
-                if "`gname'" == "" local gname "C`g'"
+                if "`gname'" == "" local gname "Controls"
+            }
+            local gname = strtoname("`gname'")
+            local clnames `gname'
+            local nv 0
+            foreach v of local spec {
+                local p : list posof "`v'" in varlist
+                if `p' == 0 {
+                    di as err "`v' in clcontrols() is not one of the variables: `varlist'"
+                    exit 198
+                }
+                if `CLID'[`p', 1] != 0 {
+                    di as err "`v' appears twice in clcontrols()"
+                    exit 198
+                }
+                matrix `CLID'[`p', 1] = 1
+                local ++nv
+            }
+            if `nv' == 0 {
+                di as err "clcontrols() is empty"
+                exit 198
+            }
+            if `nv' == `k' {
+                di as err "clcontrols() may not contain all the variables"
+                exit 198
+            }
+            local nctl 1
+        }
+        local m : word count `clusters'
+        forvalues g = 1/`m' {
+            local spec : word `g' of `clusters'
+            local gname "C`=`g'+`nctl''"
+            local pos = strpos(`"`spec'"', ":")
+            if `pos' {
+                local gname = strtrim(substr(`"`spec'"', 1, `pos' - 1))
+                local spec  = substr(`"`spec'"', `pos' + 1, .)
+                if "`gname'" == "" local gname "C`=`g'+`nctl''"
             }
             local gname = strtoname("`gname'")
             if `: list gname in clnames' {
@@ -462,10 +508,10 @@ program define Estimate, eclass
                     exit 198
                 }
                 if `CLID'[`p', 1] != 0 {
-                    di as err "`v' appears in more than one cluster"
+                    di as err "`v' appears in more than one cluster, or in clusters() and clcontrols()"
                     exit 198
                 }
-                matrix `CLID'[`p', 1] = `g'
+                matrix `CLID'[`p', 1] = `g' + `nctl'
                 local ++nv
             }
             if `nv' == 0 {
@@ -474,7 +520,7 @@ program define Estimate, eclass
             }
         }
         // variables not listed: one cluster each, in varlist order
-        local ncl `m'
+        local ncl = `m' + `nctl'
         forvalues i = 1/`k' {
             if `CLID'[`i', 1] == 0 {
                 local ++ncl
@@ -485,12 +531,15 @@ program define Estimate, eclass
                 local clnames `clnames' `vn'
             }
         }
-        if "`clorder'" == "average" & `ncl' > 6 {
-            di as err "averaging over all orderings is limited to 6 clusters (720 orderings); " ///
-                "specify clorder(given) or fewer clusters"
+        // orderings: of the clusters other than the control cluster
+        local nperm = `ncl' - `nctl'
+        if "`clorder'" == "average" & `nperm' > 8 {
+            di as err "{p 0 0 2}averaging over all orderings is limited to 8 clusters (40,320 orderings)" ///
+                cond(`nctl', " besides the control cluster", "") "; specify clorder(given), " ///
+                "clorder(simultaneous) or fewer clusters{p_end}"
             exit 198
         }
-        local nord = cond("`clorder'" == "average", exp(lnfactorial(`ncl')), 1)
+        local nord = cond("`clorder'" == "average", exp(lnfactorial(`nperm')), 1)
         local nord = round(`nord')
         local gen 5
     }
@@ -564,7 +613,8 @@ program define Estimate, eclass
     local savecov = ("`covariance'" == "" & (!inlist("`approach'", "r2", "modelfree") | `dcc'))
     local nvars = (`nvars')*(`ncomp' + 1) + 2
     if "`asymmetric'" != "" local nvars = `nvars' + 1 + 3*`k'
-    if `ncl' local nvars = `nvars' + (5*`ncl' + 3 + `ncl'*(`ncl'-1))*(1 + 2*("`asymmetric'" != ""))
+    if `ncl' local nvars = `nvars' + (5*`ncl' + 3 + `ncl'*(`ncl'-1) + 2 + 2*`ncl' + ///
+        2*`ncl'*("`clorder'" == "average"))*(1 + 2*("`asymmetric'" != ""))
     if `savecov' {
         // the covariances are left out, with a note, when they would not fit
         if `nvars' + `k'*(`k'+1)/2 > c(maxvar) - 10 {
@@ -591,6 +641,16 @@ program define Estimate, eclass
         }
         local parts all positive negative
         local frames `frame' `frame'_pos `frame'_neg
+    }
+    // net connectedness under every cluster ordering (static results)
+    local clordf = (`ncl' > 0 & "`clorder'" == "average" & `window' == 0 & "`model'" != "tvpvar" & ///
+        `nperm' >= 2)
+    if `clordf' {
+        if length("`frame'_clord") > 32 {
+            di as err "frame() name must not exceed 26 characters with clusters()"
+            exit 198
+        }
+        local frames `frames' `frame'_clord
     }
     foreach f of local frames {
         if "`f'" == "`c(frame)'" {
@@ -644,8 +704,11 @@ program define Estimate, eclass
     local savef = ("`fevd'" == "")
     if `ncl' {
         mata: cn__clid = st_matrix("`CLID'")
-        if "`clorder'" == "average" mata: cn__clperm = cn_perms(`ncl')
-        else mata: cn__clperm = (1..`ncl')
+        CnClSetup `ncl' `nctl' `clorder'
+        if `clordf' & `nperm' >= 7 di as txt "(averaging over `nord' cluster orderings)"
+        if "`clorder'" == "average" & `nperm' >= 7 & !`clordf' {
+            di as txt "{p 0 6 2}note: `nord' cluster orderings in every period; this can take a while{p_end}"
+        }
     }
     local i 0
     foreach part of local parts {
@@ -688,10 +751,24 @@ program define Estimate, eclass
                 tempname clsh`i' clct`i'
                 mata: cn_postclust("`clnames'", "`fev`i''", "`clsh`i''", "`clct`i''")
                 char _dta[cn_clusters] "`clnames'"
+                mata: st_local("hascls", strofreal(rows(cn__CLS) > 0))
+                if `hascls' mata: cn_postclord("`clnames'")
+            }
+        }
+        // net connectedness of each cluster under every ordering (static results)
+        if `clordf' & `i' == 1 {
+            capture frame drop `frame'_clord
+            frame create `frame'_clord
+            frame `frame'_clord {
+                mata: cn_postclordframe("`clnames'")
+                label data "connectedness: net connectedness of each cluster by ordering"
+                char _dta[cn_kind] "clorder"
+                char _dta[cn_clusters] "`clnames'"
+                char _dta[cn_nfix] "`nctl'"
             }
         }
     }
-    if `ncl' capture mata: mata drop cn__clid cn__clperm
+    if `ncl' capture mata: mata drop cn__clid cn__clperm cn__clsco cn__clpairs cn__clnet cn__CLS
     local sc `sc1'
 
     // spillover asymmetry measure: positive minus negative (Barunik, Kocenda and Vacha
@@ -866,6 +943,15 @@ program define Estimate, eclass
         ereturn scalar norderings = `nord'
         ereturn local clusters "`clnames'"
         ereturn local clorder  "`clorder'"
+        ereturn scalar cl_ncontrols = `nctl'
+        if `nctl' {
+            local ctlv
+            forvalues i = 1/`k' {
+                if `CLID'[`i', 1] == 1 local ctlv `ctlv' `: word `i' of `varlist''
+            }
+            ereturn local clcontrols "`=strtrim("`ctlv'")'"
+        }
+        if `clordf' ereturn local frame_clord "`frame'_clord"
         tempname cm
         matrix `cm' = `CLID''
         matrix colnames `cm' = `names'
@@ -1039,8 +1125,12 @@ program define Display
     if "`e(clusters)'" != "" {
         local otxt = cond("`e(clorder)'" == "average", ///
             "averaged over " + string(e(norderings)) + " ordering" + cond(e(norderings) > 1, "s", ""), ///
-            "ordered as listed")
+            cond("`e(clorder)'" == "simultaneous", "simultaneous orthogonalization", "ordered as listed"))
         di as txt "Clusters: " as res "`e(clusters)'" as txt " (`otxt')"
+        if e(cl_ncontrols) == 1 {
+            di as txt "Control cluster, first in every ordering: " as res "`: word 1 of `e(clusters)''" ///
+                as txt " (" as res "`e(clcontrols)'" as txt ")"
+        }
     }
     if "`e(asymmetric)'" != "" {
         local ptxt = cond("`suf'" == "_pos", "positive", cond("`suf'" == "_neg", "negative", "all"))
@@ -1120,4 +1210,22 @@ program define Display
         di as txt "{hline 44}"
         di as txt %-16s "Total" as res %12.`digits'f e(TCI) %16.`digits'f e(cTCI)
     }
+end
+
+// Mata externals of clustered identification: the orderings (the control cluster, if
+// any, first in each), the flag of simultaneous orthogonalization and the pairs of
+// orderings of the first-versus-last diagnostic
+program define CnClSetup
+    args ncl nctl clorder
+    if "`clorder'" == "average" {
+        if `nctl' mata: cn__clperm = J(round(exp(lnfactorial(`ncl' - 1))), 1, 1), (cn_perms(`ncl' - 1) :+ 1)
+        else mata: cn__clperm = cn_perms(`ncl')
+        mata: cn__clpairs = cn_clpairs(cn__clperm, `nctl')
+    }
+    else {
+        mata: cn__clperm = (1..`ncl')
+        mata: cn__clpairs = J(0, 0, .)
+    }
+    mata: cn__clsco = J(1, 1, ("`clorder'" == "simultaneous"))
+    mata: cn__clnet = J(0, 0, .)
 end

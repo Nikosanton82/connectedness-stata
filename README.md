@@ -22,7 +22,9 @@ the spillover asymmetry measure of good and bad volatility (Baruník, Kočenda a
 2016), since version 0.9.0 clustered network connectedness (Buchwalter, Diebold and
 Yilmaz 2026, *Journal of Econometrics*), and since version 0.9.1 bootstrap inference and event tests
 (Greenwood-Nimmo, Kočenda and Nguyen 2024), extended in version 0.9.2 to the pairwise
-and net pairwise (NPDC) measures and in version 0.9.4 to the spillover asymmetry measure.
+and net pairwise (NPDC) measures and in version 0.9.4 to the spillover asymmetry measure,
+and since version 0.9.5 control clusters, the ordering-sensitivity diagnostic and
+simultaneous clustered orthogonalization (Buchwalter, Diebold and Yilmaz 2026b, 2026c).
 
 The numerical routines port the [ConnectednessApproach](https://gabauerdavid.github.io/ConnectednessApproach/)
 R package by David Gabauer (GPL-3) and reproduce its results to numerical precision;
@@ -49,7 +51,7 @@ connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96
 cnportfolio r_EUR r_GBP r_JPY r_CHF, method(mcp)
 ```
 
-Status: development (version 0.9.4). The Stata Journal article describes version 0.2.1:
+Status: development (version 0.9.5). The Stata Journal article describes version 0.2.1:
 static and rolling VAR, TVP-VAR, corrected TCI, PCI, influence, and the aggregated,
 conditional and decomposed group measures. Version 0.3.0 adds frequency, joint and
 extended joint connectedness, version 0.4.0 quantile and LAD VARs, and version 0.5.0
@@ -62,6 +64,9 @@ normalizations, adaptive elastic nets and the spillover asymmetry measure, versi
 (`estat bootstrap`), and version 0.9.2 bootstrap bands for the pairwise and NPDC
 measures and event tests for any measure, and version 0.9.3 the cluster table and the
 within/cross split of the TCI of the published clustered connectedness paper, and
-version 0.9.4 bootstrap bands for the spillover asymmetry measure (`estat bootstrap, sam`).
+version 0.9.4 bootstrap bands for the spillover asymmetry measure (`estat bootstrap, sam`),
+and version 0.9.5 a control cluster (`clcontrols()`), the ordering-sensitivity
+diagnostic (`estat clorder`) and simultaneous clustered orthogonalization
+(`clorder(simultaneous)`).
 
 Requires Stata 16.1 or newer. License: GPL-3.

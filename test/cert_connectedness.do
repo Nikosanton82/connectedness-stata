@@ -1663,6 +1663,270 @@ if !_rc {
 }
 else di as txt "  R_sam: no fixture, skipped"
 
+di _n as txt "{hline 78}" _n "22. Control cluster, ordering diagnostic, simultaneous orthogonalization (0.9.5)" _n "{hline 78}"
+* Exact checks against the independent R implementation in test/r/make_fixtures_095.R
+* (control cluster by Schur complement, Buchwalter, Diebold and Yilmaz 2026b, eq. 7;
+* net connectedness under every ordering and the first-versus-last diagnostic, eq. 4;
+* simultaneous clustered orthogonalization, 2026c, eq. 24), and identities.
+capture program drop cn_cl095
+program define cn_cl095
+    syntax , case(string) tol(real)
+    local f "fixtures/R_`case'"
+    local C = e(nclusters)
+    local nfix = (e(cl_ncontrols) == 1)
+    local Cp = `C' - `nfix'
+    tempname R A B R1 A1
+    capture confirm file "`f'_clord.csv"
+    if !_rc {
+        * net connectedness by ordering, matched on the positions of the clusters
+        capture frame drop __fx
+        frame copy `e(frame_clord)' __fx
+        frame __fx {
+            sort pos_*
+            mkmat pos_* net_*, matrix(`A')
+            quietly import delimited using "`f'_clord.csv", clear varnames(nonames) asdouble
+            local sv
+            forvalues c = 1/`C' {
+                local sv `sv' v`c'
+            }
+            sort `sv'
+            mkmat _all, matrix(`R')
+        }
+        frame drop __fx
+        local d1 = mreldif(`A', `R')
+        quietly estat clorder
+        matrix `A' = r(net)
+        matrix `B' = r(bypos)
+        matrix `A1' = r(dfl)
+        capture frame drop __fx
+        frame create __fx
+        frame __fx: quietly import delimited using "`f'_cldiag.csv", clear varnames(nonames) asdouble
+        frame __fx: mkmat _all, matrix(`R')
+        frame drop __fx
+        local r1 = `C' + 1
+        local r2 = `C' + `Cp'
+        local r3 = `C' + `Cp' + 1
+        local r4 = `C' + 2*`Cp'
+        matrix `R1' = `R'[1..`C', 1..5]
+        local d2 = mreldif(`A', `R1')
+        matrix `R1' = `R'[`r1'..`r2', 1..`Cp']
+        local d2 = max(`d2', mreldif(`B', `R1'))
+        * pairs: sd missing with a single pair
+        matrix `R1' = `R'[`r3'..`r4', 1..5]
+        mata: cn__a = st_matrix("`A1'"); cn__r = st_matrix("`R1'")
+        mata: st_local("d3", strofreal(any(missing(cn__a) :!= missing(cn__r)) + max(reldif(editmissing(cn__a, 0), editmissing(cn__r, 0))), "%12.0g"))
+        mata: mata drop cn__a cn__r
+        local ok = (`d1' < `tol') & (`d2' < `tol') & (`d3' < `tol')
+        global cn_tests = $cn_tests + 1
+        if !`ok' global cn_fails = $cn_fails + 1
+        di as txt "  " %-26s "R_`case' orderings" " nets " as res %9.2e `d1' ///
+            as txt "  clorder " as res %9.2e `=max(`d2', `d3')' as txt "  " cond(`ok', "pass", "FAIL")
+    }
+    capture confirm file "`f'_clts095.csv"
+    if !_rc {
+        capture frame drop __fx
+        frame create __fx
+        frame __fx: quietly import delimited using "`f'_clts095.csv", clear varnames(1) asdouble
+        frame __fx {
+            mata: cn__per = st_data(., "period"); cn__r = st_data(., "cl_dfl_* cl_nsd_*")
+        }
+        frame `e(frame)': mata: cn__a = st_data(cn__per, "cl_dfl_* cl_nsd_*")
+        frame drop __fx
+        mata: st_local("d1", strofreal(any(missing(cn__a) :!= missing(cn__r)) + max(reldif(editmissing(cn__a, 0), editmissing(cn__r, 0))), "%12.0g"))
+        mata: mata drop cn__per cn__r cn__a
+        local ok = (`d1' < `tol')
+        global cn_tests = $cn_tests + 1
+        if !`ok' global cn_fails = $cn_fails + 1
+        di as txt "  " %-26s "R_`case' ordering series" " diff " as res %9.2e `d1' ///
+            as txt "  " cond(`ok', "pass", "FAIL")
+    }
+end
+
+capture confirm file "fixtures/R_dy2009_ctl_clord.csv"
+if !_rc {
+    use ../data/cn_dy2009, clear
+    tsset t
+    quietly ds t date, not
+    local v `r(varlist)'
+    local reg3 `""Americas: ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA""'
+    connectedness `v', lags(2) horizon(10) clcontrols(US) clusters(`reg3') `opt'
+    cn_assert "control cluster: 6 orderings, e(clcontrols)" ///
+        `=(e(norderings) != 6) + ("`e(clcontrols)'" != "US") + (e(cl_ncontrols) != 1) + ("`: word 1 of `e(clusters)''" != "Controls")' 0.5
+    cn_clcheck, case(dy2009_ctl) tol(1e-8)
+    cn_cl095, case(dy2009_ctl) tol(1e-8)
+    * identities of the orderings frame: nets sum to zero, mean over orderings =
+    * averaged decomposition, (Cp - 1)! pairs
+    frame `e(frame_clord)' {
+        tempvar s
+        quietly egen double `s' = rowtotal(net_*)
+        quietly replace `s' = abs(`s')
+        quietly summarize `s'
+        local d1 = r(max)
+        local no = _N
+    }
+    cn_assert "nets of an ordering sum to zero" `d1' 1e-10
+    quietly estat clorder, frame(cn_ctest) replace
+    tempname N D
+    matrix `N' = r(net)
+    matrix `D' = r(dfl)
+    mata: st_local("d2", strofreal(max(abs(st_matrix("`N'")[., 1] - st_matrix("`N'")[., 2])), "%12.0g"))
+    cn_assert "mean net over orderings = net of the average" `d2' 1e-10
+    tempname D5 J2
+    matrix `D5' = `D'[1..., 5]
+    matrix `J2' = J(3, 1, 2)
+    cn_assert "pairs: (Cp - 1)! per cluster" `=mreldif(`D5', `J2')' 1e-12
+    frame cn_ctest {
+        quietly count if dfl < .
+        local nd = r(N)
+        quietly summarize dfl if cluster == "Europe", meanonly
+        local md = r(mean)
+        local nl = _N
+    }
+    cn_assert "long frame: rows and paired differences" `=(`nl' != 6*4) + (`nd' != 3*2)' 0.5
+    cn_assert "long frame: mean paired difference" `=abs(`md' - `D'[2, 1])' 1e-10
+    capture frame drop cn_ctest
+    * control first with clorder(given) = the control cluster listed first, given order
+    connectedness `v', lags(2) horizon(10) clcontrols(US) clusters(`reg3') clorder(given) `opt'
+    cn_clcheck, case(dy2009_ctl_given) tol(1e-8)
+    tempname F1 F2
+    matrix `F1' = e(fevd)
+    connectedness `v', lags(2) horizon(10) clusters("Controls: US" `reg3') clorder(given) `opt'
+    matrix `F2' = e(fevd)
+    cn_assert "clcontrols(), given = control listed first" `=mreldif(`F1', `F2')' 1e-12
+    cn_expect 198 estat clorder
+    * three regions without controls, ordering diagnostic
+    local reg `""Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA""'
+    connectedness `v', lags(2) horizon(10) clusters(`reg') `opt'
+    cn_clcheck, case(dy2009_reg_diag) tol(1e-8)
+    cn_cl095, case(dy2009_reg_diag) tol(1e-8)
+    * simultaneous orthogonalization of the three regions
+    connectedness `v', lags(2) horizon(10) clusters(`reg') clorder(simultaneous) `opt'
+    cn_assert "simultaneous: one ordering, no orderings frame" `=(e(norderings) != 1) + ("`e(frame_clord)'" != "")' 0.5
+    cn_clcheck, case(dy2009_sco) tol(1e-8)
+    cn_expect 198 estat clorder
+    * seven clusters, 5,040 orderings
+    local reg7 `""USA: US" "Latam: ARG BRA CHL MEX" "UK: UK" "Euro: FRA GER TUR" "Japan: JPN" "EastAsia: HKG KOR TAI SGP" "RestAP: AUS IDN MYS PHL THA""'
+    timer on 19
+    connectedness `v', lags(2) horizon(10) clusters(`reg7') `opt'
+    timer off 19
+    cn_assert "seven clusters: 5,040 orderings" `=(e(norderings) != 5040)' 0.5
+    cn_clcheck, case(dy2009_seven) tol(1e-8)
+    cn_cl095, case(dy2009_seven) tol(1e-8)
+    * cap: nine clusters to order are refused, eight and a control cluster are not
+    cn_expect 198 connectedness `v', lags(2) clusters("a: US" "b: ARG" "c: BRA" "d: CHL" "e: MEX" ///
+        "f: UK" "g: FRA" "h: GER" "i: TUR JPN HKG AUS IDN KOR MYS PHL SGP TAI THA") `opt'
+    cn_expect 198 connectedness `v', lags(2) clcontrols(US) clusters(`reg3') clorder(simultaneous) `opt'
+    cn_expect 198 connectedness `v', lags(2) clcontrols(US) clusters("Americas: US ARG BRA") `opt'
+    cn_expect 198 connectedness `v', lags(2) clcontrols(`v') `opt'
+    cn_expect 198 connectedness `v', lags(2) clcontrols(US FOO) clusters(`reg3') `opt'
+    cn_expect 198 connectedness `v', lags(2) clusters(`reg') clorder(sequential) `opt'
+
+    * cgs2022: six clusters (720 orderings) and simultaneous orthogonalization
+    use ../data/cn_cgs2022, clear
+    tsset t
+    quietly ds t date, not
+    local v `r(varlist)'
+    local cc `""CHF: X2YCHF X5YCHF X10YCHF" "DKK: X2YDKK X5YDKK X10YDKK" "EUR: X2YEUR X5YEUR X10YEUR" "GBP: X2YGBP X5YGBP X10YGBP" "NOK: X2YNOK X5YNOK X10YNOK" "SEK: X2YSEK X5YSEK X10YSEK""'
+    connectedness `v', lags(1) horizon(10) clusters(`cc') `opt'
+    cn_clcheck, case(cgs2022_diag) tol(1e-8)
+    cn_cl095, case(cgs2022_diag) tol(1e-8)
+    connectedness `v', lags(1) horizon(10) clusters(`cc') clorder(simultaneous) `opt'
+    cn_clcheck, case(cgs2022_sco) tol(1e-8)
+
+    * rolling dy2012: SP500 as the control cluster, four singletons, simultaneous
+    use ../data/cn_dy2012, clear
+    tsset t
+    local v SP500 R_10Y DJUBSCOM USDX
+    connectedness `v' in 1/400, lags(2) horizon(10) window(200) clcontrols(SP500) `opt'
+    cn_clcheck, case(dy2012_ctl_roll) tol(1e-8)
+    cn_cl095, case(dy2012_ctl_roll) tol(1e-8)
+    quietly estat clorder
+    tempname S
+    matrix `S' = r(time)
+    frame `e(frame)': quietly summarize cl_dfl_2, meanonly
+    cn_assert "estat clorder, rolling: mean over time" `=abs(`S'[2, 1] - r(mean))' 1e-10
+    connectedness `v' in 1/400, lags(2) horizon(10) window(200) clusters("a: SP500" "b: R_10Y" ///
+        "c: DJUBSCOM" "d: USDX") `opt'
+    cn_clcheck, case(dy2012_four_roll) tol(1e-8)
+    cn_cl095, case(dy2012_four_roll) tol(1e-8)
+    connectedness `v' in 1/400, lags(2) horizon(10) window(200) clusters("A: SP500 R_10Y" ///
+        "B: DJUBSCOM USDX") clorder(simultaneous) `opt'
+    cn_clcheck, case(dy2012_sco_roll) tol(1e-8)
+
+    * TVP-VAR acg2020: simultaneous; GBP as the control cluster
+    use ../data/cn_acg2020, clear
+    tsset month
+    connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) ///
+        clusters("Europe: EUR CHF GBP" "Japan: JPY") clorder(simultaneous) `opt'
+    cn_clcheck, case(acg2020_sco) tol(1e-6)
+    connectedness EUR GBP JPY CHF, model(tvpvar) horizon(12) window(200) kappa2(0.96) ///
+        clcontrols(GBP) clusters("Europe: EUR CHF" "Japan: JPY") `opt'
+    cn_clcheck, case(acg2020_ctl) tol(1e-6)
+    cn_cl095, case(acg2020_ctl) tol(1e-6)
+}
+else di as txt "  R 0.9.5: no fixture, skipped"
+
+* identities of simultaneous orthogonalization: one cluster = generalized; invariance
+* to the order of the variables and of the clusters
+use ../data/cn_dy2012, clear
+tsset t
+local v SP500 R_10Y DJUBSCOM USDX
+tempname G F1 F2 F3
+connectedness `v', lags(4) horizon(10) `opt'
+matrix `G' = e(fevd)
+connectedness `v', lags(4) horizon(10) clusters("all: `v'") clorder(simultaneous) `opt'
+matrix `F1' = e(fevd)
+cn_assert "simultaneous, one cluster = generalized" `=mreldif(`F1', `G')' 1e-10
+connectedness `v', lags(4) horizon(10) clusters("A: SP500 DJUBSCOM" "B: R_10Y USDX") clorder(simultaneous) `opt'
+matrix `F1' = e(fevd)
+connectedness USDX DJUBSCOM R_10Y SP500, lags(4) horizon(10) clusters("B: USDX R_10Y" "A: DJUBSCOM SP500") ///
+    clorder(simultaneous) `opt'
+matrix `F2' = e(fevd)
+mata: cn__p = (4, 3, 2, 1); st_local("d1", strofreal(mreldif(st_matrix("`F2'")[cn__p, cn__p], st_matrix("`F1'")), "%12.0g"))
+mata: mata drop cn__p
+cn_assert "simultaneous: invariant to variable and cluster order" `d1' 1e-10
+* control cluster averaged over two orderings = mean of the two given orderings
+connectedness `v', lags(4) horizon(10) clcontrols(SP500) clusters("A: R_10Y" "B: DJUBSCOM USDX") `opt'
+matrix `F1' = e(fevd)
+connectedness `v', lags(4) horizon(10) clcontrols(SP500) clusters("A: R_10Y" "B: DJUBSCOM USDX") clorder(given) `opt'
+matrix `F2' = e(fevd)
+connectedness `v', lags(4) horizon(10) clcontrols(SP500) clusters("B: DJUBSCOM USDX" "A: R_10Y") clorder(given) `opt'
+matrix `F3' = e(fevd)
+matrix `F2' = (`F2' + `F3')/2
+cn_assert "control cluster: average = mean of the given orderings" `=mreldif(`F1', `F2')' 1e-12
+* bootstrap point estimates with the control cluster and with simultaneous
+* orthogonalization equal the results of connectedness
+connectedness `v' in 1/800, lags(2) horizon(10) clcontrols(SP500) clusters("A: R_10Y" "B: DJUBSCOM USDX") `opt'
+local t1 = e(TCI)
+tempname BT
+capture noisily estat bootstrap, reps(5) seed(3) nodots
+local d1 = 1
+if !_rc {
+    matrix `BT' = r(table)
+    local d1 = abs(`BT'[1, 1] - `t1')
+}
+connectedness `v' in 1/800, lags(2) horizon(10) clusters("A: SP500 R_10Y" "B: DJUBSCOM USDX") clorder(simultaneous) `opt'
+local t1 = e(TCI)
+capture noisily estat bootstrap, reps(5) seed(3) nodots
+local d2 = 1
+if !_rc {
+    matrix `BT' = r(table)
+    local d2 = abs(`BT'[1, 1] - `t1')
+}
+cn_assert "bootstrap estimate, control cluster and simultaneous" `=`d1' + `d2'' 1e-10
+* asymmetric with a control cluster: orderings frame of the overall system only
+use ../data/cn_g2020, clear
+tsset t
+connectedness EUR GBP CHF JPY in 1/600, asymmetric clcontrols(EUR) clusters("A: GBP CHF" "B: JPY") `opt'
+local fo `e(frame_clord)'
+mata: st_local("ok", strofreal(st_frameexists("`fo'") & !st_frameexists("`fo'_pos")))
+quietly estat clorder
+cn_assert "asymmetric with clcontrols(): orderings frame" `=1 - `ok' + (r(norderings) != 2)' 0.5
+connectedness EUR GBP CHF JPY in 1/600, clusters("A: EUR GBP" "B: CHF JPY") `opt'
+cn_expect 198 estat clorder, digits(9)
+connectedness EUR GBP CHF JPY in 1/600, `opt'
+cn_expect 198 estat clorder
+
 di _n as txt "{hline 78}"
 quietly timer list
 di as txt "Timing: rolling VAR, k = 19, 632 windows: " as res %6.1f r(t1) as txt " s"
@@ -1683,6 +1947,7 @@ di as txt "Timing: clusters, k = 18, 720 orderings:   " as res %6.1f r(t15) as t
 di as txt "Timing: bootstrap, static, 80 draws:        " as res %6.1f r(t16) as txt " s"
 di as txt "Timing: bootstrap, 4 events, k = 19:        " as res %6.1f r(t17) as txt " s"
 di as txt "Timing: bootstrap of SAM, static, 80 draws: " as res %6.1f r(t18) as txt " s"
+di as txt "Timing: clusters, k = 19, 5,040 orderings: " as res %6.1f r(t19) as txt " s"
 di as txt "Tests run: " as res $cn_tests as txt "   failures: " as res $cn_fails
 assert $cn_fails == 0
 di as txt "ALL TESTS PASSED"

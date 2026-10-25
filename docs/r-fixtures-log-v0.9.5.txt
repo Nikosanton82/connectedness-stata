@@ -1,0 +1,21 @@
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+ConnectednessApproach version: 1.0.4 
+SCO, one cluster, against TimeConnectedness(): max abs difference 1.11e-16
+SCO, one variable per cluster, against Francis, Hansen and Tong Q = D1 R1^1/2: max abs difference 2.22e-16
+SCO, D_C = D1 against D_C = diag(1, 2, 3, 4): max abs difference 1.11e-16
+criterion: SCO 18.1718226053, trace formula (2026c, eq. 25) 18.1718226053
+criterion of a rotated admissible identification: -2.008052 (lower)
+control first: Schur complement against sequential BDY: max abs difference 1.11e-16
+dy2009_ctl                 avg   periods=   1 mean TCI=44.986448 net (table): 34.115 -19.587 -18.470 3.942
+dy2009_ctl_given           given periods=   1 mean TCI=43.471575 net (table): 34.917 -6.225 -16.351 -12.342
+dy2009_reg_diag            avg   periods=   1 mean TCI=53.614330 net (table): -6.585 -8.259 14.844
+dy2009_sco                 sco   periods=   1 mean TCI=54.499468 net (table): -14.159 -7.717 21.876
+dy2009_seven               avg   periods=   1 mean TCI=44.216286 net (table): -27.512 13.322 -26.750 27.922 -21.937 16.815 18.140
+cgs2022_diag               avg   periods=   1 mean TCI=73.720268 net (table): -0.614 1.531 6.294 0.210 -5.417 -2.004
+cgs2022_sco                sco   periods=   1 mean TCI=69.176475 net (table): 0.557 0.095 7.894 2.394 -7.962 -2.978
+dy2012_ctl_roll            avg   periods= 203 mean TCI=9.233143 net (table): 21.969 -13.644 -4.474 -3.851
+dy2012_four_roll           avg   periods= 203 mean TCI=9.086656 net (table): 2.132 0.399 -4.125 1.595
+dy2012_sco_roll            sco   periods= 203 mean TCI=10.562323 net (table): 1.845 -1.845
+acg2020_sco                sco   periods= 521 mean TCI=47.316614 net (table): 30.054 -30.054
+acg2020_ctl                avg   periods= 521 mean TCI=38.724764 net (table): 50.081 -24.344 -25.736

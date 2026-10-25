@@ -1,10 +1,11 @@
 {smcl}
-{* *! version 0.9.4  25oct2026}{...}
+{* *! version 0.9.5  25oct2026}{...}
 {viewerjumpto "Description" "connectedness_postestimation##description"}{...}
 {viewerjumpto "estat table" "connectedness_postestimation##table"}{...}
 {viewerjumpto "estat group" "connectedness_postestimation##group"}{...}
 {viewerjumpto "estat correlation" "connectedness_postestimation##correlation"}{...}
 {viewerjumpto "estat bootstrap" "connectedness_postestimation##bootstrap"}{...}
+{viewerjumpto "estat clorder" "connectedness_postestimation##clorder"}{...}
 {viewerjumpto "Examples" "connectedness_postestimation##examples"}{...}
 {viewerjumpto "Stored results" "connectedness_postestimation##results"}{...}
 {viewerjumpto "References" "connectedness_postestimation##references"}{...}
@@ -29,6 +30,7 @@ internal and external connectedness{p_end}
 {synopt:{cmd:estat correlation}}conditional or partial correlations of each period{p_end}
 {synopt:{cmd:estat bootstrap}}bootstrap standard errors and bands, event probabilities and
 detection of significant rises (VAR models){p_end}
+{synopt:{cmd:estat clorder}}sensitivity of clustered connectedness to the cluster ordering{p_end}
 {synopt:{helpb cngraph}}graph the time-varying measures{p_end}
 {synopt:{helpb cnnetwork}}network plot of pairwise connectedness{p_end}
 {synopt:{helpb estimates}}cataloging estimation results{p_end}
@@ -291,6 +293,47 @@ slightly less than their nominal level (0.86 and 0.90 for 90% and 95% intervals)
 the coverage improves with 1,000 observations (0.88 and 0.92).
 
 
+{marker clorder}{...}
+{title:Syntax for estat clorder}
+
+{p 8 16 2}
+{cmd:estat} {cmdab:clor:der} [{cmd:,} {opt fr:ame(name)} {opt replace} {opt dig:its(#)}]
+
+{pstd}
+{cmd:estat clorder} shows how much clustered connectedness depends on the ordering of
+the clusters, with the diagnostic of Buchwalter, Diebold and Yilmaz (2026b, Section
+2.5), after {cmd:connectedness} with {opt clusters()} and {cmd:clorder(average)}. The
+measure is the net connectedness of each cluster in the cluster table (TO minus
+FROM, {cmd:e(cl_table)}), computed under every ordering during the estimation.
+{cmd:clorder(simultaneous)} does not depend on the ordering, and
+{cmd:clorder(given)} has a single ordering, so neither has anything to diagnose.
+
+{pstd}
+Static results give three tables: for each cluster, the net connectedness of the
+decomposition averaged over the orderings, which is also the mean over the
+orderings, and its standard deviation, minimum and maximum over the orderings
+({cmd:r(net)}); the mean net connectedness of each cluster by its position in the
+ordering ({cmd:r(bypos)}); and the paired first-versus-last difference (eq. 4), the
+net connectedness of a cluster placed first minus that of the same cluster placed
+last, with the relative order of the other clusters held fixed, its mean, standard
+deviation, minimum and maximum over the (C-1)! relative orders ({cmd:r(dfl)}). A
+cluster whose role does not depend on the ordering has differences near zero.
+{opt frame(name)} saves one observation per ordering and cluster, with the position,
+the net connectedness and, on the observations with the cluster first, the paired
+difference, for density or box plots as in the paper (Figures 7 to 11).
+
+{pstd}
+With a control cluster ({opt clcontrols()}), only the other clusters are permuted,
+and positions are those among them; the control cluster has no paired difference.
+
+{pstd}
+Rolling and TVP-VAR results have, for every period, {cmd:cl_dfl_}{it:c}, the mean
+paired first-versus-last difference, and {cmd:cl_nsd_}{it:c}, the standard deviation
+of net connectedness over the orderings, in the results frame (as in the paper's
+Figures 12 to 14); {cmd:estat clorder} summarizes them over time ({cmd:r(time)}) and
+gives the period of the largest difference of each cluster.
+
+
 {marker examples}{...}
 {title:Examples}
 
@@ -328,6 +371,16 @@ the coverage improves with 1,000 observations (0.88 and 0.92).
 {phang2}{cmd:. estat bootstrap, event(17oct1997 11sep2001 09aug2007) seed(1357) stat(npdc US JPN)}{p_end}
 {phang2}{cmd:. estat bootstrap, reps(200) every(20) seed(1357) pairwise npdc replace}{p_end}
 {phang2}{cmd:. frame cn_boot_pw: twoway (rarea npdc_lo npdc_hi date) (line npdc_bc date) if from == "US" & to == "JPN"}{p_end}
+
+{pstd}Buchwalter, Diebold and Yilmaz (2026b): ordering sensitivity of clustered connectedness{p_end}
+{phang2}{cmd:. use cn_dy2009, clear}{p_end}
+{phang2}{cmd:. tsset t}{p_end}
+{phang2}{cmd:. connectedness US-TUR, lags(2) clusters("Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") replace}{p_end}
+{phang2}{cmd:. estat clorder, frame(cn_ord) replace}{p_end}
+{phang2}{cmd:. frame cn_ord: graph box net, over(position) by(cluster)}{p_end}
+{phang2}{cmd:. connectedness US-TUR, lags(2) window(104) clusters("Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") datevar(date) replace}{p_end}
+{phang2}{cmd:. estat clorder}{p_end}
+{phang2}{cmd:. frame cn_results: tsline cl_dfl_*}{p_end}
 
 {pstd}Bootstrap bands for the spillover asymmetry measure of Baruník, Kočenda and Vácha (2016){p_end}
 {phang2}{cmd:. use cn_g2020, clear}{p_end}
@@ -410,6 +463,22 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 {synopt:{cmd:r(tci_parts)}}estimate, bias, bias-corrected estimate, standard error and interval of the TCI of the positive and negative systems ({opt sam}, static results){p_end}
 {synopt:{cmd:r(prob)}}event probabilities (percent), events x leads ({opt event()}){p_end}
 
+{pstd}
+{cmd:estat clorder} stores the following in {cmd:r()}:
+
+{p2col 5 16 20 2: Scalars}{p_end}
+{synopt:{cmd:r(norderings)}}number of orderings{p_end}
+{synopt:{cmd:r(ncontrols)}}1 with a control cluster, 0 otherwise{p_end}
+
+{p2col 5 16 20 2: Macros}{p_end}
+{synopt:{cmd:r(frame)}}frame of the orderings ({opt frame()}){p_end}
+
+{p2col 5 16 20 2: Matrices}{p_end}
+{synopt:{cmd:r(net)}}net connectedness of each cluster: averaged decomposition, mean, standard deviation, minimum and maximum over the orderings (static results){p_end}
+{synopt:{cmd:r(bypos)}}mean net connectedness by position, clusters ordered x positions (static results){p_end}
+{synopt:{cmd:r(dfl)}}paired first-versus-last difference: mean, standard deviation, minimum, maximum and number of pairs (static results){p_end}
+{synopt:{cmd:r(time)}}mean, minimum and maximum over time of {cmd:cl_dfl_}{it:c} and mean of {cmd:cl_nsd_}{it:c} (rolling and TVP-VAR results){p_end}
+
 
 {marker references}{...}
 {title:References}
@@ -418,6 +487,11 @@ gtci_g and cgtci_g ({cmd:internal}, {cmd:external}){p_end}
 Baruník, J., E. Kočenda, and L. Vácha. 2016. Asymmetric connectedness on the U.S.
 stock market: Bad and good volatility spillovers. {it:Journal of Financial Markets}
 27: 55-78.
+
+{phang}
+Buchwalter, B., F. X. Diebold, and K. Yilmaz. 2026b. Scalable clustered network
+connectedness with control variables: Theory and application to global banking.
+arXiv:2609.05792.
 
 {phang}
 Chatziantoniou, I., A. H. Elsayed, D. Gabauer, and G. Gozgor. 2023. Oil price shocks and

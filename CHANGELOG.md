@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.9.5 (2026-10-25)
+- `clcontrols()`: a cluster of control variables, such as volatility indices that proxy
+  for common shocks, ordered first in every ordering (Buchwalter, Diebold and Yilmaz
+  2026b, Section 2.6, arXiv:2609.05792). The other variables' residuals are purged of
+  the controls (Schur complement) before the other clusters are orthogonalized; only
+  the other clusters are permuted, so the control cluster adds no orderings. It is
+  cluster 1 of the results, with its own row and column in the cluster table;
+  `e(clcontrols)` and `e(cl_ncontrols)`.
+- `estat clorder`: the ordering-sensitivity diagnostic of Buchwalter, Diebold and
+  Yilmaz (2026b, Section 2.5). The net connectedness of each cluster in the cluster
+  table is kept for every ordering during the estimation. Static results report its
+  distribution over the orderings (`r(net)`), its mean by position (`r(bypos)`) and the
+  paired first-versus-last difference with the relative order of the other clusters
+  held fixed (eq. 4; `r(dfl)`), and save the orderings in the frame `frame_clord`
+  (`e(frame_clord)`); `frame()` saves a long frame for density and box plots. Rolling
+  and TVP-VAR results hold, for every period, `cl_dfl_c` (mean paired difference) and
+  `cl_nsd_c` (standard deviation over the orderings), summarized by `estat clorder`.
+- `clorder(simultaneous)`: simultaneous clustered orthogonalization (Buchwalter,
+  Diebold and Yilmaz 2026c, arXiv:2609.12280), in closed form, invariant to any
+  ordering. The scaling of the structural shocks, which the paper leaves open, cancels
+  in the decomposition. One cluster gives the generalized decomposition and one
+  variable per cluster the full simultaneous orthogonalization of Francis, Hansen and
+  Tong (2026).
+- `clorder(average)` now allows up to 8 clusters to order (40,320 orderings; about 14
+  seconds for a static VAR of 19 variables), with a note on the time for rolling and
+  TVP-VAR results. `estat bootstrap` supports the control cluster and simultaneous
+  orthogonalization.
+- Validation: `test/r/make_fixtures_095.R` implements the three extensions
+  independently from the papers' equations (the control cluster through the Schur
+  complement, eqs. 5 to 7; the pairs of orderings matched by text keys; simultaneous
+  orthogonalization from Q and Omega with an arbitrary scaling) for twelve cases:
+  static and rolling VARs and a TVP-VAR, two to seven clusters (5,040 orderings), with
+  and without a control cluster. It also confirms the corners of simultaneous
+  orthogonalization against TimeConnectedness() and Francis, Hansen and Tong, its
+  independence of the scaling, the criterion at its maximum (eq. 25), and that the
+  control-first decomposition equals sequential clustered identification with the
+  control cluster first. Stata agrees with R to 2e-12 or better in every case (the
+  decompositions, the 0.9.0 and 0.9.3 cluster measures, the net connectedness under each
+  of up to 5,040 orderings, the `estat clorder` tables and the ordering series), and
+  passes the identities: the nets of an ordering sum to zero, their mean over the
+  orderings is the net of the averaged decomposition, the control cluster with
+  `clorder(given)` equals the control cluster listed first, the average over two
+  orderings equals the mean of the two given orderings, and simultaneous
+  orthogonalization with one cluster equals the generalized decomposition and does not
+  depend on the order of the variables or clusters. 387 of 387 certification tests pass
+  in Stata 19 (`docs/certification-log-v0.9.5.txt`).
+
 ## 0.9.4 (2026-10-25)
 - `estat bootstrap, sam`: bootstrap inference for the spillover asymmetry measure of
   Baruník, Kočenda and Vácha (2016), SAM = TCI+ - TCI-, and its TO, FROM and NET,
