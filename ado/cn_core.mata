@@ -1,4 +1,4 @@
-*! version 0.9.2  24oct2026
+*! version 0.9.3  25oct2026
 *! Mata engine for -connectedness-
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! License: GPL-3
@@ -824,12 +824,18 @@ real matrix cn_perms(real scalar C)
 // Cluster measures of a k x k decomposition in percent, with cid the cluster of each
 // variable (1, ..., C). Order: own_c, comove_c, contag_c, to_c, net_c (C each), the
 // averages over clusters of own, comove and contag, then T_c<-k for c != k (by c,
-// then k), with T_c<-k = (1/N_c) sum_{i in c} sum_{j in k} theta_ij.
+// then k), with T_c<-k = (1/N_c) sum_{i in c} sum_{j in k} theta_ij; then the
+// system-wide within-cluster and cross-cluster parts of the TCI, (1/k) times the sum
+// of the off-diagonal shares inside and outside the clusters (they add up to the
+// TCI), and the column totals of the cluster table, TTO_c = sum_{k != c} T_k<-c, and
+// TNET_c = TTO_c - contag_c (Buchwalter, Diebold and Yilmaz 2026b, Tables 1 to 3).
+// to_c and net_c instead scale the contagion transmitted by the size of the
+// transmitting cluster (Buchwalter, Diebold and Yilmaz 2026a, Fig. 6).
 real rowvector cn_clmeasures(real matrix ct, real colvector cid, real scalar C)
 {
-    real scalar    c, d, nc
+    real scalar    c, d, nc, k, wth, crs
     real colvector ic, jc
-    real rowvector own, com, ctg, to, pr
+    real rowvector own, com, ctg, to, pr, tto
     real matrix    T, B
 
     own = J(1, C, .)
@@ -854,7 +860,17 @@ real rowvector cn_clmeasures(real matrix ct, real colvector cid, real scalar C)
             if (d != c) pr = pr, T[c, d]
         }
     }
-    return((own, com, ctg, to, to - ctg, mean(own'), mean(com'), mean(ctg'), pr))
+    k    = rows(ct)
+    wth  = 0
+    crs  = 0
+    for (c=1; c<=C; c++) {
+        nc  = sum(cid :== c)
+        wth = wth + com[c]*nc
+        crs = crs + ctg[c]*nc
+    }
+    tto = colsum(T) - diagonal(T)'
+    return((own, com, ctg, to, to - ctg, mean(own'), mean(com'), mean(ctg'), pr,
+            wth/k, crs/k, tto, tto - ctg))
 }
 
 // Names and labels of the cluster measures, matching cn_clmeasures()
@@ -872,6 +888,7 @@ string rowvector cn_clnames(real scalar C)
             if (d != c) nm = nm, "cl_" + strofreal(c) + "_" + strofreal(d)
         }
     }
+    nm = nm, ("cl_within", "cl_cross"), ("cl_tto_" :+ s), ("cl_tnet_" :+ s)
     return(nm)
 }
 
@@ -891,7 +908,7 @@ void cn_postclust(string scalar cnames, string scalar avgname, string scalar shn
     cn  = tokens(cnames)
     C   = cols(cn)
     k   = rows(cn__clid)
-    V   = J(rows(cn__CT), 5*C + 3 + C*(C-1), .)
+    V   = J(rows(cn__CT), 5*C + 3 + C*(C-1) + 2 + 2*C, .)
     for (t=1; t<=rows(cn__CT); t++) {
         V[t, .] = cn_clmeasures(rowshape(cn__CT[|t, 1 \ t, k*k|], k), cn__clid, C)
     }
@@ -918,6 +935,12 @@ void cn_postclust(string scalar cnames, string scalar avgname, string scalar shn
             }
         }
     }
+    lab[i+1] = "Within-cluster part of the TCI"
+    lab[i+2] = "Cross-cluster part of the TCI"
+    for (c=1; c<=C; c++) {
+        lab[i+2+c]   = "Cluster table, contagion transmitted (column total), " + cn[c]
+        lab[i+2+C+c] = "Cluster table, net contagion, " + cn[c]
+    }
     for (i=1; i<=cols(nm); i++) st_varlabel(nm[i], substr(lab[i], 1, 80))
 
     // measures of the averaged decomposition
@@ -942,6 +965,12 @@ void cn_postclust(string scalar cnames, string scalar avgname, string scalar shn
     nk = J(C, 1, .)
     for (c=1; c<=C; c++) nk[c] = sum(cn__clid :== c)
     st_matrix(ctgname + "_avg", T :/ nk')
+    // cluster table of Buchwalter, Diebold and Yilmaz (2026b): rows the clusters, TO
+    // and NET; columns the clusters and FROM; and the within/cross parts of the TCI
+    i = 5*C + 3 + C*(C-1)
+    st_matrix(ctgname + "_tab", (T, m[|2*C+1 \ 3*C|]') \ (m[|i+3 \ i+2+C|], .z) \
+        (m[|i+3+C \ i+2+2*C|], .z))
+    st_matrix(ctgname + "_sys", (m[i+1], m[i+2]))
 }
 
 // ---------------------------------------------------------------------------

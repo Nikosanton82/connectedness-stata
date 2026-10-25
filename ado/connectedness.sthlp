@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.9.2  24oct2026}{...}
+{* *! version 0.9.3  25oct2026}{...}
 {viewerjumpto "Syntax" "connectedness##syntax"}{...}
 {viewerjumpto "Description" "connectedness##description"}{...}
 {viewerjumpto "Options" "connectedness##options"}{...}
@@ -246,7 +246,7 @@ which depends on the order of {it:varlist}.
 
 {phang}
 {opt clusters(clusters)} gives the clustered network connectedness of Buchwalter,
-Diebold and Yilmaz (2025). The variables are grouped into clusters, such as regions
+Diebold and Yilmaz (2026a). The variables are grouped into clusters, such as regions
 or countries, listed as in {cmd:estat group}: each cluster in double quotes,
 optionally preceded by a name and a colon, for example
 {cmd:clusters("Americas: US BRA" "Europe: UK FRA GER")}. Variables not listed form
@@ -257,7 +257,11 @@ before it. One cluster thus gives the generalized FEVD, and one variable per clu
 the Cholesky FEVD. Besides the usual measures, {cmd:connectedness} reports, for each
 cluster, the shares of its variables' forecast error variance due to their own shocks
 (own), to shocks in the same cluster (co-movement) and to shocks in other clusters
-(contagion), which sum to 100, and a cluster-to-cluster contagion table. Clustered
+(contagion), which sum to 100; the cluster table of Buchwalter, Diebold and Yilmaz
+(2026b), with the share of each cluster's variance due to every cluster and its TO
+and NET totals; and the split of the TCI into a within-cluster and a cross-cluster
+part (2026a, Fig. 5). The implementation follows the published version of the paper
+and was checked against its equations; see {help connectedness##methods:Methods and formulas}. Clustered
 identification applies to {cmd:approach(time)} with VAR-type and TVP-VAR models, and
 may not be combined with {opt orthogonalized} or {opt normalize()}.
 
@@ -548,11 +552,12 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {phang2}{cmd:. connectedness rv_*, positive(rp_*) negative(rn_*) window(500) datevar(date) replace}{p_end}
 {phang2}{cmd:. frame cn_results: tsline sam}{p_end}
 
-{pstd}Buchwalter, Diebold and Yilmaz (2025): clustered connectedness of equity markets by region{p_end}
+{pstd}Buchwalter, Diebold and Yilmaz (2026a): clustered connectedness of equity markets by region{p_end}
 {phang2}{cmd:. use cn_dy2009, clear}{p_end}
 {phang2}{cmd:. tsset t}{p_end}
 {phang2}{cmd:. connectedness US-TUR, lags(2) clusters("Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA") replace}{p_end}
-{phang2}{cmd:. matrix list e(cl_contagion)}{p_end}
+{phang2}{cmd:. matrix list e(cl_table)}{p_end}
+{phang2}{cmd:. frame cn_results: tsline cl_within cl_cross}{p_end}
 
 {pstd}Caloia, Cipollini and Muzzioli (2019): scalar normalization of the Diebold and Yilmaz (2012) table{p_end}
 {phang2}{cmd:. use cn_dy2012, clear}{p_end}
@@ -588,6 +593,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(TCI_neg)}, {cmd:e(cTCI_neg)}}TCI of negative changes ({cmd:asymmetric}){p_end}
 {synopt:{cmd:e(nclusters)}}number of clusters ({opt clusters()}){p_end}
 {synopt:{cmd:e(norderings)}}number of cluster orderings averaged ({opt clusters()}){p_end}
+{synopt:{cmd:e(cl_within)}, {cmd:e(cl_cross)}}within-cluster and cross-cluster parts of the TCI, which sum to {cmd:e(TCI)} ({opt clusters()}){p_end}
 {synopt:{cmd:e(SAM)}}spillover asymmetry measure, {cmd:e(TCI_pos)} - {cmd:e(TCI_neg)} ({cmd:asymmetric}, {opt positive()}){p_end}
 {synopt:{cmd:e(nbands)}}number of frequency bands ({cmd:frequency}){p_end}
 {synopt:{cmd:e(TCI_c)}, {cmd:e(TCI_l)}}TCI of the contemporaneous and lagged components ({cmd:r2} with lags); also {cmd:e(cTCI_c)}, {cmd:e(cTCI_l)}{p_end}
@@ -635,6 +641,7 @@ them to the current directory, then load them with {cmd:use}. Each is {cmd:tsset
 {synopt:{cmd:e(cl_shares)}}own, co-movement and contagion shares, TO and NET of each cluster, and their averages over clusters, (C+1) x 5 ({opt clusters()}){p_end}
 {synopt:{cmd:e(cl_contagion)}}C x C table: share of the row cluster's variance due to the column cluster, averaged over the row cluster's variables{p_end}
 {synopt:{cmd:e(cl_contagion_avg)}}the same divided by the number of variables in the column cluster, the definition printed in the paper{p_end}
+{synopt:{cmd:e(cl_table)}}cluster table of Buchwalter, Diebold and Yilmaz (2026b), (C+2) x (C+1): {cmd:e(cl_contagion)} with a FROM column (row totals outside the own cluster) and TO (column totals outside the own cluster) and NET (TO - FROM) rows ({opt clusters()}){p_end}
 {synopt:{cmd:e(cl_id)}}cluster of each variable, 1 x k{p_end}
 {synopt:{cmd:e(garch)}}GARCH(1,1) parameters mu, omega, alpha and beta, k x 4 ({cmd:dccgarch}){p_end}
 {synopt:{cmd:e(dcc)}}DCC(1,1) parameters a and b, 1 x 2 ({cmd:dccgarch}){p_end}
@@ -683,8 +690,10 @@ With {opt clusters()}, the results frame also holds, for every period and each c
 {cmd:cl_comove_}{it:c} and {cmd:cl_contag_}{it:c}, the own, co-movement and contagion
 shares, {cmd:cl_to_}{it:c} and {cmd:cl_net_}{it:c}, the contagion transmitted to the
 other clusters and its net value, {cmd:cl_own}, {cmd:cl_comove} and {cmd:cl_contag},
-their averages over clusters, and {cmd:cl_}{it:c}{cmd:_}{it:d}, the contagion to
-cluster {it:c} from cluster {it:d}.
+their averages over clusters, {cmd:cl_}{it:c}{cmd:_}{it:d}, the contagion to
+cluster {it:c} from cluster {it:d}, {cmd:cl_within} and {cmd:cl_cross}, the
+within-cluster and cross-cluster parts of the TCI, and {cmd:cl_tto_}{it:c} and
+{cmd:cl_tnet_}{it:c}, the TO and NET rows of the cluster table.
 
 
 {marker methods}{...}
@@ -727,7 +736,7 @@ on standardized regressors, with v_j = 1 for the elastic net and v_j proportiona
 cluster b be projected on those of the clusters before it,
 {bf:Q}^(-1)_(b,<b) = -{bf:Sigma}_(b,<b) {bf:Sigma}_(<b,<b)^(-1), with identity
 blocks on the diagonal, so that {bf:Omega} = {bf:Q}^(-1) {bf:Sigma}
-{bf:Q}^(-1)' is block diagonal (Buchwalter, Diebold and Yilmaz 2025, eqs. 7 and 8).
+{bf:Q}^(-1)' is block diagonal (Buchwalter, Diebold and Yilmaz 2026a, eqs. 7 and 8).
 The decomposition is
 omega_jj^(-1) sum_{h=0}^{H-1} (e_i' {bf:A}_h {bf:Q} {bf:Omega} e_j)^2 /
 sum_{h=0}^{H-1} e_i' {bf:A}_h {bf:Sigma} {bf:A}_h' e_i, normalized by row; with
@@ -736,11 +745,24 @@ variables in cluster c and w_ij the decomposition, own_c = (1/N_c) sum_{i in c}
 w_ii, co-movement_c = (1/N_c) sum_{i,j in c, i!=j} w_ij, contagion_c = (1/N_c)
 sum_{i in c} sum_{j not in c} w_ij, TO_c = (1/N_c) sum_{i not in c} sum_{j in c}
 w_ij and NET_c = TO_c - contagion_c; the contagion table holds (1/N_c) sum_{i in c}
-sum_{j in d} w_ij. The paper prints the contagion from cluster d to c with a further
-division by N_d; with that definition the own, co-movement and contagion shares do
-not sum to one, as the paper states they do, unless every cluster has one variable,
-so the package reports the version that sums to 100 and stores the printed one in
-{cmd:e(cl_contagion_avg)}.
+sum_{j in d} w_ij. The published paper (Section 2.2.3) defines the contagion from
+cluster d to c with a further division by N_d; with that definition the own,
+co-movement and contagion shares do not sum to one, as the paper states they do,
+unless every cluster has one variable. The package therefore reports the version that
+sums to 100, which is also the definition of the cluster tables of Buchwalter,
+Diebold and Yilmaz (2026b), and stores the printed one in {cmd:e(cl_contagion_avg)}.
+
+{pstd}
+The within-cluster and cross-cluster parts of the TCI are (1/N) sum_i sum_{j!=i,
+j in the cluster of i} w_ij and (1/N) sum_i sum_{j not in the cluster of i} w_ij,
+with N the number of variables; they sum to the TCI and weight the cluster shares
+by cluster size: within = sum_c (N_c/N) co-movement_c and cross = sum_c (N_c/N)
+contagion_c (2026a, Fig. 5; 2026b, Section 2.3). In the cluster table T[c,d] =
+(1/N_c) sum_{i in c} sum_{j in d} w_ij, FROM_c = sum_{d!=c} T[c,d] = contagion_c,
+TO_c = sum_{d!=c} T[d,c] and NET_c = TO_c - FROM_c (2026b, eq. 2). This NET adds
+the shares of the receiving clusters, each on its own scale, while NET_c of
+{cmd:e(cl_shares)} divides the contagion transmitted by the size of the transmitting
+cluster (2026a, Fig. 6); the two can differ in sign when clusters differ in size.
 
 {pstd}
 {it:Spillover asymmetry.} With TCI+ and TCI- the total connectedness of the
@@ -853,9 +875,14 @@ Bollerslev, T. 1986. Generalized autoregressive conditional heteroskedasticity.
 {it:Journal of Econometrics} 31: 307-327.
 
 {phang}
-Buchwalter, B., F. X. Diebold, and K. Yilmaz. 2025. Clustered network connectedness: A
-new measurement framework, with application to global equity markets. NBER Working
-Paper 34796.
+Buchwalter, B., F. X. Diebold, and K. Yilmaz. 2026a. Clustered network connectedness: A
+new measurement framework with application to global equity markets. {it:Journal of
+Econometrics}, forthcoming. https://doi.org/10.1016/j.jeconom.2026.106243.
+
+{phang}
+Buchwalter, B., F. X. Diebold, and K. Yilmaz. 2026b. Scalable clustered network
+connectedness with control variables: Theory and application to global banking.
+arXiv:2609.05792.
 
 {phang}
 Caloia, F. G., A. Cipollini, and S. Muzzioli. 2019. How do normalization schemes

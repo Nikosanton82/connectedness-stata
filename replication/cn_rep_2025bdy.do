@@ -1,5 +1,6 @@
-* Replication in the spirit of Buchwalter, Diebold and Yilmaz (2025), clustered network
-* connectedness of global equity markets. The paper's weekly data (16 markets,
+* Replication in the spirit of Buchwalter, Diebold and Yilmaz (2026, Journal of
+* Econometrics), clustered network connectedness of global equity markets. The
+* paper's weekly data (16 markets,
 * 2002-2021) come from WRDS and are not distributed; this do-file applies the same
 * design to the weekly equity returns of Diebold and Yilmaz (2009), 19 markets in three
 * regions: a VAR(3) estimated by the adaptive elastic net (alpha 0.5, weights from

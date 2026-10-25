@@ -1,0 +1,10 @@
+ConnectednessApproach version: 1.0.4 
+Warning message:
+package 'ConnectednessApproach' was built under R version 4.5.3 
+one cluster against TimeConnectedness(): max abs difference 1.11e-16
+dy2012_clust2              periods=    1 within/cross (averaged)=4.8337/4.8195 net: 1.876 -1.876
+dy2009_regions             periods=    1 within/cross (averaged)=29.7685/23.8458 net: -6.585 -8.259 14.844
+dy2009_regions_given       periods=    1 within/cross (averaged)=27.3339/23.8930 net: 58.538 -34.695 -23.843
+dy2012_clust_roll200       periods=  203 within/cross (averaged)=4.0663/6.2099 net: -6.954 6.954
+acg2020_tvp_clust          periods=  521 within/cross (averaged)=34.5973/12.2992 net: 17.702 -17.702
+cgs2022_countries          periods=    1 within/cross (averaged)=27.8684/45.8519 net: -0.614 1.531 6.294 0.210 -5.417 -2.004

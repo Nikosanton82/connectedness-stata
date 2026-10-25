@@ -1,4 +1,4 @@
-*! version 0.9.0  24oct2026
+*! version 0.9.3  25oct2026
 *! connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures (time, frequency, joint, R2)
 *! Port of the ConnectednessApproach R package (D. Gabauer, version 1.0.4, GPL-3)
 *! Author: Nikolaos Antonakakis.  License: GPL-3
@@ -408,7 +408,7 @@ program define Estimate, eclass
             3*("`normalize'" == "spectral")
     }
 
-    // clustered identification (Buchwalter, Diebold and Yilmaz 2025): clusters listed
+    // clustered identification (Buchwalter, Diebold and Yilmaz 2026a): clusters listed
     // as in estat group, "name: var var ..."; variables not listed form clusters of
     // their own
     local clorder = lower(strtrim("`clorder'"))
@@ -853,9 +853,15 @@ program define Estimate, eclass
         matrix colnames `clct1' = `clnames'
         matrix rownames `clct1'_avg = `clnames'
         matrix colnames `clct1'_avg = `clnames'
+        matrix rownames `clct1'_tab = `clnames' TO NET
+        matrix colnames `clct1'_tab = `clnames' FROM
+        ereturn scalar cl_within = `clct1'_sys[1, 1]
+        ereturn scalar cl_cross  = `clct1'_sys[1, 2]
+        matrix drop `clct1'_sys
         ereturn matrix cl_shares = `clsh1'
         ereturn matrix cl_contagion = `clct1'
         ereturn matrix cl_contagion_avg = `clct1'_avg
+        ereturn matrix cl_table = `clct1'_tab
         ereturn scalar nclusters  = `ncl'
         ereturn scalar norderings = `nord'
         ereturn local clusters "`clnames'"
@@ -867,6 +873,7 @@ program define Estimate, eclass
         ereturn local fevdtype "clustered (`ncl' clusters)"
         if `semi' | "`asymmetric'" != "" {
             capture matrix drop `clsh2' `clct2' `clct2'_avg `clsh3' `clct3' `clct3'_avg
+            capture matrix drop `clct2'_tab `clct2'_sys `clct3'_tab `clct3'_sys
         }
     }
     ereturn local approach "`approach'"
@@ -1096,9 +1103,12 @@ program define Display
         matlist e(cl_shares), format(%`w'.`digits'f) border(rows) lines(oneline) nodotz ///
             rowtitle("Cluster") twidth(12)
         di as txt "TO and NET: contagion sent to other clusters, per variable of the cluster"
-        di _n as txt "Contagion table: share of the row cluster's variance due to the column cluster"
-        matlist e(cl_contagion), format(%`w'.`digits'f) border(rows) lines(oneline) ///
+        di _n as txt "{p 0 0 2}Cluster table: share of the row cluster's variance due to the column " ///
+            "cluster; FROM: row total, TO: column total, outside the own cluster{p_end}"
+        matlist e(cl_table), format(%`w'.`digits'f) border(rows) lines(oneline) nodotz ///
             rowtitle("Cluster") twidth(12)
+        di as txt "System-wide: TCI " as res %6.`digits'f (e(cl_within) + e(cl_cross)) as txt " = within " ///
+            as res %6.`digits'f e(cl_within) as txt " + cross " as res %6.`digits'f e(cl_cross)
     }
     if "`approach'" == "frequency" & `band' == 0 {
         di _n as txt %-16s "Band (periods)" %12s "TCI" %16s "corrected TCI"

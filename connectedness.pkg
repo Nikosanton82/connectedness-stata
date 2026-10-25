@@ -6,7 +6,7 @@ d and rolling-window VARs, quantile and LAD VARs, (adaptive) LASSO, ridge and
 d elastic-net VARs and the TVP-VAR connectedness measures of Antonakakis,
 d Chatziantoniou and Gabauer (2020), with corrected total, pairwise and influence
 d indices, row or scalar normalization, clustered identification (Buchwalter, Diebold
-d and Yilmaz 2025), frequency connectedness (Barunik and Krehlik 2018), joint and
+d and Yilmaz 2026), frequency connectedness (Barunik and Krehlik 2018), joint and
 d extended joint connectedness, R2 decomposed and model-free connectedness, DCC-GARCH
 d volatility connectedness (Gabauer 2020) and its R2 decomposition, asymmetric
 d (positive and negative) connectedness and the spillover asymmetry measure, group
@@ -20,7 +20,7 @@ d
 d Requires: Stata 16.1 or newer
 d Author: Nikolaos Antonakakis, University of Nicosia
 d Support: antonakakis.n@unic.ac.cy
-d Distribution-Date: 20261024
+d Distribution-Date: 20261025
 d License: GPL-3
 f ado/connectedness.ado
 f ado/connectedness_estat.ado

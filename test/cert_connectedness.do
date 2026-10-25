@@ -1054,7 +1054,7 @@ cn_expect 184 connectedness `rv', positive(`rp') negative(`rn') asymmetric `opt'
 cn_expect 198 connectedness `rv', positive(`rp') negative(`rn') approach(r2) `opt'
 
 di _n as txt "{hline 78}" _n "17. Clustered network connectedness (0.9.0)" _n "{hline 78}"
-* Buchwalter, Diebold and Yilmaz (2025). R_<case> fixtures come from the independent
+* Buchwalter, Diebold and Yilmaz (2026a). R_<case> fixtures come from the independent
 * R implementation in test/r/make_fixtures_090.R; the nested cases are checked
 * against the generalized and the orthogonalized decompositions.
 capture program drop cn_clcheck
@@ -1093,6 +1093,47 @@ program define cn_clcheck
     global cn_tests = $cn_tests + 1
     if !`ok' global cn_fails = $cn_fails + 1
     di as txt "  " %-26s "R_`case' clusters" " tables " as res %9.2e `d1' ///
+        as txt "  series " as res %9.2e `d2' as txt "  " cond(`ok', "pass", "FAIL")
+    cn_cl093, case(`case') tol(`tol')
+end
+
+* 0.9.3: cluster table with TO and NET rows (Buchwalter, Diebold and Yilmaz 2026b),
+* within/cross split of the TCI (2026a, Fig. 5), against make_fixtures_093.R
+capture program drop cn_cl093
+program define cn_cl093
+    syntax , case(string) tol(real)
+    local f "fixtures/R_`case'"
+    capture confirm file "`f'_cltab.csv"
+    if _rc {
+        di as txt "  R_`case' cluster table: no fixture, skipped"
+        exit
+    }
+    local C = e(nclusters)
+    tempname R A B Y A1 R1 A2 R2
+    capture frame drop __fx
+    frame create __fx
+    frame __fx {
+        quietly import delimited using "`f'_cltab.csv", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`R')
+        quietly import delimited using "`f'_clsys.csv", clear varnames(nonames) asdouble
+        mkmat _all, matrix(`Y')
+    }
+    matrix `A' = e(cl_table)
+    matrix `A1' = `A'[1..., 1..`C']
+    matrix `R1' = `R'[1..., 1..`C']
+    matrix `A2' = `A'[1..`C', `C'+1]
+    matrix `R2' = `R'[1..`C', `C'+1]
+    local d1 = max(mreldif(`A1', `R1'), mreldif(`A2', `R2'))
+    matrix `B' = (e(cl_within), e(cl_cross))
+    local d1 = max(`d1', mreldif(`B', `Y'))
+    local d3 = abs(e(cl_within) + e(cl_cross) - e(TCI))
+    frame __fx: quietly import delimited using "`f'_clts093.csv", clear varnames(1) asdouble
+    mata: st_local("d2", strofreal(cn_tsdiff("`e(frame)'", "__fx"), "%12.0g"))
+    frame drop __fx
+    local ok = (`d1' < `tol') & (`d2' < `tol') & (`d3' < 1e-10)
+    global cn_tests = $cn_tests + 1
+    if !`ok' global cn_fails = $cn_fails + 1
+    di as txt "  " %-26s "R_`case' cl. table" " tables " as res %9.2e `d1' ///
         as txt "  series " as res %9.2e `d2' as txt "  " cond(`ok', "pass", "FAIL")
 end
 
@@ -1427,6 +1468,49 @@ if !_rc {
     cn_expect 198 estat bootstrap, reps(5) pwframe(x) pairwise
 }
 else di as txt "  R_boot pairwise: no fixture, skipped"
+
+di _n as txt "{hline 78}" _n "20. Cluster table and within/cross split of the TCI (0.9.3)" _n "{hline 78}"
+* Identities of the measures added to align with the published version of
+* Buchwalter, Diebold and Yilmaz (2026a) and their follow-up (2026b); the R
+* comparisons run with each case of section 17 (R_<case> cl. table).
+use ../data/cn_dy2009, clear
+tsset t
+quietly ds t date, not
+local v `r(varlist)'
+local reg `""Americas: US ARG BRA CHL MEX" "Europe: UK FRA GER TUR" "AsiaPacific: HKG JPN AUS IDN KOR MYS PHL SGP TAI THA""'
+connectedness `v', lags(2) horizon(10) clusters(`reg') `opt'
+tempname S T I
+matrix `S' = e(cl_shares)
+matrix `T' = e(cl_table)
+matrix `I' = e(cl_id)
+mata: cn__S = st_matrix("`S'"); cn__T = st_matrix("`T'"); cn__I = st_matrix("`I'")'
+mata: cn__n = J(3, 1, .); for (cn__c=1; cn__c<=3; cn__c++) cn__n[cn__c] = sum(cn__I :== cn__c)
+mata: st_local("d1", strofreal(abs(sum(cn__n :* cn__S[(1..3), 2])/19 - st_numscalar("e(cl_within)")) + abs(sum(cn__n :* cn__S[(1..3), 3])/19 - st_numscalar("e(cl_cross)")), "%12.0g"))
+mata: st_local("d2", strofreal(max(abs(rowsum(cn__T[(1..3), (1..3)]) :- 100)), "%12.0g"))
+mata: st_local("d3", strofreal(max(abs(cn__T[(1..3), 4] - cn__S[(1..3), 3])) + abs(sum(cn__T[5, (1..3)])), "%12.0g"))
+mata: st_local("d4", strofreal(max(abs(cn__T[5, (1..3)] - (cn__T[4, (1..3)] - cn__T[(1..3), 4]'))), "%12.0g"))
+mata: mata drop cn__S cn__T cn__I cn__n cn__c
+cn_assert "within/cross = size-weighted shares" `d1' 1e-10
+cn_assert "cluster table rows sum to 100" `d2' 1e-10
+cn_assert "FROM = contagion; NET sums to zero" `d3' 1e-10
+cn_assert "NET = TO - FROM" `d4' 1e-10
+* rolling: within + cross = TCI in every period
+use ../data/cn_dy2012, clear
+tsset t
+connectedness SP500 R_10Y DJUBSCOM USDX in 1/400, lags(2) window(202) ///
+    clusters("A: SP500" "B: R_10Y DJUBSCOM USDX") `opt'
+frame `e(frame)' {
+    tempvar dd
+    quietly generate double `dd' = abs(cl_within + cl_cross - tci)
+    quietly summarize `dd'
+    local d5 = r(max)
+}
+cn_assert "within + cross = TCI, every period" `d5' 1e-10
+* one cluster: everything is within; one variable per cluster: everything is cross
+connectedness SP500 R_10Y DJUBSCOM USDX, lags(2) clusters("all: SP500 R_10Y DJUBSCOM USDX") `opt'
+cn_assert "one cluster: cross = 0, within = TCI" `=abs(e(cl_cross)) + abs(e(cl_within) - e(TCI))' 1e-10
+connectedness SP500 R_10Y DJUBSCOM USDX, lags(2) clusters("a: SP500" "b: R_10Y" "c: DJUBSCOM" "d: USDX") `opt'
+cn_assert "singletons: within = 0, cross = TCI" `=abs(e(cl_within)) + abs(e(cl_cross) - e(TCI))' 1e-10
 
 di _n as txt "{hline 78}"
 quietly timer list

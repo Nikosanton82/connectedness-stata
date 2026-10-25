@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.9.3 (2026-10-25)
+- Clustered connectedness aligned with the published version of Buchwalter, Diebold
+  and Yilmaz (2026a, *Journal of Econometrics*, doi:10.1016/j.jeconom.2026.106243),
+  now cited in the help files, README and package description. The implementation was
+  checked against the published equations: the cluster-orthogonalizing projection
+  (eq. 7 and Appendix A), the clustered decomposition (eq. 9), the own and co-movement
+  shares, the average over cluster orderings and the regional net connectedness per
+  variable of the transmitting region (Fig. 6) are unchanged. The published Section
+  2.2.3 still divides the contagion from cluster k by N_k, so its shares do not sum to
+  one; the package keeps the version that sums to 100, which is also the definition of
+  the cluster tables of the follow-up paper (2026b), and the printed one in
+  `e(cl_contagion_avg)`.
+- New: the split of the TCI into a within-cluster and a cross-cluster part (2026a,
+  Fig. 5; 2026b, Section 2.3), in `e(cl_within)` and `e(cl_cross)` and, for every
+  period, `cl_within` and `cl_cross` in the results frame; they sum to the TCI.
+- New: the cluster table of Buchwalter, Diebold and Yilmaz (2026b, Tables 1 to 3),
+  `e(cl_table)`: the share of each cluster's variance due to every cluster, with FROM
+  (row totals), TO (column totals) and NET rows, displayed after the cluster shares;
+  per period, `cl_tto_c` and `cl_tnet_c`. This NET adds the receiving clusters'
+  shares, while NET in `e(cl_shares)` divides the contagion transmitted by the size of
+  the transmitting cluster (2026a); the help explains the difference.
+- Validation: `test/r/make_fixtures_093.R` computes the new measures from their
+  definitions on the clustered decompositions of the independent R implementation of
+  0.9.0, for all six cluster cases (two to six clusters, static, rolling and TVP-VAR,
+  averaged and given orderings). Stata agrees with R to 2e-14 for the cluster tables,
+  the within/cross split and their series, and satisfies the identities exactly (to
+  1e-10): within + cross = TCI in every period, the table rows sum to 100, FROM equals
+  the contagion share, NET = TO - FROM sums to zero, one cluster gives cross = 0 and one
+  variable per cluster within = 0. 293 of 293 certification tests pass in Stata 19
+  (`docs/certification-log-v0.9.3.txt`).
+
 ## 0.9.2 (2026-10-24)
 - `estat bootstrap` gives bands for the pairwise measures: option `pairwise` for the
   pairwise connectedness table (element (i, j): spillover from j to i) and option

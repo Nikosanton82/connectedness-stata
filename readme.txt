@@ -1,6 +1,6 @@
 connectedness: VAR-type, TVP-VAR and DCC-GARCH connectedness measures for Stata
 ================================================================================
-Version 0.9.2, 24 October 2026 (the Stata Journal submission describes version 0.2.1)
+Version 0.9.3, 25 October 2026 (the Stata Journal submission describes version 0.2.1)
 Author:  Nikolaos Antonakakis, University of Nicosia, UNIC Athens, antonakakis.n@unic.ac.cy
 License: GNU General Public License version 3 (see LICENSE)
 
@@ -71,4 +71,6 @@ Reproducing the checks
   test/r/make_fixtures_090.R (test/r/run_r_090.bat), and estat bootstrap (version 0.9.1)
   against one in test/r/make_fixtures_091.R (test/r/run_r_091.bat), which shares its
   resampled rows with Stata; its pairwise and NPDC bands and stat() (version 0.9.2)
-  against test/r/make_fixtures_092.R (test/r/run_r_092.bat).
+  against test/r/make_fixtures_092.R (test/r/run_r_092.bat); the cluster table and the
+  within/cross split of the TCI (version 0.9.3) against test/r/make_fixtures_093.R
+  (test/r/run_r_093.bat).
